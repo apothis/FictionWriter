@@ -95,6 +95,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         fileMenu.addItem(NSMenuItem.separator())
 
+        let export = NSMenuItem(
+            title: "Export as Markdown…",
+            action: #selector(exportMarkdownClicked),
+            keyEquivalent: "e")
+        export.keyEquivalentModifierMask = [.command, .shift]
+        export.target = self
+        fileMenu.addItem(export)
+
+        fileMenu.addItem(NSMenuItem.separator())
+
         let close = NSMenuItem(
             title: "Close",
             action: #selector(NSWindow.performClose(_:)),
@@ -148,6 +158,31 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let title = url.deletingPathExtension().lastPathComponent
                 try AppState.shared.saveCurrentSessionAs(url: url, title: title)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+        }
+    }
+
+    @objc private func exportMarkdownClicked() {
+        let session = AppState.shared.currentSession
+        let panel = NSSavePanel()
+        panel.title = "Export Manuscript as Markdown"
+        panel.message = "Choose where to save the Markdown export."
+        let suggested = session.project.title.isEmpty ? "MyNovel.md" : "\(session.project.title).md"
+        panel.nameFieldStringValue = suggested
+        panel.canCreateDirectories = true
+        panel.allowedContentTypes = []
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            let markdown = MarkdownExporter.export(
+                project: session.project,
+                scenes: session.scenes
+            )
+            do {
+                try markdown.write(to: url, atomically: true, encoding: .utf8)
+                DebugLog.shared.write("[storage] exported markdown → \(url.lastPathComponent)")
+                NSWorkspace.shared.activateFileViewerSelecting([url])
             } catch {
                 NSAlert(error: error).runModal()
             }
