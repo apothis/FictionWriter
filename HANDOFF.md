@@ -79,6 +79,8 @@ These were noted in the design docs as deferred-decisions, not regressions:
 - **Cross-character ledger contradiction detection.** Lint-only posture committed; auto-resolution rejected.
 - **Time travel / non-linear narrative**: ledger queries use *chronological* order, not *narrative* order. Verify against a flashback-heavy manuscript in Phase 4.
 - **History log file proliferation.** Compaction is Phase 6 polish; Phase 1 is fine accumulating per-event files.
+- **Roll Rewrite forward into Phase 1.5.** Continue + Expand are the Phase 1 minimum, but Rewrite is the most-used mode in every prior-art tool — selecting prose and reshaping it (voice / tense / POV / length / "make it more dramatic") is the dominant fiction-tool interaction beyond first-draft generation. After Phase 1 ships, before committing to the full Phase 4 mode bundle, consider landing Rewrite alone as 1.5 to validate the mode-button + sub-mode interaction surface. Cheap to implement on top of PromptBuilder; high user-value gradient.
+- **Per-call instruction box on Continue / Expand / Rewrite.** Phase 1 carries persistent steering only (Memory + Author's Note). Sudowrite + Novelcrafter both have a "with this instruction:" text field that attaches a one-shot ad-hoc steering hint to a single mode call without polluting the persistent steering surfaces. Phase 4 (when Rewrite/Brainstorm/Critique land) is the natural moment to add this — those modes are meaningless without it, and the hint surface generalises back to Continue + Expand once it exists. Track as a Phase 4 prerequisite, not a Phase 1 add.
 
 ### 2.2 Open for the engineer-in-Phase-1
 
