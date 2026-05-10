@@ -25,7 +25,7 @@ A **local-LLM-powered fiction-writing app for macOS**, built on the same kobold 
 
 | # | Loom item | Status | Phase | Pointer |
 |---|---|---|---|---|
-| L0 | Phase 0 — research + design docs | ✅ landing 2026-05-10 | 0 | this doc + [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) + [`LOOM_MEMORY.md`](LOOM_MEMORY.md) (memory deep-dive) + [`LOOM_FANFIC.md`](LOOM_FANFIC.md) (fanfic-mode feature) + [`LOOM_NSFW.md`](LOOM_NSFW.md) (heavy-NSFW posture) |
+| L0 | Phase 0 — research + design docs | ✅ landing 2026-05-10 | 0 | this doc + [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) + [`LOOM_MEMORY.md`](LOOM_MEMORY.md) (memory deep-dive) + [`LOOM_FANFIC.md`](LOOM_FANFIC.md) (fanfic-mode feature) + [`LOOM_NSFW.md`](LOOM_NSFW.md) (heavy-NSFW posture) + [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) (live-captured UI prior art driving design language §14 updates) |
 | L1 | Editor MVP (single-window, NSTextView, kobold wired, Continue + Expand, .md export) | ⏳ next | 1 | [`LOOM_PHASE1_EDITOR_MVP.md`](LOOM_PHASE1_EDITOR_MVP.md) |
 | L2 | Story Bible v1 (Characters + Settings + basic Timeline; injection into prompts) | pending | 2 | [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md), [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) |
 | L3 | Hierarchical structure + navigation (Project tree → Parts → Chapters → Scenes; Corkboard view; word counts) | pending | 3 | TBD |

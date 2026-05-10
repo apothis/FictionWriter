@@ -303,7 +303,7 @@ The creator window is the proving ground for this contract. If the design langua
 
 Everything below is **new for Loom** — surfaces that don't exist in RPClient and require their own anatomy. The §1–§13 contract still holds; this section specifies *application*, not new tokens.
 
-Citations to research findings reference [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) — bracketed identifiers like `[J1]`, `[A5]`, `[E1]` map to that document's source list.
+Citations to research findings reference [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) — bracketed identifiers like `[J1]`, `[A5]`, `[E1]` map to that document's source list. **Visual-pattern decisions in §14.4–§14.6 reference [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) for the live-captured prior art they derive from.**
 
 ### 14.1 Application contract for Loom surfaces
 
@@ -376,19 +376,39 @@ The single most important surface in Loom.
 
 **Markdown rendering.** **Off by default in the editor** — fiction prose is plain text. A "Preview" mode (`⌘⇧P`) renders markdown for export-shape preview; not the editing surface. Headers (`# Chapter Twelve`) display as plain text in the editor.
 
-**Generation tray** (bottom-pinned, in the editor pane below the text view, not the window status strip):
+**Generation tray** (bottom-pinned, in the editor pane below the text view, not the window status strip). The bottom tray handles **cursor-driven** modes (Continue) — modes that work without a selection. Selection-driven modes use the floating selection toolbar (§14.4.1, new) instead.
 
 ```
 ┌─ Generation tray ─────────────────────────────────────────────────────────┐
-│ [Continue ↪] [Expand ⤢] [Rewrite ✎] [Brainstorm ✦] [Critique ◐] [⋯ more] │
+│ [Continue ↪] [Brainstorm ✦] [Critique ◐] [⋯ more]                         │
 │                                                                            │
 │  ▸ History ⓘ                                          last gen: 1.2k tok  │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- Mode buttons: `regular` rounded-rect, `headline` text, SF Symbol (medium), single accent only when **focus is in the editor and the mode would do something** (selection-required modes like Rewrite are tertiary-tinted when no selection).
+- Mode buttons: `regular` rounded-rect, `headline` text, SF Symbol (medium), single accent only when **focus is in the editor and the mode would do something**. Selection-required modes (Rewrite / Expand / Describe) live in the floating selection toolbar instead, not here.
 - The **History disclosure** below the buttons expands inline (180ms easeOut) to reveal the chiclets for the last generation: chips for "20k recent prose · 2 character bible entries · author's note · style sheet" — clickable per chip to open the source.[A5] This is the load-bearing transparency feature.
-- **Token estimate** on the trailing edge: pre-computed estimate of what will be sent if the user clicks the highlighted mode. Updates on selection change. Monospace per §11.
+- **Token estimate** on the trailing edge: pre-computed estimate of what will be sent if the user clicks the highlighted mode. Updates on cursor change. Monospace per §11.
+
+#### 14.4.1 Inline floating selection toolbar (NEW — live-captured Sudowrite + Novelcrafter pattern, [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §B.1.1, §B.2.6, §D.2)
+
+When prose is selected in the editor, a floating capsule toolbar fades in (120ms `linear`), anchored above the selection. It combines formatting and AI-generation controls — the convergent pattern from both Sudowrite and Novelcrafter.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 12 words · B I U S H 〝 H¶ • | Rewrite ↻  Expand ⤢  Describe 👁  ⋯ │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+- **Word-count chip** leading-most: `caption1` monospace (Novelcrafter pattern). Updates live.
+- **Formatting cluster**: Bold / Italic / Underline / Strike / Highlight / Quote / Heading / List icons (matching `Markdown.swift` capabilities). Phase 1 ships these.
+- **Visual separator** (`|` divider).
+- **AI-mode cluster**: selection-driven modes only (Rewrite / Expand / Describe). Phase 4 ships when modes wire up.
+- **Overflow** (`⋯`): rarely-used modes (Show-don't-tell, Bridge, future additions).
+
+Capsule shape; `controlBackgroundColor` background with subtle shadow; positioned via `NSTextView`'s selection-rect with smart-flip-on-clip logic (anchor below selection if no room above).
+
+Reveal: 120ms fade-in on selection-non-empty; 100ms fade-out on selection-empty. Suppressed during typing-into-selection (ghost-text path).
 
 **Empty editor state** (new scene, no prose): one centred suggestion: "Start typing — or paste a sketch and click **Expand**." `secondaryLabelColor`, `body`. No placeholder ghost text inside the field (per §4 placeholder vs hint distinction).
 
@@ -396,21 +416,49 @@ The single most important surface in Loom.
 
 Tabbed (RPClient inspector pattern, §6 anti-pattern note). Tabs across the top: **Bible · History · Notes**.
 
-#### 14.5.1 Bible tab
+#### 14.5.1 Bible tab — list-detail two-pane (UPDATED 2026-05-10 from live Novelcrafter capture)
 
-The Story Bible inspector. Section-shaped per §3 spacing:
+**Original spec was a flat collapsible-disclosure stack. Updated spec adopts Novelcrafter's list-detail two-pane** — materially better for browsing entities at scale ([`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §B.2.1, §D.1).
 
-- **Characters** — list of cards, click to expand inline; each card shows name + role + a 2-line description preview. Edit-in-place on click (Notion pattern §11).
-- **Settings** — the world's locations.
-- **Objects** — significant objects.
-- **Timeline** (Phase 3+) — chronological event list.
-- **Style** (Phase 5) — style sheet.
+Layout (within the Bible tab of the right inspector):
 
-Each section has an `xl` gap; section headers in `title3` (15pt). Sections are collapsible (RPClient disclosure pattern, §11).
+```
+┌─ Bible inspector ─────────────────────────────────────────┐
+│ [ All 16 · Characters 8 · Settings 4 · Objects 3 · ... ]  │  ← filter tab strip
+├───────────────────────────────────────────────────────────┤
+│ ╭──────────────────╮ ╭──────────────────────────────────╮ │
+│ │ Characters     + │ │ [Avatar 32pt] Sherlock Holmes  ⋯ │ │
+│ │  ▸ Sherlock H.   │ │               Protagonist        │ │
+│ │  ▸ John Watson   │ │ ━━━─────━━━━━─────  18 mentions │ │  ← sparkline
+│ │  ▸ Sigerson      │ │                                  │ │
+│ │ Settings       + │ │ Description Knowledge Relations  │ │  ← per-entity tabs
+│ │  ▸ 221B Baker St │ │ Mentions Notes                   │ │
+│ │  ▸ Reichenbach   │ │ ─────────────────────────────────│ │
+│ │ Objects        + │ │                                  │ │
+│ │  ▸ Pipe          │ │ [tab content]                    │ │
+│ │ ...              │ │                                  │ │
+│ ╰──────────────────╯ ╰──────────────────────────────────╯ │
+└───────────────────────────────────────────────────────────┘
+```
 
-**Adding entities.** `+` button at the section header opens an inline editor (no modal sheet — Notion pattern §11). New entity gets a default name; cursor lands in the description field.
+- **Filter tab strip** at top: All · Characters · Settings · Objects · Factions · Lorebook · Timeline · Style · Suggestions. Counts in `caption1` after the label. Click filters the list.
+- **Left list** (40% of inspector width, scrollable): category sections with `+` add-button; entities under each. Selected entity highlighted with 2pt accent rule.
+- **Right detail** (60% of inspector width, scrollable): the selected entity.
+  - **Header**: 32pt avatar (initial-circle if no portrait per [`SpeakerColor.swift`](Sources/RPClientCore/UI/SpeakerColor.swift)) · name (`title2` / 17pt) · role chip (`caption1` / 10pt secondary) · `⋯` overflow.
+  - **Mention sparkline** (Phase 4+): thin horizontal bar with marker dots at each scene mentioning the entity; numeric label `N mentions` trailing. Click a marker → editor scrolls to that scene. Updates as the manuscript is edited (debounced).
+  - **Per-entity sub-tabs**: `Description / Knowledge ledger / Relationships / Mentions / Notes`. Knowledge ledger is the [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) §3 schema, rendered inline.
+  - **Tab content** edits in place (Notion pattern §11) — click to enter edit; click outside or `Esc` to commit.
 
-**Entity references in prose.** When the user types `@charname` in the editor, an autocomplete popover offers matching entities; selecting one inserts the entity's display name and creates a *reference link* (markdown `[Mia](#char/abc-123)`). The link is invisible in the rendered editor (links use `labelColor`, not the system blue link color — fiction prose shouldn't have visible hyperlinks). On generation, links resolve to entity references in the prompt.
+**Adding entities.** `+` at any category section header creates a new entity in that category, lands selection on the right pane, cursor in the name field.
+
+**Entity references in prose.** When the user types `@<name>` in the editor:
+
+1. Autocomplete popover lists matching entities by name + alias.
+2. Selecting one inserts the display name; the underlying markdown stores a link `[Mia](#entity/<uuid>)` — invisible link colour (uses `labelColor`, not the system blue) so fiction prose doesn't show hyperlinks.
+3. **Hover preview popover** (Novelcrafter B.2.4 pattern, [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §D.3): hovering an entity link in the editor shows a popover with the entity's avatar + name + role + first 200 chars of description + buttons `[Open] [← Open in left split] [→ Open in inspector]`.
+4. On generation, links resolve to entity references in the prompt (their full bible content gets injected per [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §4.1 BIBLE-keyed layer).
+
+Phase 1 ships only minimal-character editing inline (no list-detail two-pane yet); Phase 2 ships the full inspector with the layout above.
 
 #### 14.5.2 History tab
 
@@ -430,15 +478,18 @@ A free-form notepad scoped to the project. Plain text, persists with project. Fo
 
 ### 14.6 Generation modes — visual identity
 
-When a generation finishes, the inserted prose is displayed with a **temporary acceptance state**:
+When a generation finishes, the inserted prose is displayed with a **temporary acceptance state** (refined 2026-05-10 from live Sudowrite capture, [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §B.1.2, §D.4):
 
 - 6pt accent rule on the leading edge of the inserted block (matches RPClient §4.0.d variants pill — same accent system).
+- **Subtle background tint** on the inserted block: `controlAccentColor` at ~6% alpha. Visible enough to clearly delineate AI prose during review; subtle enough not to dominate. Combined with the rule, the AI block is unmistakable during the review window.
 - Three buttons floating just above the inserted block: **Accept (⏎)** · **Reject (⌫)** · **Keep & redo (⌘⇧R)**.
-- After acceptance: the rule fades out over 180ms easeOut, the buttons disappear, the prose is just prose. **No permanent badge** — this matches §1.5 (progressive disclosure for the non-essential).
+- **After acceptance**: the rule + tint fade out over 180ms easeOut, the buttons disappear, the prose is just prose. **No permanent badge** — this matches §1.5 (progressive disclosure for the non-essential).
 
 If the user types into the inserted block before accepting, the acceptance state implicitly resolves to Accept (per Cursor / GitHub Copilot ghost-text convention).
 
-Multi-output (when the model returns N candidates) is rendered as horizontally-paged variants with a `◀ 1/3 ▶` pill below the inserted block (matches RPClient §4.0.d variants pill verbatim — use the same `CapsulePill` primitive once Loom inherits it).
+Multi-output (when the model returns N candidates) is rendered as horizontally-paged variants with a `◀ 1/3 ▶` pill below the inserted block (matches RPClient §4.0.d variants pill verbatim — use the same `CapsulePill` primitive once Loom inherits it). [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §C.9 confirms this is the convergent pattern (ChatGPT, Claude, RPClient).
+
+**Visual differentiation at non-acceptance:** No permanent visual distinction between AI-written and human-written prose after acceptance. This is the §1.5 progressive-disclosure principle. The History tab ([§14.5.2](#1452-history-tab)) preserves the *record* of what came from AI; the editor doesn't display it.
 
 ### 14.7 Empty project state
 
@@ -481,6 +532,49 @@ Multi-modal action surfacing per §11. Loom-specific shortcut budget (in additio
 | `⌘⌥\|` | Toggle sidebar |
 | `⌘⇧F` | Project-wide search |
 | `⌘⇧P` | Toggle markdown preview mode |
+
+### 14.9.1 Project Settings pill-picker block (NEW from live Novelcrafter capture)
+
+The Project Settings inspector area (Phase 2+) exposes the project's structural defaults as **horizontal pill pickers** ([`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §B.2.12, §D.6):
+
+```
+POV          [ 1st · 2nd · 3rd · 3rd-Limited · 3rd-Omniscient ]
+Tense        [ Past · Present ]
+Direction    [ Literary · Mainstream · Romance · Erotica · Porn ]   ← LOOM_NSFW.md §3.1
+Vocabulary   [ Clinical · Literary · Earthy · Crude · Mixed ]
+Explicitness [ Fade-to-Black · Suggestive · On-Screen · Graphic · Extreme ]
+```
+
+Each row: label (`headline` semibold, leading) + pill-segmented control (`controlAccentColor` highlight on selected). Per-scene override available via Scene metadata popover (Phase 3).
+
+Phase 2 ships POV + Tense pickers; Direction + Vocabulary + Explicitness land alongside [`LOOM_NSFW.md`](LOOM_NSFW.md) §3 schema.
+
+### 14.9.2 Focus Mode (NEW — confirmed across all surveyed tools)
+
+Per [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §D.7. Toggle: `⌘⇧F` (or `⌘.` to match Scrivener Composition Mode convention; user preference).
+
+When active:
+- Sidebar collapses (animation 220ms `easeInOut`).
+- Inspector collapses (same).
+- Toolbar fades to a thin auto-hiding strip (revealed on cursor-near-top hover, 100ms `linear`).
+- Editor expands to fill available width (still capped at 720pt content max).
+- Optional preference: **current-paragraph emphasis** — paragraphs other than the one containing the cursor dim to `tertiaryLabelColor`. iA Writer pattern; off by default.
+
+Re-toggle restores layout. Status strip remains visible at the bottom (word count is too useful to hide).
+
+Phase 1 candidate (cheap to implement); Phase 2 floor.
+
+### 14.9.3 Marker Timeline beside Binder (NEW — Phase 3+)
+
+From Novelcrafter live capture ([`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §B.2.8, §D.8): a thin vertical color-coded strip beside the Binder showing scene lengths in proportion across the manuscript.
+
+- Width: 16pt fixed.
+- Each scene rendered as a colored block; height ∝ word count; color encodes status (`todo` / `draft` / `revised` / `final` per [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §2 `SceneStatus`).
+- Hover any block: tooltip with scene title + chapter + word count.
+- Click a block: scrolls Binder + editor to that scene.
+- Toggle in Settings: "Show length timeline beside Binder" (off by default; on for users who manage long projects).
+
+Phase 3+. Off in Phase 1-2; the data model already carries the metadata.
 
 ### 14.10 Anti-patterns to avoid (Loom-specific)
 
