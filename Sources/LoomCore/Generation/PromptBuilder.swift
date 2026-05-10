@@ -153,7 +153,7 @@ public enum PromptBuilder {
         let above = layers.filter { $0.aboveCache }
         let below = layers.filter { !$0.aboveCache }
         let systemBlock = above.map(\.content).filter { !$0.isEmpty }.joined(separator: "\n\n")
-        let userBlock = below.map(\.content).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let userBlock = below.map { $0.userBlockContent ?? $0.content }.filter { !$0.isEmpty }.joined(separator: "\n\n")
 
         // 4) Compute prefill: template-specific suppression only
         //    (`<think>\n\n</think>\n\n` for Qwen ChatML); empty for
@@ -200,6 +200,13 @@ public enum PromptBuilder {
         var kind: ChicletKind
         var label: String
         var content: String
+        /// If non-nil, used instead of `content` when joining the
+        /// user-message block. Use case: the Author's Note layer
+        /// when spliced into the recent-prose layer — we still
+        /// want a chiclet (so set `content` to the AN bracket) but
+        /// we don't want the bracket appearing twice in the
+        /// assembled prompt (so set `userBlockContent` to "").
+        var userBlockContent: String? = nil
         var tokens: Int
         var aboveCache: Bool
         var sourceId: UUID?
@@ -259,26 +266,59 @@ public enum PromptBuilder {
         // Cursor/Selection. (Current-scene anchor folded into AN per
         // the §A3 simplification for Phase 1.)
 
-        let recentProse = buildRecentProseLayer(context)
+        // Recent prose + Author's Note. The AN is spliced INTO the
+        // recent-prose content at `authorsNoteDepthLines` lines back
+        // from the cursor (NovelAI A/N convention — lower in prompt
+        // = stronger steering). We still record an Author's Note
+        // chiclet for transparency, but it carries empty userBlock
+        // content so the bracket doesn't appear twice in the
+        // assembled prompt.
+        let an = context.project.settings.authorsNote
+        let depthLines = context.project.settings.authorsNoteDepthLines
+        var recentProse = buildRecentProseLayer(context)
+        let trimmedAN = an.trimmingCharacters(in: .whitespacesAndNewlines)
+        let willInjectAN = !trimmedAN.isEmpty && recentProse != nil && depthLines > 0
+        if willInjectAN, var proseLayer = recentProse {
+            let spliced = AuthorsNoteInjector.inject(
+                authorsNote: trimmedAN,
+                into: proseLayer.content,
+                depthLines: depthLines
+            )
+            proseLayer.content = spliced
+            proseLayer.tokens = TokenEstimator.estimate(spliced)
+            recentProse = proseLayer
+        }
         if let layer = recentProse {
             layers.append(layer)
         }
-
-        let an = context.project.settings.authorsNote
-        if !an.isEmpty {
-            // Bracketed convention from AI Dungeon / web-fiction model
-            // prior. For Phase 1 the current-scene anchor is folded
-            // into the AN (per §A3 simplification).
-            let formatted = "[\(an)]"
-            layers.append(Layer(
-                kind: .authorsNote,
-                label: "Author's Note",
-                content: formatted,
-                tokens: TokenEstimator.estimate(formatted),
-                aboveCache: false,
-                sourceId: nil,
-                evictionPriority: .max
-            ))
+        if !trimmedAN.isEmpty {
+            let bracket = "[\(trimmedAN)]"
+            if willInjectAN {
+                // AN already inside the prose — chiclet-only layer.
+                layers.append(Layer(
+                    kind: .authorsNote,
+                    label: "Author's Note (spliced)",
+                    content: bracket,
+                    userBlockContent: "",
+                    tokens: 0,
+                    aboveCache: false,
+                    sourceId: nil,
+                    evictionPriority: .max
+                ))
+            } else {
+                // Fallback: no recent prose to splice into, or
+                // depthLines == 0. Keep the legacy "AN as own layer"
+                // path so the AN still reaches the model.
+                layers.append(Layer(
+                    kind: .authorsNote,
+                    label: "Author's Note",
+                    content: bracket,
+                    tokens: TokenEstimator.estimate(bracket),
+                    aboveCache: false,
+                    sourceId: nil,
+                    evictionPriority: .max
+                ))
+            }
         }
 
         // Per-call instruction — one-shot ad-hoc steering for this

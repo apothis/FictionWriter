@@ -32,6 +32,7 @@ let suites: [TestSuite] = [
     phase1RecentProjectsTests(),
     phase1ProjectCorruptionTests(),
     phase1ThinkBlockStripperTests(),
+    phase1AuthorsNoteInjectorTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

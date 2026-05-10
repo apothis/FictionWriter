@@ -101,18 +101,54 @@ func phase1PromptBuilderLayersTests() -> TestSuite {
     }
 
     s.test("Author's Note appears bracketed in the user block") {
-        // Bracketed `[...]` convention from AI Dungeon / web-fiction
-        // model prior. Phase 1 simplification: AN sits in the user
-        // block; story-mode Continue puts prose in the prefill so the
-        // chat-turn ordering (user → assistant) places AN before
-        // prose. True depth-N injection within the prefill (so AN
-        // sits ~1 paragraph above the cursor) is Phase 2 polish.
         var project = Project(title: "T")
         project.settings.authorsNote = "terse style; preceding prose authoritative"
         let scene = Scene.empty(id: UUID(), title: "Scene 1")
         let context = makeContinueContext(project: project, scene: scene, prose: "Some prose here.")
         let result = PromptBuilder.build(context)
         try expectTrue(result.userBlock.contains("[terse style; preceding prose authoritative]"))
+    }
+
+    s.test("Author's Note is spliced INTO the recent prose, not appended as a separate trailing layer") {
+        // NovelAI A/N convention — placing the AN inside the prose
+        // close to the cursor materially sharpens its effect on the
+        // next-token distribution. With depthLines = 2, the AN
+        // should sit so there are at least 2 lines of prose AFTER
+        // the AN bracket but before the mode instruction.
+        var project = Project(title: "T")
+        project.settings.authorsNote = "AN-MARKER"
+        project.settings.authorsNoteDepthLines = 2
+        let scene = Scene.empty(id: UUID(), title: "Scene 1")
+        let prose = "Para one line A.\nPara one line B.\n\nPara two line A.\nPara two line B."
+        let ctx = makeContinueContext(project: project, scene: scene, prose: prose)
+        let result = PromptBuilder.build(ctx)
+        let bracketIdx = try expectNotNil(result.userBlock.range(of: "[AN-MARKER]")?.lowerBound)
+        let afterBracket = result.userBlock[bracketIdx...]
+        // The last two lines of the original prose should land AFTER the bracket.
+        try expectTrue(afterBracket.contains("Para two line B."))
+    }
+
+    s.test("Spliced Author's Note appears exactly once in the user block (no duplication)") {
+        var project = Project(title: "T")
+        project.settings.authorsNote = "UNIQUE-AN-MARKER"
+        project.settings.authorsNoteDepthLines = 2
+        let scene = Scene.empty(id: UUID(), title: "Scene 1")
+        let prose = "Line one.\nLine two.\nLine three."
+        let ctx = makeContinueContext(project: project, scene: scene, prose: prose)
+        let result = PromptBuilder.build(ctx)
+        let occurrences = result.userBlock.components(separatedBy: "[UNIQUE-AN-MARKER]").count - 1
+        try expectEqual(occurrences, 1, "AN bracket should appear exactly once in userBlock")
+    }
+
+    s.test("Author's Note falls back to standalone layer when depthLines is 0") {
+        var project = Project(title: "T")
+        project.settings.authorsNote = "FALLBACK-AN"
+        project.settings.authorsNoteDepthLines = 0
+        let scene = Scene.empty(id: UUID(), title: "Scene 1")
+        let prose = "Line one.\nLine two."
+        let ctx = makeContinueContext(project: project, scene: scene, prose: prose)
+        let result = PromptBuilder.build(ctx)
+        try expectTrue(result.userBlock.contains("[FALLBACK-AN]"))
     }
 
     s.test("mode instruction differs by mode (Continue vs Expand)") {
