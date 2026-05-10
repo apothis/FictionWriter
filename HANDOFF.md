@@ -1,8 +1,10 @@
 # Loom — Phase 0 Handoff
 
-> **Date:** 2026-05-10. **Status:** Phase 0 (research + design docs) complete; ready for Phase 1 implementation.
+> **Date:** 2026-05-10. **Status: Phase 0 complete.** All 13 design docs landed; UI research pass against gold-standard prior art done; design language §14 locked. Ready for Phase 1 implementation against [`LOOM_PHASE1_EDITOR_MVP.md`](LOOM_PHASE1_EDITOR_MVP.md).
 >
-> This handoff exists so a subsequent context can pick up Phase 1 against [`LOOM_PHASE1_EDITOR_MVP.md`](LOOM_PHASE1_EDITOR_MVP.md) without re-reading the full design tree.
+> This handoff is the entry point for a subsequent context picking up Phase 1. Read **§6 ("Recommended Phase 1 entry checklist")** first; it's the smallest working set to internalise before sub-step 1.a.
+>
+> **Repo**: `/Volumes/SSD1/Code/FictionWriter` · pushed to [github.com/apothis/FictionWriter](https://github.com/apothis/FictionWriter) · branch `main`. RPClient (the source of inherited plumbing) at `/Volumes/SSD1/Code/RPClient`.
 
 ---
 
