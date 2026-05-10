@@ -31,9 +31,8 @@ public final class AcceptanceTitlebarAccessory: NSTitlebarAccessoryViewControlle
         keepRedoButton = Self.makeButton(title: "Keep & Redo ⌘⇧R")
         super.init(nibName: nil, bundle: nil)
         self.layoutAttribute = .top
-        // Hide initially; editor reveals when generation lands in
-        // the acceptance window.
-        self.isHidden = true
+        // isHidden is set in loadView (see below); setting it here,
+        // before the view is loaded, did not stick on macOS 26.
     }
 
     @available(*, unavailable) public required init?(coder: NSCoder) { nil }
@@ -88,6 +87,9 @@ public final class AcceptanceTitlebarAccessory: NSTitlebarAccessoryViewControlle
         self.view = host
         let height: CGFloat = 36
         host.heightAnchor.constraint(equalToConstant: height).isActive = true
+        // isHidden is set by the editor AFTER addTitlebarAccessoryViewController
+        // — AppKit resets isHidden during attachment, so setting it
+        // anywhere inside the accessory (init or loadView) does not stick.
     }
 
     /// Slide the bar in. Editor calls this when the acceptance machine

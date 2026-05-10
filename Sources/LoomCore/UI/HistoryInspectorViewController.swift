@@ -37,7 +37,7 @@ public final class HistoryInspectorViewController: NSViewController {
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
 
-        let stack = NSStackView()
+        let stack = FlippedStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = DesignTokens.Spacing.sm

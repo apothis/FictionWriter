@@ -300,8 +300,13 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
               let accessory = acceptanceAccessory
         else { return }
         window.addTitlebarAccessoryViewController(accessory)
+        // Hide AFTER attach — setting isHidden inside the accessory's
+        // init or loadView did not stick on macOS 26; the bar stayed
+        // visible at launch and ate clicks at the top of the inspector
+        // pane. Setting it post-attach is the only reliable point.
+        accessory.isHidden = true
         acceptanceAccessoryAttached = true
-        DebugLog.shared.write("[editor] acceptance bar: attached to window titlebar")
+        DebugLog.shared.write("[editor] acceptance bar: attached + hidden")
     }
 
     // MARK: - Session ↔ text-storage sync

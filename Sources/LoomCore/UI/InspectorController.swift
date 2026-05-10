@@ -1,5 +1,14 @@
 import AppKit
 
+/// NSStackView that flips its coordinate system so content stacks
+/// from the TOP down inside an NSScrollView documentView. The default
+/// non-flipped coordinate system anchors origin at the bottom-left,
+/// which makes short content cling to the scroll view's bottom edge
+/// with a big empty gap above it.
+final class FlippedStackView: NSStackView {
+    override var isFlipped: Bool { true }
+}
+
 /// Tiny "Saved" label that pops in instantly on each writeback and
 /// fades out shortly after. Coalesces rapid keystrokes — one indicator
 /// per inspector tab is enough; the per-keystroke writeback path simply
@@ -52,8 +61,9 @@ final class SaveIndicator: NSView {
 /// reopen restores the user's context.
 public final class InspectorController: NSViewController {
     public let session: ProjectSession
-    private var segmented: NSSegmentedControl!
+    private var tabButtons: [InspectorTab: NSButton] = [:]
     private var contentContainer: NSView!
+    private var tabRowTopConstraint: NSLayoutConstraint?
     private var bibleVC: BibleInspectorViewController!
     private var historyVC: HistoryInspectorViewController!
     private var notesVC: NotesInspectorViewController!
@@ -76,28 +86,64 @@ public final class InspectorController: NSViewController {
         container.wantsLayer = true
         container.layer?.backgroundColor = DesignTokens.Background.window.cgColor
 
-        let seg = NSSegmentedControl(labels: ["Bible", "History", "Notes"], trackingMode: .selectOne, target: self, action: #selector(tabChanged(_:)))
-        seg.translatesAutoresizingMaskIntoConstraints = false
-        seg.controlSize = .small
-        seg.font = DesignTokens.Typography.subheadline
-        self.segmented = seg
+        // Three NSButtons styled as tabs. CRITICAL: target + action MUST
+        // be passed to NSButton(title:target:action:) at construction —
+        // setting them after via `button.target = self; button.action = ...`
+        // does NOT dispatch clicks on macOS 26 (clicks hit-test the
+        // button correctly via the diagnostic monitor, but the action
+        // selector is never invoked). The "+ Character" button right
+        // below works because it wires target/action at construction.
+        let bibleBtn = NSButton(title: "Bible", target: self, action: #selector(bibleTabClicked))
+        let historyBtn = NSButton(title: "History", target: self, action: #selector(historyTabClicked))
+        let notesBtn = NSButton(title: "Notes", target: self, action: #selector(notesTabClicked))
+        for b in [bibleBtn, historyBtn, notesBtn] {
+            // .recessed + .pushOnPushOff gives the classic macOS tab
+            // appearance: the selected tab visually depresses (toggle
+            // state). showTab(_:) flips `button.state` to .on for the
+            // active tab, .off for the others.
+            b.bezelStyle = .recessed
+            b.setButtonType(.pushOnPushOff)
+            b.controlSize = .small
+            b.font = DesignTokens.Typography.subheadline
+            b.translatesAutoresizingMaskIntoConstraints = false
+        }
+        tabButtons[.bible] = bibleBtn
+        tabButtons[.history] = historyBtn
+        tabButtons[.notes] = notesBtn
+
+        let tabRow = NSStackView(views: [bibleBtn, historyBtn, notesBtn])
+        tabRow.orientation = .horizontal
+        tabRow.spacing = DesignTokens.Spacing.xs
+        tabRow.distribution = .fillEqually
+        tabRow.translatesAutoresizingMaskIntoConstraints = false
 
         let content = NSView()
         content.translatesAutoresizingMaskIntoConstraints = false
         self.contentContainer = content
 
-        container.addSubview(seg)
+        container.addSubview(tabRow)
         container.addSubview(content)
 
+        // The window uses .fullSizeContentView so the splitVC's content
+        // extends INTO the titlebar area. AppKit hijacks clicks in
+        // the top ~28pt of the window for window-drag, regardless of
+        // what control sits there — meaning the tab buttons hit-test
+        // correctly but mouseDown is never delivered. Position the
+        // tab row using the WINDOW'S contentLayoutGuide, which AppKit
+        // anchors below the titlebar's drag region. (The sidebar pane
+        // is auto-inset by the `sidebarWithViewController` style; the
+        // regular inspector pane needs this manually.)
+        let tabRowTop = tabRow.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.Spacing.sm)
         NSLayoutConstraint.activate([
-            seg.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.Spacing.sm),
-            seg.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.sm),
-            seg.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.sm),
-            content.topAnchor.constraint(equalTo: seg.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            tabRowTop,
+            tabRow.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.sm),
+            tabRow.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.sm),
+            content.topAnchor.constraint(equalTo: tabRow.bottomAnchor, constant: DesignTokens.Spacing.sm),
             content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             content.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
+        self.tabRowTopConstraint = tabRowTop
 
         bibleVC = BibleInspectorViewController(session: session)
         historyVC = HistoryInspectorViewController(session: session)
@@ -109,11 +155,14 @@ public final class InspectorController: NSViewController {
         let initial = session.project.selectedInspectorTab ?? .bible
         showTab(initial)
 
-        // Refresh bible tab when characters change elsewhere (Phase 2+
-        // — Phase 1 inspector is the only mutator, but the cost of
-        // observing is low and future-proofs the wiring).
+        // Reload bible on project replace (open / new). We do NOT
+        // observe didChange — that fires on every keystroke into the
+        // description text view (via updateCharacter → markChanged),
+        // and a reload destroys + recreates the row mid-edit, killing
+        // first responder. The inspector is the only mutator within
+        // a session, so local reload() after add/delete is sufficient.
         observer = NotificationCenter.default.addObserver(
-            forName: ProjectSession.didChangeNotification,
+            forName: ProjectSession.didReplaceNotification,
             object: session,
             queue: .main
         ) { [weak self] _ in
@@ -121,23 +170,63 @@ public final class InspectorController: NSViewController {
         }
     }
 
-    @objc private func tabChanged(_ sender: NSSegmentedControl) {
-        let tabs: [InspectorTab] = [.bible, .history, .notes]
-        let index = sender.indexOfSelectedItem
-        guard index >= 0, index < tabs.count else { return }
-        showTab(tabs[index])
+    public override func viewDidAppear() {
+        super.viewDidAppear()
+        // Re-anchor the tab row to the window's contentLayoutGuide so
+        // the tabs sit BELOW the titlebar drag region. With
+        // .fullSizeContentView, AppKit hijacks clicks in the top
+        // ~28pt for window-drag — without this, tab clicks hit-test
+        // correctly but the action is never delivered to the button.
+        guard let window = view.window,
+              let oldTop = tabRowTopConstraint,
+              let tabRow = oldTop.firstItem as? NSView,
+              let layoutGuide = window.contentLayoutGuide as? NSLayoutGuide
+        else { return }
+        oldTop.isActive = false
+        let newTop = tabRow.topAnchor.constraint(equalTo: layoutGuide.topAnchor, constant: DesignTokens.Spacing.sm)
+        newTop.isActive = true
+        tabRowTopConstraint = newTop
+        DebugLog.shared.write("[inspector] tab row re-anchored to contentLayoutGuide")
+    }
+
+    @objc private func bibleTabClicked()   { DebugLog.shared.write("[inspector] tab clicked: bible");   showTab(.bible) }
+    @objc private func historyTabClicked() { DebugLog.shared.write("[inspector] tab clicked: history"); showTab(.history) }
+    @objc private func notesTabClicked()   { DebugLog.shared.write("[inspector] tab clicked: notes");   showTab(.notes) }
+
+    private static func makeTabButton(title: String) -> NSButton {
+        // Exact same pattern as the "+ Character" button two rows down
+        // (which IS visible and IS clickable per live testing). Plain
+        // NSButton, .inline bezel, .small controlSize. No LoomActionButton
+        // subclass, no .recessed bezel, no .pushOnPushOff button type —
+        // those variants had silent failure modes on macOS 26 (either
+        // zero-height rendering or hit-tested-but-no-action-dispatch).
+        let b = NSButton(title: title, target: nil, action: nil)
+        b.bezelStyle = .inline
+        b.controlSize = .small
+        b.font = DesignTokens.Typography.subheadline
+        b.translatesAutoresizingMaskIntoConstraints = false
+        return b
     }
 
     private func showTab(_ tab: InspectorTab) {
         let vc: NSViewController
-        let segIndex: Int
         switch tab {
-        case .bible:    vc = bibleVC;   segIndex = 0
-        case .history:  vc = historyVC; segIndex = 1
-        case .notes:    vc = notesVC;   segIndex = 2
+        case .bible:    vc = bibleVC
+        case .history:  vc = historyVC
+        case .notes:    vc = notesVC
         }
 
-        if current === vc { return }
+        // Update visual selection state across the three tab buttons.
+        // (.recessed bezel + pushOnPushOff button type renders selected
+        // buttons darker.)
+        for (key, button) in tabButtons {
+            button.state = (key == tab) ? .on : .off
+        }
+
+        if current === vc {
+            session.setSelectedInspectorTab(tab)
+            return
+        }
         if let prev = current {
             prev.view.removeFromSuperview()
             prev.removeFromParent()
@@ -152,8 +241,8 @@ public final class InspectorController: NSViewController {
             vc.view.bottomAnchor.constraint(equalTo: contentContainer.bottomAnchor),
         ])
         current = vc
-        segmented.selectedSegment = segIndex
         session.setSelectedInspectorTab(tab)
+        DebugLog.shared.write("[inspector] showTab: \(tab)")
     }
 }
 
@@ -185,7 +274,7 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
 
-        let stack = NSStackView()
+        let stack = FlippedStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = DesignTokens.Spacing.md
@@ -298,16 +387,30 @@ final class BibleCharacterRow {
         name.placeholderString = "Name"
         self.nameField = name
 
+        // Standard programmatic NSTextView-in-NSScrollView setup
+        // (matches EditorViewController's text view). Leaving
+        // translatesAutoresizingMaskIntoConstraints at the default
+        // (true) + setting autoresizingMask = .width lets the
+        // scroll view manage the document view's frame; without
+        // that, the text container stays at default size and clicks
+        // miss the glyph area, making the view appear unresponsive.
         let desc = NSTextView()
         desc.font = DesignTokens.Typography.body
         desc.string = character.description
         desc.isRichText = false
         desc.isEditable = true
+        desc.allowsUndo = true
         desc.isAutomaticTextReplacementEnabled = false
         desc.isAutomaticQuoteSubstitutionEnabled = false
-        desc.translatesAutoresizingMaskIntoConstraints = false
         desc.drawsBackground = false
         desc.textContainerInset = NSSize(width: DesignTokens.Spacing.sm, height: DesignTokens.Spacing.sm)
+        desc.minSize = NSSize(width: 0, height: 0)
+        desc.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        desc.isHorizontallyResizable = false
+        desc.isVerticallyResizable = true
+        desc.autoresizingMask = [.width]
+        desc.textContainer?.widthTracksTextView = true
+        desc.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         self.descriptionView = desc
 
         let descScroll = NSScrollView()
@@ -407,6 +510,10 @@ public final class NotesInspectorViewController: NSViewController, NSTextViewDel
         scroll.hasVerticalScroller = true
         scroll.drawsBackground = false
 
+        // Standard programmatic NSTextView-in-NSScrollView setup
+        // (autoresizingMask + isVerticallyResizable so the scroll view
+        // can manage the document view's frame; without this the text
+        // container stays at default size and clicks miss the glyph area).
         let tv = NSTextView()
         tv.delegate = self
         tv.isRichText = false
@@ -417,6 +524,13 @@ public final class NotesInspectorViewController: NSViewController, NSTextViewDel
         tv.textContainerInset = NSSize(width: DesignTokens.Spacing.md, height: DesignTokens.Spacing.md)
         tv.drawsBackground = true
         tv.backgroundColor = DesignTokens.Background.textInput
+        tv.minSize = NSSize(width: 0, height: 0)
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        tv.isHorizontallyResizable = false
+        tv.isVerticallyResizable = true
+        tv.autoresizingMask = [.width]
+        tv.textContainer?.widthTracksTextView = true
+        tv.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         suppressWriteback = true
         tv.string = session.project.notes
         suppressWriteback = false
