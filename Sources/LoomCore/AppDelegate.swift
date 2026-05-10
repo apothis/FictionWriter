@@ -63,6 +63,111 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: "q"))
         appMenuItem.submenu = appMenu
 
+        // File menu — 1.j.A.
+        let fileMenuItem = NSMenuItem()
+        main.addItem(fileMenuItem)
+        let fileMenu = NSMenu(title: "File")
+
+        let newProject = NSMenuItem(
+            title: "New Project…",
+            action: #selector(newProjectClicked),
+            keyEquivalent: "n")
+        newProject.keyEquivalentModifierMask = [.command, .shift]
+        newProject.target = self
+        fileMenu.addItem(newProject)
+
+        let openProject = NSMenuItem(
+            title: "Open Project…",
+            action: #selector(openProjectClicked),
+            keyEquivalent: "o")
+        openProject.target = self
+        fileMenu.addItem(openProject)
+
+        fileMenu.addItem(NSMenuItem.separator())
+
+        let saveAs = NSMenuItem(
+            title: "Save As…",
+            action: #selector(saveAsClicked),
+            keyEquivalent: "s")
+        saveAs.keyEquivalentModifierMask = [.command, .shift]
+        saveAs.target = self
+        fileMenu.addItem(saveAs)
+
+        fileMenu.addItem(NSMenuItem.separator())
+
+        let close = NSMenuItem(
+            title: "Close",
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "w")
+        fileMenu.addItem(close)
+
+        fileMenuItem.submenu = fileMenu
+
         NSApp.mainMenu = main
+    }
+
+    // MARK: - File menu actions
+
+    @objc private func newProjectClicked() {
+        let panel = NSSavePanel()
+        panel.title = "Create New Loom Project"
+        panel.message = "Choose a location for your new .loom project bundle."
+        panel.nameFieldStringValue = "MyNovel.loom"
+        panel.canCreateDirectories = true
+        panel.allowedContentTypes = []
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.tryCreateProject(at: url)
+        }
+    }
+
+    @objc private func openProjectClicked() {
+        let panel = NSOpenPanel()
+        panel.title = "Open Loom Project"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.treatsFilePackagesAsDirectories = false
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.tryOpenProject(at: url)
+        }
+    }
+
+    @objc private func saveAsClicked() {
+        let panel = NSSavePanel()
+        panel.title = "Save Loom Project As"
+        panel.message = "Choose a location to save this project's .loom bundle."
+        let suggested = AppState.shared.currentSession.project.title.isEmpty
+            ? "MyNovel.loom"
+            : "\(AppState.shared.currentSession.project.title).loom"
+        panel.nameFieldStringValue = suggested
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                let title = url.deletingPathExtension().lastPathComponent
+                try AppState.shared.saveCurrentSessionAs(url: url, title: title)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+        }
+    }
+
+    private func tryCreateProject(at url: URL) {
+        do {
+            let title = url.deletingPathExtension().lastPathComponent
+            try AppState.shared.createProject(at: url, title: title)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    private func tryOpenProject(at url: URL) {
+        do {
+            try AppState.shared.openProject(at: url)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
     }
 }

@@ -22,6 +22,7 @@ let suites: [TestSuite] = [
     phase1InstructTemplateTests(),
     phase1RecentProseWindowTests(),
     phase1PromptBuilderLayersTests(),
+    phase1PersistedSessionTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

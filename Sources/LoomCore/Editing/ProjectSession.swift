@@ -18,6 +18,14 @@ public final class ProjectSession {
     /// the sidebar on row selection. May be nil briefly (empty project,
     /// or after deleting the last scene).
     public private(set) var currentSceneId: UUID?
+    /// On-disk location of the project, or nil for in-memory ("Untitled")
+    /// sessions. Set by AppState on create / open / save-as. When nil,
+    /// `flushSave` is a no-op.
+    public var url: URL?
+    /// True iff there's been a mutation since the last successful save
+    /// (or since session creation, for never-saved sessions). Cleared
+    /// by `flushSave`.
+    public private(set) var isDirty: Bool = false
 
     /// Posted on every mutation. The notification's `object` is the
     /// session that changed.
@@ -27,9 +35,32 @@ public final class ProjectSession {
     /// for this and swaps its text-storage to the new scene's prose.
     public static let selectionDidChangeNotification = Notification.Name("LoomProjectSession.selectionDidChange")
 
-    public init(project: Project, scenes: [UUID: Scene] = [:]) {
+    /// Posted after `replace(...)` swaps the entire project. Lets UIs
+    /// (sidebar, editor, inspector) re-render against the new content.
+    public static let didReplaceNotification = Notification.Name("LoomProjectSession.didReplace")
+
+    /// Posted on transitions of `isDirty` (clean→dirty AND dirty→clean).
+    /// Distinct from `didChange` so the window-title document-edited
+    /// indicator refreshes without forcing the sidebar to reload.
+    public static let didChangeDirtyStateNotification = Notification.Name("LoomProjectSession.didChangeDirtyState")
+
+    private var saveDebounceTimer: Timer?
+    private let storage: ProjectStorage
+
+    public init(
+        project: Project,
+        scenes: [UUID: Scene] = [:],
+        url: URL? = nil,
+        storage: ProjectStorage = ProjectStorage()
+    ) {
         self.project = project
         self.scenes = scenes
+        self.url = url
+        self.storage = storage
+    }
+
+    deinit {
+        saveDebounceTimer?.invalidate()
     }
 
     // MARK: - Sidebar mutations
@@ -67,11 +98,13 @@ public final class ProjectSession {
 
     /// Update the prose body of a scene. Called by the editor on text
     /// change. Doesn't bump the changeCounter — the editor already has
-    /// the new text, and the sidebar doesn't render prose.
+    /// the new text, and the sidebar doesn't render prose. Does mark
+    /// the session dirty so auto-save picks it up.
     public func updateProse(id: UUID, prose: String) {
         guard var scene = scenes[id] else { return }
         scene.prose = prose
         scenes[id] = scene
+        markDirty()
     }
 
     public func renameScene(id: UUID, to title: String) {
@@ -156,10 +189,80 @@ public final class ProjectSession {
     private func markChanged() {
         changeCounter += 1
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+        markDirty()
+    }
+
+    /// Marks the session dirty + schedules a debounced auto-save.
+    /// Used by structural mutations (markChanged path) AND by prose
+    /// updates that don't need a UI fan-out but still need to persist.
+    /// Posts `didChangeDirtyStateNotification` only on the clean→dirty
+    /// transition (not on every dirty mutation).
+    private func markDirty() {
+        let wasClean = !isDirty
+        isDirty = true
+        scheduleAutoSave()
+        if wasClean {
+            NotificationCenter.default.post(name: Self.didChangeDirtyStateNotification, object: self)
+        }
     }
 
     private func postSelectionDidChange() {
         NotificationCenter.default.post(name: Self.selectionDidChangeNotification, object: self)
+    }
+
+    // MARK: - Persistence
+
+    /// Schedule a debounced save 500ms from now. Each new mutation
+    /// resets the timer — bursts of edits (like typing prose) collapse
+    /// into a single write. Timer fires on the main run loop; under
+    /// XCTest / TestKit harness runs (where the run loop isn't pumped),
+    /// the timer never fires and tests must call `flushSave` explicitly.
+    private func scheduleAutoSave() {
+        saveDebounceTimer?.invalidate()
+        guard url != nil else { return }
+        saveDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+            try? self?.flushSave()
+        }
+    }
+
+    /// Synchronous save. No-op when the session has no URL (in-memory
+    /// "Untitled" mode). Writes the project.json then every loaded
+    /// scene's .md file. Errors propagate; caller decides how to
+    /// surface them (Phase 1.m wires error UI).
+    public func flushSave() throws {
+        guard let url = url, isDirty else { return }
+        try storage.saveProject(project, at: url)
+        for (_, scene) in scenes {
+            try storage.saveScene(scene, in: url)
+        }
+        isDirty = false
+        NotificationCenter.default.post(name: Self.didChangeDirtyStateNotification, object: self)
+        DebugLog.shared.write("[storage] auto-saved \(project.title) → \(url.lastPathComponent)")
+    }
+
+    /// Replace the entire in-memory state. Used by AppState on Open /
+    /// Create — preserves the session reference so existing observers
+    /// (sidebar, editor, inspector) stay valid; they re-render via
+    /// `didReplaceNotification`.
+    public func replace(project: Project, scenes: [UUID: Scene], url: URL?) {
+        saveDebounceTimer?.invalidate()
+        self.project = project
+        self.scenes = scenes
+        self.url = url
+        self.isDirty = false
+        // Pick the first orphaned scene as the active one (or nil if
+        // the project has no scenes — the editor will show empty state).
+        self.currentSceneId = project.manuscript.orphanedSceneIds.first
+        self.changeCounter += 1
+        NotificationCenter.default.post(name: Self.didReplaceNotification, object: self)
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+        postSelectionDidChange()
+    }
+
+    /// Test hook — manually mark clean without performing an actual
+    /// save. Used to verify dirty-flag transitions in unit tests.
+    func markCleanForTest() {
+        isDirty = false
     }
 
     /// Compute the next "Scene N" suffix by scanning existing scenes

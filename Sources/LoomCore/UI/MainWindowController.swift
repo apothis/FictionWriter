@@ -14,6 +14,8 @@ import AppKit
 /// persistence is deferred — sub-step 1.m polish if it matters.
 public final class MainWindowController: NSWindowController {
     private let splitVC: NSSplitViewController
+    private var replaceObserver: NSObjectProtocol?
+    private var dirtyObserver: NSObjectProtocol?
 
     public init() {
         let sidebar = SidebarController(session: AppState.shared.currentSession)
@@ -67,13 +69,49 @@ public final class MainWindowController: NSWindowController {
         window.contentViewController = split
 
         super.init(window: window)
+        refreshTitleFromSession()
+        observeSession()
         DebugLog.shared.write("[loom] main-window opened")
     }
 
     @available(*, unavailable) public required init?(coder: NSCoder) { nil }
 
+    deinit {
+        if let o = replaceObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = dirtyObserver { NotificationCenter.default.removeObserver(o) }
+    }
+
     public func showAndActivate() {
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func observeSession() {
+        let session = AppState.shared.currentSession
+        replaceObserver = NotificationCenter.default.addObserver(
+            forName: ProjectSession.didReplaceNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshTitleFromSession()
+        }
+        dirtyObserver = NotificationCenter.default.addObserver(
+            forName: ProjectSession.didChangeDirtyStateNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshTitleFromSession()
+        }
+    }
+
+    private func refreshTitleFromSession() {
+        guard let window = window else { return }
+        let session = AppState.shared.currentSession
+        let title = session.project.title.isEmpty ? "Untitled" : session.project.title
+        window.title = title
+        window.representedURL = session.url
+        // Standard macOS document-edited indicator: a dot in the close
+        // button. Tracks `isDirty` (clean→dirty and back, via flushSave).
+        window.isDocumentEdited = session.isDirty
     }
 }

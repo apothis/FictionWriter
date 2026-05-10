@@ -39,4 +39,64 @@ public final class AppState {
         try settingsStore.save(newSettings)
         registry.updateProfiles(newSettings.servers, defaultServerId: newSettings.defaultServerId)
     }
+
+    // MARK: - Project lifecycle (1.j.A)
+
+    /// Create a fresh `.loom` directory at `url`, switch the current
+    /// session to it, and seed it with a starter scene so the user has
+    /// somewhere to type immediately. The session keeps its identity
+    /// (existing UI observers stay valid via didReplaceNotification).
+    public func createProject(at url: URL, title: String) throws {
+        let storage = ProjectStorage()
+        var project = try storage.createNewProject(at: url, title: title, author: nil)
+        let starter = Scene.empty(id: UUID(), title: "Scene 1")
+        project.manuscript.orphanedSceneIds = [starter.id]
+        try storage.saveScene(starter, in: url)
+        try storage.saveProject(project, at: url)
+        currentSession.replace(project: project, scenes: [starter.id: starter], url: url)
+        DebugLog.shared.write("[loom] createProject at=\(url.lastPathComponent)")
+    }
+
+    /// Load an existing `.loom` directory at `url` and switch the
+    /// current session to it.
+    public func openProject(at url: URL) throws {
+        let storage = ProjectStorage()
+        let loaded = try storage.loadProject(from: url)
+        currentSession.replace(project: loaded.project, scenes: loaded.scenes, url: url)
+        DebugLog.shared.write("[loom] openProject at=\(url.lastPathComponent) scenes=\(loaded.scenes.count)")
+    }
+
+    /// Save the current in-memory session to a new on-disk location
+    /// (Save As). The session adopts the new URL and is auto-saved
+    /// from then on.
+    public func saveCurrentSessionAs(url: URL, title: String?) throws {
+        let storage = ProjectStorage()
+        // Update the session's project title if the caller supplied one
+        // (Save As typically derives it from the chosen filename).
+        if let title = title {
+            currentSession.replace(
+                project: { var p = currentSession.project; p.title = title; return p }(),
+                scenes: currentSession.scenes,
+                url: nil
+            )
+        }
+        // Create the on-disk directory if it doesn't exist; if it does,
+        // ProjectStorage.saveProject will write project.json into it.
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: url.appendingPathComponent("scenes"),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: url.appendingPathComponent("generation-log"),
+            withIntermediateDirectories: true
+        )
+        try storage.saveProject(currentSession.project, at: url)
+        for (_, scene) in currentSession.scenes {
+            try storage.saveScene(scene, in: url)
+        }
+        currentSession.url = url
+        currentSession.markCleanForTest()
+        DebugLog.shared.write("[loom] saveAs at=\(url.lastPathComponent)")
+    }
 }
