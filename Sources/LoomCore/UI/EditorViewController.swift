@@ -24,6 +24,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var textSelectionObserver: NSObjectProtocol?
     private var generationTokenObserver: NSObjectProtocol?
     private var generationFinishObserver: NSObjectProtocol?
+    private var insertAgainObserver: NSObjectProtocol?
     /// Suppresses re-entrant text writes when we programmatically swap
     /// the text storage on selection change OR when streamed tokens
     /// land at the cursor — neither should round-trip through
@@ -52,6 +53,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = textSelectionObserver { NotificationCenter.default.removeObserver(o) }
         if let o = generationTokenObserver { NotificationCenter.default.removeObserver(o) }
         if let o = generationFinishObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = insertAgainObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     public override func loadView() {
@@ -199,6 +201,14 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.handleGenerationFinish()
+        }
+        insertAgainObserver = NotificationCenter.default.addObserver(
+            forName: HistoryInspectorViewController.requestInsertAgainNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let text = note.userInfo?["text"] as? String else { return }
+            self?.insertTextAtCursor(text)
         }
 
         refreshFromSession()
@@ -423,6 +433,32 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             textView.isEditable = false
             coordinator.start(mode: mode, cursorOffset: range.location, selectionRange: nil)
         }
+    }
+
+    /// Inserts a string at the current cursor position. Used by the
+    /// History tab's "Insert again at cursor" button.
+    private func insertTextAtCursor(_ text: String) {
+        guard let storage = textView.textStorage else { return }
+        let cursor: Int = {
+            if let value = textView.selectedRanges.first as? NSValue {
+                return value.rangeValue.location
+            }
+            return storage.length
+        }()
+        let safe = max(0, min(cursor, storage.length))
+        suppressWriteback = true
+        let attributed = NSAttributedString(string: text, attributes: [
+            .font: DesignTokens.Typography.body,
+            .foregroundColor: DesignTokens.Foreground.primary,
+        ])
+        storage.insert(attributed, at: safe)
+        suppressWriteback = false
+        let newCursor = safe + (text as NSString).length
+        textView.setSelectedRange(NSRange(location: newCursor, length: 0))
+        if let id = session.currentSceneId {
+            session.updateProse(id: id, prose: textView.string)
+        }
+        DebugLog.shared.write("[editor] insertAgain: \(text.count) chars at \(safe)")
     }
 
     private func removeRange(_ range: NSRange, label: String) {

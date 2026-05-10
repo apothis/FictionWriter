@@ -59,7 +59,7 @@ public final class InspectorController: NSViewController {
         ])
 
         bibleVC = BibleInspectorViewController(session: session)
-        historyVC = HistoryInspectorViewController()
+        historyVC = HistoryInspectorViewController(session: session)
         notesVC = NotesInspectorViewController(session: session)
 
         self.view = container
@@ -334,27 +334,6 @@ private final class BibleCharacterRowBridge: NSObject, NSTextViewDelegate {
     }
     func textDidChange(_ notification: Notification) {
         row?.emitUpdate()
-    }
-}
-
-// MARK: - History tab (stub)
-
-/// Phase 1 placeholder. Replaced in 1.k by the real History
-/// inspector that pages over `generation-log/*.json` files.
-public final class HistoryInspectorViewController: NSViewController {
-    public override func loadView() {
-        let container = NSView()
-        let label = NSTextField(labelWithString: "No generations yet.")
-        label.font = DesignTokens.Typography.body
-        label.textColor = DesignTokens.Foreground.secondary
-        label.alignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(label)
-        NSLayoutConstraint.activate([
-            label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-        ])
-        self.view = container
     }
 }
 

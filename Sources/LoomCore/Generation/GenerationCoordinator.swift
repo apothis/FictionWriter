@@ -21,6 +21,11 @@ public final class GenerationCoordinator {
     /// `["error": Error?, "insertedRange": NSRange, "elapsedMs": Int]`.
     public static let didFinishNotification = Notification.Name("LoomGenerationCoordinator.didFinish")
 
+    /// Posted after a generation-log entry has been persisted to disk.
+    /// History inspector listens for this and reloads. userInfo:
+    /// `["entry": GenerationLogEntry, "url": URL]`.
+    public static let didWriteLogEntryNotification = Notification.Name("LoomGenerationCoordinator.didWriteLogEntry")
+
     public private(set) var isGenerating: Bool = false
     /// Where the next token should be inserted in the active scene's
     /// prose. Starts at the cursor offset; advances by token length on
@@ -32,10 +37,23 @@ public final class GenerationCoordinator {
     private var generationStartedAt: Date = .distantPast
     private var generationStartOffset: Int = 0
     private var activeClient: KoboldClient?
+    /// Captured at start so the on-finish log write has the full
+    /// assembled prompt + chiclets + cache bookkeeping (PromptBuilder
+    /// is pure, but we don't call it twice; capture once).
+    private var pendingAssembly: AssembledPrompt?
+    private var pendingMode: GenerationMode = .continueProse
+    private var pendingSceneId: UUID?
+    private var pendingServerProfileId: UUID?
+    private let logStore: GenerationLogStore
 
-    public init(session: ProjectSession, registry: KoboldClientRegistry) {
+    public init(
+        session: ProjectSession,
+        registry: KoboldClientRegistry,
+        logStore: GenerationLogStore = GenerationLogStore()
+    ) {
         self.session = session
         self.registry = registry
+        self.logStore = logStore
     }
 
     // MARK: - Lifecycle
@@ -103,6 +121,12 @@ public final class GenerationCoordinator {
         insertedText = ""
         generationStartedAt = Date()
 
+        // Capture state needed at finish for the generation-log write.
+        pendingAssembly = assembled
+        pendingMode = mode
+        pendingSceneId = sceneId
+        pendingServerProfileId = session.project.settings.serverProfileId
+
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             NotificationCenter.default.post(name: Self.didStartNotification, object: self)
@@ -169,7 +193,65 @@ public final class GenerationCoordinator {
             object: self,
             userInfo: info
         )
+
+        // Persist the generation-log entry. Skipped on error (no real
+        // response) and on in-memory sessions (no URL to write to).
+        if error == nil, let assembly = pendingAssembly,
+           let sceneId = pendingSceneId,
+           let projectURL = session.url
+        {
+            writeLogEntry(
+                assembly: assembly,
+                sceneId: sceneId,
+                projectURL: projectURL,
+                elapsedMs: elapsedMs
+            )
+        }
+
+        pendingAssembly = nil
+        pendingSceneId = nil
+        pendingServerProfileId = nil
         activeClient = nil
+    }
+
+    private func writeLogEntry(
+        assembly: AssembledPrompt,
+        sceneId: UUID,
+        projectURL: URL,
+        elapsedMs: Int
+    ) {
+        let entry = GenerationLogEntry(
+            sceneId: sceneId,
+            mode: pendingMode,
+            model: nil,    // model name probe is 1.m polish
+            serverProfileId: pendingServerProfileId,
+            promptAssembly: PromptAssembly(
+                contextChiclets: assembly.chiclets,
+                fullPrompt: assembly.fullPrompt,
+                promptTokens: assembly.totalTokens,
+                aboveCacheTokens: assembly.aboveCacheTokens,
+                belowCacheTokens: assembly.belowCacheTokens,
+                evictedLayers: assembly.evictedLayers,
+                template: assembly.template
+            ),
+            response: GenerationResponse(
+                rawText: insertedText,
+                completionTokens: TokenEstimator.estimate(insertedText),
+                stopReason: nil,
+                refusalDetected: false,
+                elapsedMs: elapsedMs
+            )
+        )
+        do {
+            let url = try logStore.write(entry, in: projectURL)
+            NotificationCenter.default.post(
+                name: Self.didWriteLogEntryNotification,
+                object: self,
+                userInfo: ["entry": entry, "url": url]
+            )
+        } catch {
+            DebugLog.shared.write("[gen] log-write failed: \(error)")
+        }
     }
 
     /// Map Loom's user-facing GenerationDefaults to the kobold-API
