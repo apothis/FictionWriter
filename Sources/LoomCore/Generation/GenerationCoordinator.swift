@@ -58,9 +58,10 @@ public final class GenerationCoordinator {
 
     // MARK: - Lifecycle
 
-    /// Start a generation. Cancels any in-flight generation first. Mode
-    /// must be `.continueProse` or `.expand` in Phase 1; other modes
-    /// are accepted but follow the Continue path until 1.j+ adds them.
+    /// Start a generation. Cancels any in-flight generation first.
+    /// Phase 1 supports `.continueProse` and `.expand`; Phase 1.5
+    /// adds `.rewrite`. PromptBuilder is mode-aware; the coordinator
+    /// itself is mode-agnostic.
     public func start(
         mode: GenerationMode,
         cursorOffset: Int,

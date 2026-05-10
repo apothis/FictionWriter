@@ -47,8 +47,13 @@ public final class MainWindowController: NSWindowController {
         split.addSplitViewItem(sidebarItem)
         split.addSplitViewItem(editorItem)
         split.addSplitViewItem(inspectorItem)
-        // Persist divider positions across launches.
-        split.splitView.autosaveName = "Loom.MainSplitView"
+        // Persist divider positions across launches. The key is
+        // versioned so a one-shot stale-state reset is just a key
+        // bump — the previous "Loom.MainSplitView" key wrote frames
+        // wider than the saved window width and AppKit's autosave
+        // re-saved them on each layout, locking us into a narrow-
+        // window / clipped-pane state.
+        split.splitView.autosaveName = "Loom.MainSplitView.v2"
         self.splitVC = split
 
         // Status strip pinned at the bottom of the window — full width
@@ -83,6 +88,13 @@ public final class MainWindowController: NSWindowController {
         // setFrameAutosaveName wires up auto-save going forward.
         // (Previous bug: center() was called after setFrameAutosaveName,
         // which clobbered the restored frame on every launch.)
+        // Orphan the v1 split-view autosave key — it had stale wider
+        // frames than the saved window width, and AppKit kept re-
+        // saving them despite manual removeObject calls (the cached
+        // values inside AppKit took precedence). Nuking the v1 key
+        // outright is the cleanest reset path.
+        UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames Loom.MainSplitView")
+
         let restored = window.setFrameUsingName("Loom.MainWindow")
         window.setFrameAutosaveName("Loom.MainWindow")
         let restoredFrame = window.frame
@@ -96,6 +108,7 @@ public final class MainWindowController: NSWindowController {
             // also overwrites the bad saved frame on the next move.
             window.setFrame(frame, display: false)
             window.center()
+            UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames Loom.MainSplitView.v2")
         } else {
             DebugLog.shared.write("[loom] window: restored frame \(restoredFrame)")
         }
@@ -138,6 +151,32 @@ public final class MainWindowController: NSWindowController {
     /// its external monitor, screen resized, etc.). We accept frames
     /// that have at least 80pt × 80pt of overlap with any visible
     /// screen; smaller fragments fall through to center().
+    /// Parse the saved NSSplitView subview frames string and return
+    /// the total width across all panes. Format example:
+    /// "0,0,188,458,NO,NO\n188,0,564,458,NO,NO\n753,0,240,458,NO,NO".
+    /// Returns 0 if parsing fails — the caller treats that as "no
+    /// stale data to worry about."
+    private static func parseSplitFramesTotalWidth(_ raw: String) -> CGFloat {
+        var total: CGFloat = 0
+        for line in raw.split(separator: "\n") {
+            let parts = line.split(separator: ",")
+            guard parts.count >= 3,
+                  let width = Double(parts[2].trimmingCharacters(in: .whitespaces))
+            else { continue }
+            total += CGFloat(width)
+        }
+        return total
+    }
+
+    /// Parse the saved NSWindow frame string (e.g.
+    /// "460 780 720 480 0 0 2560 1410") and return the window width.
+    /// Returns 0 if parsing fails.
+    private static func parseSavedWindowWidth(_ raw: String) -> CGFloat {
+        let parts = raw.split(separator: " ")
+        guard parts.count >= 3, let width = Double(parts[2]) else { return 0 }
+        return CGFloat(width)
+    }
+
     private static func isFrameOnVisibleScreen(_ frame: NSRect) -> Bool {
         let minOverlap: CGFloat = 80
         for screen in NSScreen.screens {

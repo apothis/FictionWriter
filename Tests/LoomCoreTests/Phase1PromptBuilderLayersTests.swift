@@ -126,6 +126,35 @@ func phase1PromptBuilderLayersTests() -> TestSuite {
         try expectTrue(exp.systemBlock.contains("Sketch") || exp.systemBlock.contains("expand"))
     }
 
+    s.test("Rewrite system prompt frames the selection as a passage to reshape (Phase 1.5)") {
+        let project = Project(title: "T")
+        let scene = Scene.empty(id: UUID(), title: "Scene 1")
+        let prose = "She walked into the room and looked around."
+        let ctx = makeRewriteContext(project: project, scene: scene, prose: prose, selection: NSRange(location: 0, length: (prose as NSString).length))
+        let result = PromptBuilder.build(ctx)
+        try expectTrue(result.systemBlock.contains("rewriting"), "Rewrite system prompt should mention rewriting")
+        try expectTrue(result.userBlock.contains("Passage to rewrite:"))
+        // The original passage is injected so the model sees what to reshape.
+        try expectTrue(result.userBlock.contains("She walked into the room"))
+    }
+
+    s.test("Rewrite mode instruction lands AFTER the recent-prose context (recency wins)") {
+        // The "Passage to rewrite:" + terminal instruction must land
+        // below the recent-prose layer so the model's attention
+        // concentrates on the passage being reshaped, not the
+        // surrounding manuscript.
+        let project = Project(title: "T")
+        let scene = Scene.empty(id: UUID(), title: "Scene 1")
+        let prose = "Background prose before. She walked into the room and looked around."
+        let selStart = (prose as NSString).range(of: "She walked").location
+        let selLen = (prose as NSString).length - selStart
+        let ctx = makeRewriteContext(project: project, scene: scene, prose: prose, selection: NSRange(location: selStart, length: selLen))
+        let result = PromptBuilder.build(ctx)
+        let proseIdx = try expectNotNil(result.userBlock.range(of: "Background prose before")?.lowerBound)
+        let instrIdx = try expectNotNil(result.userBlock.range(of: "Passage to rewrite:")?.lowerBound)
+        try expectTrue(instrIdx > proseIdx, "Rewrite mode instruction must land below the recent-prose layer")
+    }
+
     s.test("cache boundary: above-cache covers system+memory+bible-constant") {
         var project = Project(title: "T")
         project.settings.memory = "Memory text"
@@ -248,6 +277,26 @@ private func makeExpandContext(project: Project, scene: Scene, prose: String, se
     }
     return PromptContext(
         mode: .expand,
+        project: p,
+        scenes: [scene.id: sceneCopy],
+        currentSceneId: scene.id,
+        cursorOffset: NSMaxRange(selection),
+        selectionRange: selection,
+        modelName: nil,
+        contextBudgetTokens: project.settings.contextBudgetTokens,
+        replyBudgetTokens: 1024
+    )
+}
+
+private func makeRewriteContext(project: Project, scene: Scene, prose: String, selection: NSRange) -> PromptContext {
+    var sceneCopy = scene
+    sceneCopy.prose = prose
+    var p = project
+    if !p.manuscript.orphanedSceneIds.contains(scene.id) {
+        p.manuscript.orphanedSceneIds.append(scene.id)
+    }
+    return PromptContext(
+        mode: .rewrite,
         project: p,
         scenes: [scene.id: sceneCopy],
         currentSceneId: scene.id,

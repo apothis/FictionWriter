@@ -411,6 +411,14 @@ public enum PromptBuilder {
             - Adds sensory detail, dialogue, and interiority appropriate to the scene
             - Does not include meta-commentary or markdown headers
             """
+        case .rewrite:
+            return """
+            You are a fiction writer rewriting an existing passage. The selection below is finished prose that the author wants reshaped — same beats and same meaning, but stronger word choice, tighter rhythm, or sharper voice. Rewrite it as full prose that:
+            - Preserves every beat and every named entity from the original (do not skip, do not invent)
+            - Matches the voice/tense/POV of the surrounding manuscript
+            - Roughly matches the original length (±25%); do not summarise or balloon
+            - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
+            """
         default:
             // Phase 4+ modes; PromptBuilder still produces something
             // sensible if invoked early.
@@ -431,20 +439,32 @@ public enum PromptBuilder {
             return "—— Continue from immediately after the last word above. Output only the next ~500 words of prose. Do not restate, paraphrase, or quote any of the passage above."
         case .expand:
             // Frame the selection as the sketch.
-            guard let range = context.selectionRange,
-                  let id = context.currentSceneId,
-                  let scene = context.scenes[id]
-            else { return "" }
-            let nsProse = scene.prose as NSString
-            let safeRange = NSRange(
-                location: max(0, min(range.location, nsProse.length)),
-                length: max(0, min(range.length, nsProse.length - max(0, min(range.location, nsProse.length))))
-            )
-            let selection = nsProse.substring(with: safeRange)
+            guard let selection = selectionText(in: context) else { return "" }
             return "Sketch to expand:\n\(selection)"
+        case .rewrite:
+            // Frame the selection as the passage to reshape.
+            guard let selection = selectionText(in: context) else { return "" }
+            return "Passage to rewrite:\n\(selection)\n\n—— Output the rewritten passage only. No preface, no commentary, no quotation marks around it."
         default:
             return ""
         }
+    }
+
+    /// Pull the selected substring out of the current scene's prose
+    /// using `context.selectionRange`. Returns nil if there's no
+    /// selection or the active scene can't be located. Bounds-clamps
+    /// the range so we never crash on stale offsets.
+    private static func selectionText(in context: PromptContext) -> String? {
+        guard let range = context.selectionRange,
+              let id = context.currentSceneId,
+              let scene = context.scenes[id]
+        else { return nil }
+        let nsProse = scene.prose as NSString
+        let safeRange = NSRange(
+            location: max(0, min(range.location, nsProse.length)),
+            length: max(0, min(range.length, nsProse.length - max(0, min(range.location, nsProse.length))))
+        )
+        return nsProse.substring(with: safeRange)
     }
 
     private static func formatBibleConstant(_ bible: Bible) -> String {

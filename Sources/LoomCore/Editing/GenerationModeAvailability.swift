@@ -23,7 +23,11 @@ public enum GenerationModeAvailability {
             return state.hasProse
         case .expand:
             return state.hasSelection
-        case .rewrite, .rewriteVoice, .rewriteTense, .rewritePOV, .rewriteLength,
+        case .rewrite:
+            // Phase 1.5 — reshape selected prose. Like Expand,
+            // requires a selection.
+            return state.hasSelection
+        case .rewriteVoice, .rewriteTense, .rewritePOV, .rewriteLength,
              .showDontTell, .brainstorm, .critique, .bridge, .describe, .nameSuggest:
             return false
         }

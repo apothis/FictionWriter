@@ -156,9 +156,7 @@ final class HistoryEntryRowView {
         self.onToggle = onToggle
         self.onInsertAgain = onInsertAgain
 
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = DesignTokens.Background.group.cgColor
+        let container = ThemedBackgroundView(backgroundColor: DesignTokens.Background.group)
         container.layer?.cornerRadius = DesignTokens.Radius.section
 
         let header = NSStackView()
@@ -245,7 +243,13 @@ final class HistoryEntryRowView {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
         let timeStr = f.string(from: entry.timestamp)
-        let mode = entry.mode == .continueProse ? "Continue" : (entry.mode == .expand ? "Expand" : entry.mode.rawValue)
+        let mode: String
+        switch entry.mode {
+        case .continueProse: mode = "Continue"
+        case .expand:        mode = "Expand"
+        case .rewrite:       mode = "Rewrite"
+        default:             mode = entry.mode.rawValue
+        }
         let proseTok = entry.promptAssembly.promptTokens
         let replyTok = entry.response.completionTokens
         return "\(timeStr) · \(mode) · \(proseTok)↑ \(replyTok)↓"

@@ -82,9 +82,10 @@ public final class InspectorController: NSViewController {
     }
 
     public override func loadView() {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = DesignTokens.Background.window.cgColor
+        // ThemedBackgroundView re-applies its color on appearance
+        // change — see file header for why a raw .cgColor capture
+        // doesn't react to dark/light mode flips.
+        let container = ThemedBackgroundView(backgroundColor: DesignTokens.Background.window)
 
         // Three NSButtons styled as tabs. CRITICAL: target + action MUST
         // be passed to NSButton(title:target:action:) at construction —
@@ -172,21 +173,24 @@ public final class InspectorController: NSViewController {
 
     public override func viewDidAppear() {
         super.viewDidAppear()
-        // Re-anchor the tab row to the window's contentLayoutGuide so
-        // the tabs sit BELOW the titlebar drag region. With
+        // Push the tab row below the titlebar drag region. With
         // .fullSizeContentView, AppKit hijacks clicks in the top
-        // ~28pt for window-drag — without this, tab clicks hit-test
-        // correctly but the action is never delivered to the button.
-        guard let window = view.window,
-              let oldTop = tabRowTopConstraint,
+        // ~28pt for window-drag — without this offset, tab clicks
+        // hit-test correctly but the action is never delivered.
+        // Earlier this used `window.contentLayoutGuide` but that
+        // anchor (linking the inspector pane directly to the
+        // window) was triggering a window-shrink-to-fit cascade
+        // post-super.init on macOS 26. A fixed 28pt offset is the
+        // standard titlebar height and avoids cross-hierarchy
+        // constraint chains.
+        guard let oldTop = tabRowTopConstraint,
               let tabRow = oldTop.firstItem as? NSView,
-              let layoutGuide = window.contentLayoutGuide as? NSLayoutGuide
+              let container = tabRow.superview
         else { return }
-        oldTop.isActive = false
-        let newTop = tabRow.topAnchor.constraint(equalTo: layoutGuide.topAnchor, constant: DesignTokens.Spacing.sm)
-        newTop.isActive = true
-        tabRowTopConstraint = newTop
-        DebugLog.shared.write("[inspector] tab row re-anchored to contentLayoutGuide")
+        let titlebarHeight: CGFloat = 28
+        oldTop.constant = titlebarHeight + DesignTokens.Spacing.sm
+        DebugLog.shared.write("[inspector] tab row offset below titlebar (constant=\(oldTop.constant))")
+        _ = container // silence warning
     }
 
     @objc private func bibleTabClicked()   { DebugLog.shared.write("[inspector] tab clicked: bible");   showTab(.bible) }
@@ -376,9 +380,7 @@ final class BibleCharacterRow {
         self.onUpdate = onUpdate
         self.onDelete = onDelete
 
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = DesignTokens.Background.group.cgColor
+        let container = ThemedBackgroundView(backgroundColor: DesignTokens.Background.group)
         container.layer?.cornerRadius = DesignTokens.Radius.section
 
         let name = NSTextField(string: character.name)

@@ -30,14 +30,14 @@ public final class StatusStripView: NSView {
 
     private let wordCountLabel: NSTextField
     private let sceneLabel: NSTextField
-    private let serverDot: NSView
+    private let serverDot: ThemedBackgroundView
     private let serverLabel: NSTextField
     private var observers: [NSObjectProtocol] = []
 
     public override init(frame frameRect: NSRect) {
         wordCountLabel = NSTextField(labelWithString: "0 words")
         sceneLabel = NSTextField(labelWithString: "")
-        serverDot = NSView()
+        serverDot = ThemedBackgroundView(backgroundColor: DesignTokens.Foreground.secondary)
         serverLabel = NSTextField(labelWithString: "—")
         super.init(frame: frameRect)
         configure()
@@ -65,9 +65,13 @@ public final class StatusStripView: NSView {
         for o in observers { NotificationCenter.default.removeObserver(o) }
     }
 
+    public override func updateLayer() {
+        // Re-apply the strip background on appearance change.
+        layer?.backgroundColor = DesignTokens.Background.window.cgColor
+    }
+
     private func configure() {
         wantsLayer = true
-        layer?.backgroundColor = DesignTokens.Background.window.cgColor
 
         let topDivider = NSBox()
         topDivider.boxType = .separator
@@ -83,9 +87,9 @@ public final class StatusStripView: NSView {
         sceneLabel.translatesAutoresizingMaskIntoConstraints = false
 
         serverDot.translatesAutoresizingMaskIntoConstraints = false
-        serverDot.wantsLayer = true
         serverDot.layer?.cornerRadius = 4
-        serverDot.layer?.backgroundColor = DesignTokens.Foreground.secondary.cgColor
+        // serverDot.backgroundColor is set by setServerStatus(_:) — the
+        // ThemedBackgroundView re-applies it on appearance change.
 
         serverLabel.font = DesignTokens.Typography.mono(.caption1)
         serverLabel.textColor = DesignTokens.Foreground.secondary
@@ -148,10 +152,10 @@ public final class StatusStripView: NSView {
     public func setServerStatus(_ status: ServerStatus) {
         switch status {
         case .unknown:
-            serverDot.layer?.backgroundColor = DesignTokens.Foreground.secondary.cgColor
+            serverDot.backgroundColor = DesignTokens.Foreground.secondary
             serverLabel.stringValue = "no server"
         case .reachable(let model, let maxContext):
-            serverDot.layer?.backgroundColor = DesignTokens.Foreground.success.cgColor
+            serverDot.backgroundColor = DesignTokens.Foreground.success
             // Strip the redundant `koboldcpp/` runtime prefix that the
             // server reports in the model name — leaves the actual
             // model identifier (e.g. "Qwen3.6-27B-..." instead of
@@ -161,7 +165,7 @@ public final class StatusStripView: NSView {
             let ctxPart = maxContext.map { "\($0) ctx" } ?? "?"
             serverLabel.stringValue = "\(modelPart) · \(ctxPart)"
         case .unreachable:
-            serverDot.layer?.backgroundColor = DesignTokens.Foreground.destructive.cgColor
+            serverDot.backgroundColor = DesignTokens.Foreground.destructive
             serverLabel.stringValue = "unreachable"
         }
     }

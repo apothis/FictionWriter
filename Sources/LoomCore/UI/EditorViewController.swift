@@ -18,10 +18,6 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var trayView: GenerationTrayView!
     private var coordinator: GenerationCoordinator!
     private var acceptanceMachine = AcceptanceMachine()
-    private var acceptanceAccessory: AcceptanceTitlebarAccessory!
-    /// Set after the accessory has been attached to the window's
-    /// titlebar so we don't double-attach on re-appearances.
-    private var acceptanceAccessoryAttached: Bool = false
     private var emptyStateView: EmptyProjectStateView!
     private var emptyStateClickedObserver: NSObjectProtocol?
     private var sessionDidChangeObserver: NSObjectProtocol?
@@ -72,9 +68,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     public override func loadView() {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = DesignTokens.Background.textInput.cgColor
+        let container = ThemedBackgroundView(backgroundColor: DesignTokens.Background.textInput)
 
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -136,17 +130,17 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         tray.translatesAutoresizingMaskIntoConstraints = false
         tray.onContinueClicked = { [weak self] in self?.handleContinue() }
         tray.onExpandClicked = { [weak self] in self?.handleExpand() }
+        tray.onRewriteClicked = { [weak self] in self?.handleRewrite() }
+        // Acceptance buttons live in the tray itself, swapping in for
+        // Continue/Expand when the post-generation acceptance window
+        // opens. The previously-attempted NSTitlebarAccessoryViewController
+        // approach triggered an AppKit auto-refit on macOS 26 that
+        // shrunk the window to ~104pt wide on every attach — minSize
+        // was ignored. The tray-swap is uglier but works.
+        tray.onAcceptClicked = { [weak self] in self?.applyAcceptanceTransition(.accept) }
+        tray.onRejectClicked = { [weak self] in self?.applyAcceptanceTransition(.reject) }
+        tray.onRedoClicked = { [weak self] in self?.applyAcceptanceTransition(.redo) }
         self.trayView = tray
-
-        // Acceptance bar — NSTitlebarAccessoryViewController attached
-        // to the window's titlebar (Phase 2 polish replacing the
-        // merged-tray fallback). Attach happens in viewDidAppear once
-        // `view.window` is available.
-        let accessory = AcceptanceTitlebarAccessory()
-        accessory.onAccept = { [weak self] in self?.applyAcceptanceTransition(.accept) }
-        accessory.onReject = { [weak self] in self?.applyAcceptanceTransition(.reject) }
-        accessory.onRedo = { [weak self] in self?.applyAcceptanceTransition(.redo) }
-        self.acceptanceAccessory = accessory
 
         // Empty-project placeholder per LOOM_DESIGN_LANGUAGE.md §14.7.
         // Overlaid on top of the scroll view; shown when
@@ -288,25 +282,6 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     public override func viewDidAppear() {
         super.viewDidAppear()
         view.window?.makeFirstResponder(textView)
-        attachAcceptanceAccessoryIfNeeded()
-    }
-
-    /// Attach the acceptance bar to the host window's titlebar once
-    /// the view is in a window. Idempotent — guarded so reappearances
-    /// don't stack duplicate accessories.
-    private func attachAcceptanceAccessoryIfNeeded() {
-        guard !acceptanceAccessoryAttached,
-              let window = view.window,
-              let accessory = acceptanceAccessory
-        else { return }
-        window.addTitlebarAccessoryViewController(accessory)
-        // Hide AFTER attach — setting isHidden inside the accessory's
-        // init or loadView did not stick on macOS 26; the bar stayed
-        // visible at launch and ate clicks at the top of the inspector
-        // pane. Setting it post-attach is the only reliable point.
-        accessory.isHidden = true
-        acceptanceAccessoryAttached = true
-        DebugLog.shared.write("[editor] acceptance bar: attached + hidden")
     }
 
     // MARK: - Session ↔ text-storage sync
@@ -353,8 +328,9 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
            case .awaiting = acceptanceMachine.state
         {
             _ = acceptanceMachine.handleImplicitAccept()
-            acceptanceAccessory.hide()
+            trayView.setTrayMode(.editing)
             clearAcceptanceTint()
+            lastSelectionContext = nil
             DebugLog.shared.write("[editor] acceptance: implicit (user typed)")
         }
         guard let id = session.currentSceneId else { return }
@@ -392,12 +368,34 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         guard let value = textView.selectedRanges.first as? NSValue else { return }
         let selection = value.rangeValue
         guard selection.length > 0 else { return }
+        runSelectionReplacingGeneration(mode: .expand, selection: selection)
+    }
 
-        // Expand replaces the selection with generated prose. Delete
-        // the selection now so the cursor sits at selection.location;
-        // PromptBuilder reads the *original* prose from the session
-        // (which still has it because we suppress writeback during
-        // this delete) and frames the selected region as the sketch.
+    private func handleRewrite() {
+        // Same mechanics as Expand — delete the selection from the
+        // text view, keep it in the session for PromptBuilder to
+        // read as the source passage, stream the new prose into the
+        // gap. Only the mode + system prompt differ.
+        guard !coordinator.isGenerating else { return }
+        guard let value = textView.selectedRanges.first as? NSValue else { return }
+        let selection = value.rangeValue
+        guard selection.length > 0 else { return }
+        runSelectionReplacingGeneration(mode: .rewrite, selection: selection)
+    }
+
+    /// Shared mechanics for selection-replacing modes (Expand, Rewrite):
+    /// stash the original selection text+range for the redo path,
+    /// delete the selection from the text view (keeping it in the
+    /// session for PromptBuilder), and start the coordinator.
+    private func runSelectionReplacingGeneration(mode: GenerationMode, selection: NSRange) {
+        let nsString = textView.string as NSString
+        let safeRange = NSRange(
+            location: max(0, min(selection.location, nsString.length)),
+            length: max(0, min(selection.length, nsString.length - max(0, min(selection.location, nsString.length))))
+        )
+        let originalText = nsString.substring(with: safeRange)
+        lastSelectionContext = (range: selection, text: originalText)
+
         suppressWriteback = true
         suppressImplicitAccept = true
         textView.textStorage?.deleteCharacters(in: selection)
@@ -405,10 +403,10 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         suppressWriteback = false
         suppressImplicitAccept = false
 
-        lastInvokedMode = .expand
+        lastInvokedMode = mode
         textView.isEditable = false
         coordinator.start(
-            mode: .expand,
+            mode: mode,
             cursorOffset: selection.location,
             selectionRange: selection
         )
@@ -467,13 +465,22 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         let mode = lastInvokedMode ?? .continueProse
         acceptanceMachine.handleGenerationFinished(insertedRange: insertedRange, mode: mode)
         applyAcceptanceTint(insertedRange)
-        acceptanceAccessory.show()
+        trayView.setTrayMode(.acceptance)
     }
 
     /// Tracks which mode the editor most recently invoked, so the
     /// acceptance machine can re-fire it on Redo. Set in
     /// handleContinue / handleExpand; consumed in handleGenerationFinish.
     private var lastInvokedMode: GenerationMode?
+
+    /// For Expand and Rewrite: the original selection range + the
+    /// prose that lived there before generation deleted it. Used by
+    /// the Keep & Redo path to restore the source passage and re-fire
+    /// the same mode with the same selection — without this, the redo
+    /// passes `selectionRange: nil` and PromptBuilder loses the
+    /// "sketch to expand" / "passage to rewrite" framing, so the
+    /// model generates from the scene opening instead.
+    private var lastSelectionContext: (range: NSRange, text: String)?
 
     /// Apply the 6%-alpha accent tint to the inserted range as a
     /// background-color attribute. Removed by `clearAcceptanceTint`
@@ -507,21 +514,71 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         case .reject: action = acceptanceMachine.handleReject()
         case .redo:   action = acceptanceMachine.handleRedo()
         }
-        acceptanceAccessory.hide()
+        trayView.setTrayMode(.editing)
         clearAcceptanceTint()
 
         switch action {
         case .nothing:
             DebugLog.shared.write("[editor] acceptance: \(transition) — nothing")
+            // No state change to the saved selection context — a
+            // pure accept ends the cycle; clear it.
+            if case .accept = transition {
+                lastSelectionContext = nil
+            }
         case .removeText(let range):
             removeRange(range, label: "reject")
+            // Reject ends the cycle.
+            lastSelectionContext = nil
         case .removeAndRestart(let range, let mode):
             removeRange(range, label: "redo")
-            // Re-fire same mode at the prior cursor.
-            lastInvokedMode = mode
-            textView.isEditable = false
-            coordinator.start(mode: mode, cursorOffset: range.location, selectionRange: nil)
+            if mode == .expand || mode == .rewrite,
+               let saved = lastSelectionContext
+            {
+                // Re-insert the original passage at the deletion point
+                // so PromptBuilder can read it from the session again.
+                // Then re-fire the same mode with the original
+                // selection range.
+                reinsertOriginalSelection(saved)
+                lastInvokedMode = mode
+                textView.isEditable = false
+                coordinator.start(
+                    mode: mode,
+                    cursorOffset: saved.range.location,
+                    selectionRange: saved.range
+                )
+            } else {
+                // Continue mode (or any future mode with no saved
+                // selection): re-fire from the prior cursor.
+                lastInvokedMode = mode
+                textView.isEditable = false
+                coordinator.start(mode: mode, cursorOffset: range.location, selectionRange: nil)
+            }
         }
+    }
+
+    /// Re-insert the captured original selection text at the position
+    /// it occupied before Expand/Rewrite deleted it, so PromptBuilder
+    /// can read the source passage from the session on the redo's
+    /// next prompt build. Suppresses the writeback path so this
+    /// doesn't look like a user edit (which would implicit-accept
+    /// any in-flight acceptance window).
+    private func reinsertOriginalSelection(_ saved: (range: NSRange, text: String)) {
+        guard let storage = textView.textStorage else { return }
+        let location = max(0, min(saved.range.location, storage.length))
+        suppressWriteback = true
+        suppressImplicitAccept = true
+        let attributed = NSAttributedString(string: saved.text, attributes: [
+            .font: DesignTokens.Typography.body,
+            .foregroundColor: DesignTokens.Foreground.primary,
+        ])
+        storage.insert(attributed, at: location)
+        textView.setSelectedRange(NSRange(location: location, length: 0))
+        // Sync the session so PromptBuilder sees the restored passage.
+        if let id = session.currentSceneId {
+            session.updateProse(id: id, prose: textView.string)
+        }
+        suppressWriteback = false
+        suppressImplicitAccept = false
     }
 
     /// Inserts a string at the current cursor position. Used by the

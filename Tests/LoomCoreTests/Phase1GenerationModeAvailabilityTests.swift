@@ -38,12 +38,23 @@ func phase1GenerationModeAvailabilityTests() -> TestSuite {
         try expectFalse(GenerationModeAvailability.isEnabled(.expand, in: state))
     }
 
-    s.test("Phase 4 modes are always disabled in Phase 1") {
+    s.test("Rewrite enabled when selection is non-empty (Phase 1.5)") {
         let state = EditorState(hasProse: true, hasSelection: true)
-        for mode in GenerationMode.allCases where mode != .continueProse && mode != .expand {
+        try expectTrue(GenerationModeAvailability.isEnabled(.rewrite, in: state))
+    }
+
+    s.test("Rewrite disabled with no selection (Phase 1.5)") {
+        let state = EditorState(hasProse: true, hasSelection: false)
+        try expectFalse(GenerationModeAvailability.isEnabled(.rewrite, in: state))
+    }
+
+    s.test("Phase 4 modes are always disabled (Phase 1.5)") {
+        let state = EditorState(hasProse: true, hasSelection: true)
+        let phase15Modes: Set<GenerationMode> = [.continueProse, .expand, .rewrite]
+        for mode in GenerationMode.allCases where !phase15Modes.contains(mode) {
             try expectFalse(
                 GenerationModeAvailability.isEnabled(mode, in: state),
-                "\(mode.rawValue) should be disabled in Phase 1"
+                "\(mode.rawValue) should be disabled in Phase 1.5"
             )
         }
     }

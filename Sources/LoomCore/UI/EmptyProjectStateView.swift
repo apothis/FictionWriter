@@ -23,9 +23,13 @@ public final class EmptyProjectStateView: NSView {
 
     @available(*, unavailable) public required init?(coder: NSCoder) { nil }
 
+    public override func updateLayer() {
+        // Re-apply on appearance change.
+        layer?.backgroundColor = DesignTokens.Background.textInput.cgColor
+    }
+
     private func configure() {
         wantsLayer = true
-        layer?.backgroundColor = DesignTokens.Background.textInput.cgColor
 
         let symbol = NSImageView()
         symbol.translatesAutoresizingMaskIntoConstraints = false
