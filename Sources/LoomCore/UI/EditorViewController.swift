@@ -16,11 +16,16 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var scrollView: NSScrollView!
     private var textView: NSTextView!
     private var trayView: GenerationTrayView!
+    private var coordinator: GenerationCoordinator!
     private var selectionObserver: NSObjectProtocol?
     private var resizeObserver: NSObjectProtocol?
     private var textSelectionObserver: NSObjectProtocol?
+    private var generationTokenObserver: NSObjectProtocol?
+    private var generationFinishObserver: NSObjectProtocol?
     /// Suppresses re-entrant text writes when we programmatically swap
-    /// the text storage on selection change.
+    /// the text storage on selection change OR when streamed tokens
+    /// land at the cursor — neither should round-trip through
+    /// `session.updateProse`.
     private var suppressWriteback: Bool = false
 
     /// Posted on every text change; userInfo carries `wordCount: Int`
@@ -38,6 +43,8 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = selectionObserver { NotificationCenter.default.removeObserver(o) }
         if let o = resizeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = textSelectionObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = generationTokenObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = generationFinishObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     public override func loadView() {
@@ -151,6 +158,28 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             self?.pushTrayState()
         }
 
+        // Generation pipeline: one coordinator per editor. Wires
+        // PromptBuilder → KoboldClient.generateStream → didEmitToken
+        // notifications. EditorVC inserts each token at the running
+        // offset and unfreezes the text view on finish.
+        coordinator = GenerationCoordinator(session: session, registry: AppState.shared.registry)
+        generationTokenObserver = NotificationCenter.default.addObserver(
+            forName: GenerationCoordinator.didEmitTokenNotification,
+            object: coordinator,
+            queue: .main
+        ) { [weak self] note in
+            guard let token = note.userInfo?["token"] as? String,
+                  let offset = note.userInfo?["insertionOffset"] as? Int else { return }
+            self?.insertGeneratedToken(token, at: offset)
+        }
+        generationFinishObserver = NotificationCenter.default.addObserver(
+            forName: GenerationCoordinator.didFinishNotification,
+            object: coordinator,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleGenerationFinish()
+        }
+
         refreshFromSession()
         updateTextContainerInset()
     }
@@ -196,11 +225,59 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     private func handleContinue() {
-        // 1.i wires through PromptBuilder + KoboldClient.
+        guard !coordinator.isGenerating else { return }
+        // Continue uses the cursor position; if there's a selection,
+        // continue from the end of it.
+        let cursor: Int = {
+            if let range = textView.selectedRanges.first as? NSValue {
+                return NSMaxRange(range.rangeValue)
+            }
+            return (textView.string as NSString).length
+        }()
+        // Lock the text view while streaming; user can cancel via the
+        // tray (1.j wires the cancel UX). Phase 1.j replaces this with
+        // the proper acceptance overlay.
+        textView.isEditable = false
+        coordinator.start(mode: .continueProse, cursorOffset: cursor, selectionRange: nil)
     }
 
     private func handleExpand() {
-        // 1.i wires through PromptBuilder + KoboldClient.
+        // 1.j scope.
+    }
+
+    /// Insert a streamed token at the coordinator's running insertion
+    /// offset. Bypasses the textDidChange writeback (the coordinator
+    /// updates session prose on finish to avoid mid-stream churn).
+    private func insertGeneratedToken(_ token: String, at offset: Int) {
+        guard let storage = textView.textStorage else { return }
+        suppressWriteback = true
+        defer { suppressWriteback = false }
+        let nsLength = (textView.string as NSString).length
+        let safeOffset = max(0, min(offset, nsLength))
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: DesignTokens.Typography.body,
+            .foregroundColor: DesignTokens.Foreground.primary,
+        ]
+        let attributed = NSAttributedString(string: token, attributes: attributes)
+        storage.insert(attributed, at: safeOffset)
+        // Move the cursor past the just-inserted token so the user sees
+        // the prose grow from where Continue began.
+        let newCursor = safeOffset + (token as NSString).length
+        textView.setSelectedRange(NSRange(location: newCursor, length: 0))
+        textView.scrollRangeToVisible(NSRange(location: newCursor, length: 0))
+    }
+
+    private func handleGenerationFinish() {
+        textView.isEditable = true
+        // Sync the session's in-memory prose with what the text view
+        // shows now. Single writeback at finish (rather than per-token)
+        // keeps the session state consistent without churning.
+        if let id = session.currentSceneId {
+            session.updateProse(id: id, prose: textView.string)
+        }
+        postWordCount()
+        pushTrayState()
+        DebugLog.shared.write("[editor] generation finished — text-view re-editable")
     }
 
     private func postWordCount() {
