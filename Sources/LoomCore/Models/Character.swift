@@ -21,6 +21,14 @@ public struct Character: Codable, Equatable {
     public var relationships: [Relationship]
     public var avatarPath: String?
     public var knownFactsBySceneId: [UUID: [KnownFact]]
+    /// Phase 2 #3 — fanfic canon notes (LOOM_FANFIC.md §3.2).
+    /// User-pasted canon content from a fandom wiki; one of the
+    /// three inputs to the Phase 5.b canon ingestion pipeline.
+    /// Nil for original-fiction characters.
+    public var canonBrief: String?
+    /// Phase 2 #3 — fandom-specific extension slots (HP `house`,
+    /// MCU `team`, etc.). HANDOFF §9.4 risk #2: minimal shape.
+    public var customFields: [CharacterCustomField]
 
     public init(
         id: UUID = UUID(),
@@ -35,7 +43,9 @@ public struct Character: Codable, Equatable {
         goals: String = "",
         relationships: [Relationship] = [],
         avatarPath: String? = nil,
-        knownFactsBySceneId: [UUID: [KnownFact]] = [:]
+        knownFactsBySceneId: [UUID: [KnownFact]] = [:],
+        canonBrief: String? = nil,
+        customFields: [CharacterCustomField] = []
     ) {
         self.id = id
         self.name = name
@@ -50,6 +60,8 @@ public struct Character: Codable, Equatable {
         self.relationships = relationships
         self.avatarPath = avatarPath
         self.knownFactsBySceneId = knownFactsBySceneId
+        self.canonBrief = canonBrief
+        self.customFields = customFields
     }
 
     public init(from decoder: Decoder) throws {
@@ -67,6 +79,8 @@ public struct Character: Codable, Equatable {
         self.relationships = try c.decodeIfPresent([Relationship].self, forKey: .relationships) ?? []
         self.avatarPath = try c.decodeIfPresent(String.self, forKey: .avatarPath)
         self.knownFactsBySceneId = try c.decodeIfPresent([UUID: [KnownFact]].self, forKey: .knownFactsBySceneId) ?? [:]
+        self.canonBrief = try c.decodeIfPresent(String.self, forKey: .canonBrief)
+        self.customFields = try c.decodeIfPresent([CharacterCustomField].self, forKey: .customFields) ?? []
     }
 
     public static func empty(name: String) -> Character {
@@ -114,4 +128,26 @@ public struct KnownFact: Codable, Equatable {
 
 public enum Certainty: String, Codable, Equatable, CaseIterable {
     case asserted, suspected, unknown, mistaken
+}
+
+/// Free-form extension slot on Character. Phase 5 fandom templates
+/// drop into customFields (HP gets `house`/`wand`/`bloodStatus`; MCU
+/// gets `team`/`affiliation`/`powers` — LOOM_FANFIC.md §3.2). The
+/// shape is intentionally minimal — label + value + a tiny kind enum
+/// — so we don't drift into a generic ORM.
+public struct CharacterCustomField: Codable, Equatable {
+    public var label: String
+    public var value: String
+    public var kind: CustomFieldKind
+
+    public init(label: String, value: String = "", kind: CustomFieldKind = .text) {
+        self.label = label
+        self.value = value
+        self.kind = kind
+    }
+}
+
+public enum CustomFieldKind: String, Codable, Equatable, CaseIterable {
+    case text             // single-line value
+    case multilineText    // multi-paragraph value
 }
