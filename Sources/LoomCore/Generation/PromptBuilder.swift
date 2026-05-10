@@ -129,13 +129,26 @@ public enum PromptBuilder {
         let evictedLayers = enforceBudget(&layers, budget: usableContextBudget, context: context)
 
         // 3) Render layered content into above/below-cache strings.
+        //    Phase 1 keeps a chat-shaped structure (prose in user
+        //    message, not prefill) because Qwen / Gemma instruct
+        //    models are tuned to respond to user turns — putting
+        //    prose in the assistant prefill makes them treat it as
+        //    "my completed response" and emit <|im_end|> immediately,
+        //    producing 0 tokens. (Confirmed live 2026-05-10.) The
+        //    NovelAI/SillyTavern story-mode prefill pattern works
+        //    for base / story-tuned models like Erato, not for
+        //    instruct-tuned chat models. The anti-echo guarantee
+        //    comes from the sharpened system prompt + an explicit
+        //    "continue from here" instruction layer landing AFTER
+        //    the prose (lower = stronger steering).
         let above = layers.filter { $0.aboveCache }
         let below = layers.filter { !$0.aboveCache }
         let systemBlock = above.map(\.content).filter { !$0.isEmpty }.joined(separator: "\n\n")
         let userBlock = below.map(\.content).filter { !$0.isEmpty }.joined(separator: "\n\n")
 
-        // 4) Compute prefill (Qwen 3.x think-mode suppression for
-        //    ChatML; empty everywhere else).
+        // 4) Compute prefill: template-specific suppression only
+        //    (`<think>\n\n</think>\n\n` for Qwen ChatML); empty for
+        //    other templates.
         let prefill = prefillFor(template: resolvedTemplate, mode: context.mode)
 
         // 5) Wrap with the instruct-template adapter.
@@ -242,19 +255,6 @@ public enum PromptBuilder {
             layers.append(layer)
         }
 
-        let modeInstr = modeInstructionFor(mode: context.mode, context: context)
-        if !modeInstr.isEmpty {
-            layers.append(Layer(
-                kind: .modeInstruction,
-                label: "Mode instruction",
-                content: modeInstr,
-                tokens: TokenEstimator.estimate(modeInstr),
-                aboveCache: false,
-                sourceId: nil,
-                evictionPriority: .max
-            ))
-        }
-
         let an = context.project.settings.authorsNote
         if !an.isEmpty {
             // Bracketed convention from AI Dungeon / web-fiction model
@@ -266,6 +266,25 @@ public enum PromptBuilder {
                 label: "Author's Note",
                 content: formatted,
                 tokens: TokenEstimator.estimate(formatted),
+                aboveCache: false,
+                sourceId: nil,
+                evictionPriority: .max
+            ))
+        }
+
+        // Mode-instruction lands LAST in the user message so it's the
+        // closest signal to the assistant generation marker — the
+        // recency-bias rule ("lower in prompt = stronger") concentrates
+        // the steering at the cursor. For Continue this is the
+        // explicit anti-echo "continue from here" cue; for Expand it's
+        // the "Sketch to expand:" framing.
+        let modeInstr = modeInstructionFor(mode: context.mode, context: context)
+        if !modeInstr.isEmpty {
+            layers.append(Layer(
+                kind: .modeInstruction,
+                label: "Mode instruction",
+                content: modeInstr,
+                tokens: TokenEstimator.estimate(modeInstr),
                 aboveCache: false,
                 sourceId: nil,
                 evictionPriority: .max
@@ -382,7 +401,7 @@ public enum PromptBuilder {
         switch mode {
         case .continueProse:
             return """
-            You are a fiction writer continuing an existing manuscript. Maintain voice, tense, POV, and tone exactly as established in the preceding text. Continue the scene naturally — do not summarize, do not break narrative voice, do not introduce meta-commentary. End at a natural pause (paragraph break, scene beat, or sentence boundary).
+            You are a fiction writer continuing an existing manuscript. You will be given prose; pick up exactly where it ends and write the next ~500 words of the scene. Maintain voice, tense, POV, and tone exactly as established. Do NOT restate, paraphrase, or quote any of the preceding prose — your output begins on the very next character that follows it. Do not summarize, do not break narrative voice, do not introduce meta-commentary or chapter headings. End at a natural pause (paragraph break, scene beat, or sentence boundary).
             """
         case .expand:
             return """
@@ -402,10 +421,14 @@ public enum PromptBuilder {
     private static func modeInstructionFor(mode: GenerationMode, context: PromptContext) -> String {
         switch mode {
         case .continueProse:
-            // For Continue, the cursor position itself is the
-            // instruction — model continues from where the prose ends.
-            // No separate mode instruction needed.
-            return ""
+            // Explicit terminal instruction for chat-shaped instruct
+            // models: lands AFTER the prose in the user message so
+            // the recency-bias rule ("lower = stronger") concentrates
+            // the steering at the cursor. Without this, Qwen 3.x
+            // treats the prose as a passage to comment on / quote
+            // back, and prefixes its continuation with a verbatim
+            // echo of the opening sentence (confirmed live 2026-05-10).
+            return "—— Continue from immediately after the last word above. Output only the next ~500 words of prose. Do not restate, paraphrase, or quote any of the passage above."
         case .expand:
             // Frame the selection as the sketch.
             guard let range = context.selectionRange,

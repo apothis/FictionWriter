@@ -17,7 +17,6 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var textView: NSTextView!
     private var trayView: GenerationTrayView!
     private var coordinator: GenerationCoordinator!
-    private var acceptanceOverlay: AcceptanceOverlayView!
     private var acceptanceMachine = AcceptanceMachine()
     private var emptyStateView: EmptyProjectStateView!
     private var emptyStateClickedObserver: NSObjectProtocol?
@@ -135,6 +134,16 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         tray.onExpandClicked = { [weak self] in self?.handleExpand() }
         self.trayView = tray
 
+        // Acceptance buttons are now part of the tray itself (they
+        // swap in for Continue/Expand when the post-generation
+        // acceptance window opens). The previous floating overlay had
+        // hit-test pathologies that made clicks fall through even when
+        // the buttons rendered visibly. Putting them in the
+        // demonstrably-working tray slot guarantees clicks reach them.
+        tray.onAcceptClicked = { [weak self] in self?.applyAcceptanceTransition(.accept) }
+        tray.onRejectClicked = { [weak self] in self?.applyAcceptanceTransition(.reject) }
+        tray.onRedoClicked = { [weak self] in self?.applyAcceptanceTransition(.redo) }
+
         // Empty-project placeholder per LOOM_DESIGN_LANGUAGE.md §14.7.
         // Overlaid on top of the scroll view; shown when
         // EmptyProjectState.shouldShow(in: session) is true. The
@@ -145,21 +154,9 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         empty.isHidden = true
         self.emptyStateView = empty
 
-        // Acceptance overlay — pinned at the top of the editor pane,
-        // hidden by default. Shown when the acceptance machine moves
-        // to .awaiting (1.j.B). Per-block-anchored positioning is
-        // §1.m polish (HANDOFF.md §2.2 flagged it as finicky on macOS).
-        let overlay = AcceptanceOverlayView()
-        overlay.translatesAutoresizingMaskIntoConstraints = false
-        overlay.onAccept = { [weak self] in self?.applyAcceptanceTransition(.accept) }
-        overlay.onReject = { [weak self] in self?.applyAcceptanceTransition(.reject) }
-        overlay.onRedo = { [weak self] in self?.applyAcceptanceTransition(.redo) }
-        self.acceptanceOverlay = overlay
-
         container.addSubview(scroll)
         container.addSubview(tray)
         container.addSubview(empty)
-        container.addSubview(overlay)
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: container.topAnchor),
             scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -172,8 +169,6 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             empty.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
             empty.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
             empty.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
-            overlay.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.Spacing.sm),
-            overlay.centerXAnchor.constraint(equalTo: container.centerXAnchor),
         ])
 
         self.view = container
@@ -335,7 +330,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
            case .awaiting = acceptanceMachine.state
         {
             _ = acceptanceMachine.handleImplicitAccept()
-            acceptanceOverlay.hide()
+            trayView.setTrayMode(.editing)
             clearAcceptanceTint()
             DebugLog.shared.write("[editor] acceptance: implicit (user typed)")
         }
@@ -449,7 +444,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         let mode = lastInvokedMode ?? .continueProse
         acceptanceMachine.handleGenerationFinished(insertedRange: insertedRange, mode: mode)
         applyAcceptanceTint(insertedRange)
-        acceptanceOverlay.show()
+        trayView.setTrayMode(.acceptance)
     }
 
     /// Tracks which mode the editor most recently invoked, so the
@@ -489,7 +484,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         case .reject: action = acceptanceMachine.handleReject()
         case .redo:   action = acceptanceMachine.handleRedo()
         }
-        acceptanceOverlay.hide()
+        trayView.setTrayMode(.editing)
         clearAcceptanceTint()
 
         switch action {

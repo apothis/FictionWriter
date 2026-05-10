@@ -13,8 +13,12 @@ import Foundation
 func phase1DesignTokensTests() -> TestSuite {
     let s = TestSuite("Phase1DesignTokens")
 
-    s.test("Editor.editorMaxWidth matches §14.2 (720pt readable line)") {
-        try expectEqual(DesignTokens.Editor.editorMaxWidth, 720)
+    s.test("Editor.editorMaxWidth = 1080pt readable column") {
+        // Originally §14.2 specified 720pt to match RPClient transcript
+        // width; live-testing on 1280+pt windows found that uncomfortably
+        // narrow. Bumped to 1080pt — still inside the readable-line
+        // range, materially less wasted margin on modern displays.
+        try expectEqual(DesignTokens.Editor.editorMaxWidth, 1080)
     }
 
     s.test("Editor sidebar/inspector width contract values match Phase 1 spec") {

@@ -21,12 +21,23 @@ import AppKit
 public final class GenerationTrayView: NSView {
     public var onContinueClicked: (() -> Void)?
     public var onExpandClicked: (() -> Void)?
+    /// Acceptance-mode click handlers. The tray swaps its visible
+    /// button row to Accept / Reject / Keep & Redo when generation
+    /// finishes; these closures fire when the user clicks them.
+    public var onAcceptClicked: (() -> Void)?
+    public var onRejectClicked: (() -> Void)?
+    public var onRedoClicked: (() -> Void)?
 
     private let continueButton: NSButton
     private let expandButton: NSButton
     private let rewriteButton: NSButton
     private let brainstormButton: NSButton
     private let critiqueButton: NSButton
+    private let acceptButton: NSButton
+    private let rejectButton: NSButton
+    private let keepRedoButton: NSButton
+    private let editingButtons: NSStackView
+    private let acceptanceButtons: NSStackView
     private let tokenEstimateLabel: NSTextField
     private let historyDisclosureButton: NSButton
     private let progressIndicator: NSProgressIndicator
@@ -40,7 +51,14 @@ public final class GenerationTrayView: NSView {
         case thinking      // request fired, no tokens yet
         case streaming     // first token arrived
     }
+    /// Tray's UI mode: editing exposes Continue/Expand/etc;
+    /// acceptance exposes Accept/Reject/Keep&Redo.
+    public enum TrayMode {
+        case editing
+        case acceptance
+    }
     private var generationState: GenerationState = .idle
+    private var trayMode: TrayMode = .editing
 
     public override init(frame frameRect: NSRect) {
         continueButton = Self.makeModeButton(title: "Continue")
@@ -48,6 +66,11 @@ public final class GenerationTrayView: NSView {
         rewriteButton = Self.makeModeButton(title: "Rewrite")
         brainstormButton = Self.makeModeButton(title: "Brainstorm")
         critiqueButton = Self.makeModeButton(title: "Critique")
+        acceptButton = Self.makeModeButton(title: "Accept ⏎")
+        rejectButton = Self.makeModeButton(title: "Reject ⌫")
+        keepRedoButton = Self.makeModeButton(title: "Keep & Redo ⌘⇧R")
+        editingButtons = NSStackView()
+        acceptanceButtons = NSStackView()
         tokenEstimateLabel = NSTextField(labelWithString: "—")
         historyDisclosureButton = NSButton(title: "▸ History", target: nil, action: nil)
         progressIndicator = NSProgressIndicator()
@@ -77,13 +100,25 @@ public final class GenerationTrayView: NSView {
         divider.translatesAutoresizingMaskIntoConstraints = false
         addSubview(divider)
 
-        // Buttons row
-        let buttonsRow = NSStackView(views: [
-            continueButton, expandButton, rewriteButton, brainstormButton, critiqueButton,
-        ])
-        buttonsRow.orientation = .horizontal
-        buttonsRow.spacing = DesignTokens.Spacing.sm
-        buttonsRow.translatesAutoresizingMaskIntoConstraints = false
+        // Editing buttons row — Continue / Expand / etc.
+        editingButtons.setViews([continueButton, expandButton, rewriteButton, brainstormButton, critiqueButton], in: .leading)
+        editingButtons.orientation = .horizontal
+        editingButtons.spacing = DesignTokens.Spacing.sm
+        editingButtons.translatesAutoresizingMaskIntoConstraints = false
+
+        // Acceptance buttons row — Accept / Reject / Keep & Redo.
+        // Visible during the post-generation acceptance window
+        // INSTEAD of the editing row (mutually exclusive). Sharing the
+        // tray slot guarantees the buttons sit in a known-working
+        // hit-test path; the previous floating overlay had layout
+        // pathologies that broke clicks even when the buttons rendered.
+        acceptanceButtons.setViews([acceptButton, rejectButton, keepRedoButton], in: .leading)
+        acceptanceButtons.orientation = .horizontal
+        acceptanceButtons.spacing = DesignTokens.Spacing.sm
+        acceptanceButtons.translatesAutoresizingMaskIntoConstraints = false
+        acceptanceButtons.isHidden = true
+
+        let buttonsRow = editingButtons
 
         tokenEstimateLabel.font = DesignTokens.Typography.mono(.caption1)
         tokenEstimateLabel.textColor = DesignTokens.Foreground.secondary
@@ -105,7 +140,8 @@ public final class GenerationTrayView: NSView {
         historyDisclosureButton.font = DesignTokens.Typography.subheadline
         historyDisclosureButton.translatesAutoresizingMaskIntoConstraints = false
 
-        addSubview(buttonsRow)
+        addSubview(editingButtons)
+        addSubview(acceptanceButtons)
         addSubview(progressIndicator)
         addSubview(stateLabel)
         addSubview(tokenEstimateLabel)
@@ -117,20 +153,26 @@ public final class GenerationTrayView: NSView {
             divider.trailingAnchor.constraint(equalTo: trailingAnchor),
             divider.heightAnchor.constraint(equalToConstant: 1),
 
-            buttonsRow.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: DesignTokens.Spacing.sm),
-            buttonsRow.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DesignTokens.Spacing.md),
+            editingButtons.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            editingButtons.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DesignTokens.Spacing.md),
 
-            tokenEstimateLabel.centerYAnchor.constraint(equalTo: buttonsRow.centerYAnchor),
+            // Acceptance row sits in the same slot as the editing
+            // row. They're never visible at the same time (trayMode
+            // controls).
+            acceptanceButtons.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            acceptanceButtons.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DesignTokens.Spacing.md),
+
+            tokenEstimateLabel.centerYAnchor.constraint(equalTo: editingButtons.centerYAnchor),
             tokenEstimateLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DesignTokens.Spacing.md),
 
-            stateLabel.centerYAnchor.constraint(equalTo: buttonsRow.centerYAnchor),
+            stateLabel.centerYAnchor.constraint(equalTo: editingButtons.centerYAnchor),
             stateLabel.trailingAnchor.constraint(equalTo: tokenEstimateLabel.leadingAnchor, constant: -DesignTokens.Spacing.md),
 
-            progressIndicator.centerYAnchor.constraint(equalTo: buttonsRow.centerYAnchor),
+            progressIndicator.centerYAnchor.constraint(equalTo: editingButtons.centerYAnchor),
             progressIndicator.trailingAnchor.constraint(equalTo: stateLabel.leadingAnchor, constant: -DesignTokens.Spacing.xs),
-            progressIndicator.leadingAnchor.constraint(greaterThanOrEqualTo: buttonsRow.trailingAnchor, constant: DesignTokens.Spacing.sm),
+            progressIndicator.leadingAnchor.constraint(greaterThanOrEqualTo: editingButtons.trailingAnchor, constant: DesignTokens.Spacing.sm),
 
-            historyDisclosureButton.topAnchor.constraint(equalTo: buttonsRow.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            historyDisclosureButton.topAnchor.constraint(equalTo: editingButtons.bottomAnchor, constant: DesignTokens.Spacing.sm),
             historyDisclosureButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DesignTokens.Spacing.md),
             historyDisclosureButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -DesignTokens.Spacing.sm),
         ])
@@ -140,6 +182,12 @@ public final class GenerationTrayView: NSView {
         continueButton.action = #selector(continueClicked)
         expandButton.target = self
         expandButton.action = #selector(expandClicked)
+        acceptButton.target = self
+        acceptButton.action = #selector(acceptClicked)
+        rejectButton.target = self
+        rejectButton.action = #selector(rejectClicked)
+        keepRedoButton.target = self
+        keepRedoButton.action = #selector(redoClickedAction)
         // Phase 4 buttons rendered for visual completeness; permanently
         // disabled until those modes wire up.
         rewriteButton.isEnabled = false
@@ -203,6 +251,22 @@ public final class GenerationTrayView: NSView {
 
     // MARK: - Actions
 
+    /// Swap between editing-mode buttons (Continue / Expand) and
+    /// acceptance-mode buttons (Accept / Reject / Keep & Redo).
+    /// Editor calls this on coordinator finish (→ .acceptance) and
+    /// after the user accepts/rejects/redoes (→ .editing).
+    public func setTrayMode(_ mode: TrayMode) {
+        trayMode = mode
+        switch mode {
+        case .editing:
+            editingButtons.isHidden = false
+            acceptanceButtons.isHidden = true
+        case .acceptance:
+            editingButtons.isHidden = true
+            acceptanceButtons.isHidden = false
+        }
+    }
+
     @objc private func continueClicked() {
         DebugLog.shared.write("[gen] tray: continue clicked")
         onContinueClicked?()
@@ -211,6 +275,21 @@ public final class GenerationTrayView: NSView {
     @objc private func expandClicked() {
         DebugLog.shared.write("[gen] tray: expand clicked")
         onExpandClicked?()
+    }
+
+    @objc private func acceptClicked() {
+        DebugLog.shared.write("[gen] tray: accept clicked")
+        onAcceptClicked?()
+    }
+
+    @objc private func rejectClicked() {
+        DebugLog.shared.write("[gen] tray: reject clicked")
+        onRejectClicked?()
+    }
+
+    @objc private func redoClickedAction() {
+        DebugLog.shared.write("[gen] tray: keep&redo clicked")
+        onRedoClicked?()
     }
 
     @objc private func toggleHistory() {

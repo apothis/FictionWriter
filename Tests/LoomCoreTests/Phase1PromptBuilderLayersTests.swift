@@ -62,33 +62,57 @@ func phase1PromptBuilderLayersTests() -> TestSuite {
         try expectNotNil(bibleChiclet)
     }
 
-    s.test("recent prose layer pulls last N chars before cursor") {
+    s.test("recent prose layer pulls last N chars before cursor (chat-shaped, in user message)") {
+        // Phase 1 keeps a chat-shaped structure: prose + explicit
+        // continuation instruction in the user message. (Story-mode
+        // prefill — putting prose in the assistant turn — was
+        // attempted and reverted; instruct-tuned chat models like
+        // Qwen 3.6 emit <|im_end|> immediately when the prefill looks
+        // like a complete response. Confirmed live 2026-05-10.)
         let prose = "Para one with some words.\n\nPara two with the cursor lands here."
         var project = Project(title: "T")
         project.settings.contextBudgetTokens = 8192
         let scene = Scene.empty(id: UUID(), title: "Scene 1")
         let context = makeContinueContext(project: project, scene: scene, prose: prose)
         let result = PromptBuilder.build(context)
-        // Recent prose should appear in the user block.
         try expectTrue(result.userBlock.contains("Para two with the cursor lands here."))
         let proseChiclet = result.chiclets.first { $0.sourceKind == .recentProse }
         try expectNotNil(proseChiclet)
     }
 
-    s.test("Author's Note appears bracketed in user block, near cursor") {
+    s.test("Continue mode includes an explicit anti-echo continuation instruction AFTER the prose") {
+        // The instruction lands as the last below-cache layer so the
+        // recency-bias rule ("lower = stronger") concentrates the
+        // steering on the cursor. Prevents the chat-reply echo
+        // pattern where Qwen quotes the opening sentence before
+        // continuing.
+        let prose = "She walked into the room and looked around."
+        let project = Project(title: "T")
+        let scene = Scene.empty(id: UUID(), title: "Scene 1")
+        let context = makeContinueContext(project: project, scene: scene, prose: prose)
+        let result = PromptBuilder.build(context)
+        // Instruction is present.
+        try expectTrue(result.userBlock.contains("Continue from immediately after"))
+        try expectTrue(result.userBlock.contains("Do not restate"))
+        // And it lands AFTER the prose (recency wins).
+        let proseIdx = try expectNotNil(result.userBlock.range(of: "She walked into the room")?.lowerBound)
+        let instrIdx = try expectNotNil(result.userBlock.range(of: "Continue from immediately after")?.lowerBound)
+        try expectTrue(instrIdx > proseIdx, "Continue instruction must land below the prose")
+    }
+
+    s.test("Author's Note appears bracketed in the user block") {
+        // Bracketed `[...]` convention from AI Dungeon / web-fiction
+        // model prior. Phase 1 simplification: AN sits in the user
+        // block; story-mode Continue puts prose in the prefill so the
+        // chat-turn ordering (user → assistant) places AN before
+        // prose. True depth-N injection within the prefill (so AN
+        // sits ~1 paragraph above the cursor) is Phase 2 polish.
         var project = Project(title: "T")
         project.settings.authorsNote = "terse style; preceding prose authoritative"
         let scene = Scene.empty(id: UUID(), title: "Scene 1")
         let context = makeContinueContext(project: project, scene: scene, prose: "Some prose here.")
         let result = PromptBuilder.build(context)
-        // Bracketed convention from AI Dungeon / web-fiction model prior.
         try expectTrue(result.userBlock.contains("[terse style; preceding prose authoritative]"))
-        // Position: AN comes AFTER the prose (recency = stronger influence).
-        let proseIdx = result.userBlock.range(of: "Some prose here.")?.lowerBound
-        let anIdx = result.userBlock.range(of: "[terse style")?.lowerBound
-        let pi = try expectNotNil(proseIdx)
-        let ai = try expectNotNil(anIdx)
-        try expectTrue(ai > pi, "Author's Note should follow recent prose")
     }
 
     s.test("mode instruction differs by mode (Continue vs Expand)") {

@@ -55,7 +55,6 @@ public final class MainWindowController: NSWindowController {
         // (1.m §14.8 spec). Sits OUTSIDE the splitVC so it spans across
         // sidebar + editor + inspector.
         let strip = StatusStripView()
-        strip.translatesAutoresizingMaskIntoConstraints = false
         self.statusStrip = strip
 
         let frame = NSRect(
@@ -101,31 +100,19 @@ public final class MainWindowController: NSWindowController {
             DebugLog.shared.write("[loom] window: restored frame \(restoredFrame)")
         }
 
-        // Compose: splitVC.view above the status strip inside a single
-        // contentView. (Replaces the previous direct
-        // window.contentViewController = split assignment.)
-        let content = NSView()
-        content.translatesAutoresizingMaskIntoConstraints = false
-        split.view.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(split.view)
-        content.addSubview(strip)
-        NSLayoutConstraint.activate([
-            split.view.topAnchor.constraint(equalTo: content.topAnchor),
-            split.view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            split.view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            split.view.bottomAnchor.constraint(equalTo: strip.topAnchor),
-            strip.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            strip.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            strip.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            strip.heightAnchor.constraint(equalToConstant: 22),
-        ])
-        window.contentView = content
-        // Add the splitVC as a child of a host VC so its lifecycle is
-        // honoured (the framework expects child controllers to have a
-        // parent).
-        let host = NSViewController()
-        host.view = content
-        host.addChild(split)
+        // Compose splitVC.view + status strip inside a properly
+        // subclassed container view-controller (LoomWindowContentVC,
+        // declared below). The previous implementation created an
+        // ad-hoc NSViewController() and assigned `host.view = content`
+        // outside of loadView; the splitVC's layout machinery doesn't
+        // resolve correctly under that pattern — the editor pane's
+        // view ended up oversized (>1100pt wide × ~940pt tall on a
+        // 1280×720 window), so the acceptance overlay rendered
+        // visibly but its hit-test bounds fell outside the parent's
+        // and clicks went nowhere. The proper subclass loads everything
+        // in loadView, which is when AppKit expects the hierarchy +
+        // child-VC plumbing to be set up.
+        let host = LoomWindowContentVC(splitVC: split, statusStrip: strip)
         window.contentViewController = host
 
         super.init(window: window)
@@ -189,5 +176,44 @@ public final class MainWindowController: NSWindowController {
         // Standard macOS document-edited indicator: a dot in the close
         // button. Tracks `isDirty` (clean→dirty and back, via flushSave).
         window.isDocumentEdited = session.isDirty
+    }
+}
+
+/// Window-level content controller. Hosts the three-pane splitVC + the
+/// bottom status strip and owns their layout. Loaded properly as an
+/// NSViewController subclass — its `loadView` constructs the hierarchy
+/// AND adds the splitVC as a child VC, which is what AppKit expects
+/// for the splitVC's layout machinery to resolve correctly.
+final class LoomWindowContentVC: NSViewController {
+    let splitVC: NSSplitViewController
+    let statusStrip: StatusStripView
+
+    init(splitVC: NSSplitViewController, statusStrip: StatusStripView) {
+        self.splitVC = splitVC
+        self.statusStrip = statusStrip
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { nil }
+
+    override func loadView() {
+        let content = NSView()
+        addChild(splitVC)
+        let splitView = splitVC.view
+        splitView.translatesAutoresizingMaskIntoConstraints = false
+        statusStrip.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(splitView)
+        content.addSubview(statusStrip)
+        NSLayoutConstraint.activate([
+            splitView.topAnchor.constraint(equalTo: content.topAnchor),
+            splitView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            splitView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            splitView.bottomAnchor.constraint(equalTo: statusStrip.topAnchor),
+            statusStrip.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            statusStrip.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            statusStrip.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            statusStrip.heightAnchor.constraint(equalToConstant: 22),
+        ])
+        self.view = content
     }
 }

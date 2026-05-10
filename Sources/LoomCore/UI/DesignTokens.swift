@@ -107,10 +107,16 @@ public enum DesignTokens {
     /// the per-pane width thresholds are genuinely new (content-rules,
     /// not grid tokens), so they sit as literals.
     public enum Editor {
-        /// 720 — content column max width per §14.2. Same readable-line
-        /// target as RPClient's transcript; users coming from Ulysses /
-        /// iA Writer recognise the measure. Not an alias — content rule.
-        public static let editorMaxWidth: CGFloat = 720
+        /// Content column max width — readable-line target. Original
+        /// design language §14.2 specified 720pt (matching RPClient's
+        /// transcript width); live testing 2026-05-10 found that 720
+        /// leaves uncomfortably wide margins on a 1280+pt window.
+        /// Bumped to 1080pt — still inside the readable-line range
+        /// (~95-105 chars at 13pt body, vs the 60-75 char "perfect"
+        /// target) but materially reduces the empty-margin feeling
+        /// on modern displays. Per-project / global setting is a
+        /// Phase 2 polish candidate.
+        public static let editorMaxWidth: CGFloat = 1080
 
         /// Sidebar (Binder) bounds. Defaults sit inside the §14.2 range
         /// (220–360pt resizable, min 180pt); the Phase 1 contract pins
