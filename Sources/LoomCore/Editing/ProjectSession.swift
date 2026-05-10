@@ -14,10 +14,18 @@ public final class ProjectSession {
     public private(set) var project: Project
     public private(set) var scenes: [UUID: Scene]
     public private(set) var changeCounter: Int = 0
+    /// Currently-active scene — the one the editor is showing. Set by
+    /// the sidebar on row selection. May be nil briefly (empty project,
+    /// or after deleting the last scene).
+    public private(set) var currentSceneId: UUID?
 
     /// Posted on every mutation. The notification's `object` is the
     /// session that changed.
     public static let didChangeNotification = Notification.Name("LoomProjectSession.didChange")
+
+    /// Posted only when `currentSceneId` changes. The editor listens
+    /// for this and swaps its text-storage to the new scene's prose.
+    public static let selectionDidChangeNotification = Notification.Name("LoomProjectSession.selectionDidChange")
 
     public init(project: Project, scenes: [UUID: Scene] = [:]) {
         self.project = project
@@ -36,9 +44,34 @@ public final class ProjectSession {
         let scene = Scene(id: UUID(), title: resolvedTitle)
         scenes[scene.id] = scene
         project.manuscript.orphanedSceneIds.append(scene.id)
+        // Auto-select if nothing is currently selected — the user
+        // expects to start typing into the new scene immediately.
+        if currentSceneId == nil {
+            currentSceneId = scene.id
+            postSelectionDidChange()
+        }
         markChanged()
         DebugLog.shared.write("[project] addScene id=\(scene.id) title=\(resolvedTitle)")
         return scene
+    }
+
+    /// Set the active scene. No-op if `id` doesn't refer to a known
+    /// scene. Posts `selectionDidChangeNotification` on a real change.
+    public func selectScene(id: UUID) {
+        guard scenes[id] != nil else { return }
+        guard id != currentSceneId else { return }
+        currentSceneId = id
+        postSelectionDidChange()
+        DebugLog.shared.write("[project] selectScene id=\(id)")
+    }
+
+    /// Update the prose body of a scene. Called by the editor on text
+    /// change. Doesn't bump the changeCounter — the editor already has
+    /// the new text, and the sidebar doesn't render prose.
+    public func updateProse(id: UUID, prose: String) {
+        guard var scene = scenes[id] else { return }
+        scene.prose = prose
+        scenes[id] = scene
     }
 
     public func renameScene(id: UUID, to title: String) {
@@ -58,6 +91,10 @@ public final class ProjectSession {
         guard manuscript.orphanedSceneIds.contains(id) else { return }
         project.manuscript.orphanedSceneIds = SceneListOperations.delete(id, from: manuscript.orphanedSceneIds)
         project.manuscript.trashedSceneIds.append(id)
+        if currentSceneId == id {
+            currentSceneId = nil
+            postSelectionDidChange()
+        }
         markChanged()
         DebugLog.shared.write("[project] deleteScene id=\(id) → trash")
     }
@@ -82,6 +119,10 @@ public final class ProjectSession {
     private func markChanged() {
         changeCounter += 1
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+    }
+
+    private func postSelectionDidChange() {
+        NotificationCenter.default.post(name: Self.selectionDidChangeNotification, object: self)
     }
 
     /// Compute the next "Scene N" suffix by scanning existing scenes

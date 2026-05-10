@@ -17,7 +17,7 @@ public final class MainWindowController: NSWindowController {
 
     public init() {
         let sidebar = SidebarController(session: AppState.shared.currentSession)
-        let editor = EditorPlaceholderViewController()
+        let editor = EditorViewController(session: AppState.shared.currentSession)
         let inspector = InspectorPlaceholderViewController()
 
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)

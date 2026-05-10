@@ -99,6 +99,15 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
         }
 
         outline.expandItem(SidebarItem.group(.manuscript))
+
+        // Restore visual selection if the session already has a current
+        // scene (AppState bootstraps with one starter scene auto-selected).
+        if let id = session.currentSceneId {
+            let row = outline.row(forItem: SidebarItem.scene(id))
+            if row >= 0 {
+                outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            }
+        }
     }
 
     // MARK: - Actions
@@ -226,6 +235,15 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
         guard let sidebarItem = item as? SidebarItem else { return false }
         if case .scene = sidebarItem { return true }
         return false
+    }
+
+    public func outlineViewSelectionDidChange(_ notification: Notification) {
+        let row = outlineView.selectedRow
+        guard row >= 0,
+              let sidebarItem = outlineView.item(atRow: row) as? SidebarItem,
+              case .scene(let id) = sidebarItem
+        else { return }
+        session.selectScene(id: id)
     }
 
     @objc private func sceneTitleEdited(_ sender: NSTextField) {
