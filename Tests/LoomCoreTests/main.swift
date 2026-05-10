@@ -2,6 +2,10 @@ import Foundation
 
 let suites: [TestSuite] = [
     phase1DebugLogTests(),
+    phase1ProjectCodableTests(),
+    phase1SceneFrontmatterTests(),
+    phase1ProjectStorageTests(),
+    phase1SchemaVersionTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
