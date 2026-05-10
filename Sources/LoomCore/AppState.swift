@@ -20,6 +20,7 @@ public final class AppState {
     /// by GenerationCoordinator so PromptBuilder's `.auto` template
     /// detection can match against it (e.g. "Qwen3.6-..." → .chatml).
     public var lastProbedModelName: String?
+    public var lastProbedMaxContext: Int?
 
     /// Test-only init. Production code uses `.shared`.
     public init(settingsStore: AppSettingsStore = AppSettingsStore()) {

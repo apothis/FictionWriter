@@ -11,6 +11,7 @@ import AppKit
 public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var mainWindow: MainWindowController!
     private weak var recentProjectsMenu: NSMenu?
+    private var settingsWindow: SettingsWindowController?
 
     public override init() {
         super.init()
@@ -48,10 +49,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
                 switch result {
                 case .success(let caps):
                     AppState.shared.lastProbedModelName = caps.modelName
+                    AppState.shared.lastProbedMaxContext = caps.trueMaxContext
                     DebugLog.shared.write("[loom] server probe ok: model=\(caps.modelName ?? "?") ctx=\(caps.trueMaxContext.map(String.init) ?? "?")")
                     status = .reachable(model: caps.modelName, maxContext: caps.trueMaxContext)
                 case .failure(let error):
                     AppState.shared.lastProbedModelName = nil
+                    AppState.shared.lastProbedMaxContext = nil
                     DebugLog.shared.write("[loom] server probe failed: \(error)")
                     status = .unreachable
                 }
@@ -78,6 +81,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             title: "About Loom",
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem.separator())
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(showSettings(_:)),
+            keyEquivalent: ",")
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(NSMenuItem(
             title: "Hide Loom",
@@ -296,5 +306,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         var settings = AppState.shared.settings
         settings.recentProjectURLs = []
         try? AppState.shared.updateSettings(settings)
+    }
+
+    @objc func showSettings(_ sender: Any?) {
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindowController(appState: AppState.shared)
+        }
+        settingsWindow?.showAndActivate()
     }
 }

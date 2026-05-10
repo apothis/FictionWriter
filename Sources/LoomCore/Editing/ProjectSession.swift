@@ -184,6 +184,33 @@ public final class ProjectSession {
         project.selectedInspectorTab = tab
     }
 
+    // MARK: - Project settings (Phase 2 Settings UI)
+
+    public func setMemory(_ memory: String) {
+        project.settings.memory = memory
+        markDirty()
+    }
+
+    public func setAuthorsNote(_ note: String) {
+        project.settings.authorsNote = note
+        markDirty()
+    }
+
+    public func setAuthorsNoteDepthLines(_ lines: Int) {
+        project.settings.authorsNoteDepthLines = max(0, lines)
+        markDirty()
+    }
+
+    public func setContextBudgetTokens(_ tokens: Int) {
+        project.settings.contextBudgetTokens = tokens
+        markDirty()
+    }
+
+    public func setMaxOutputTokens(_ tokens: Int) {
+        project.settings.generationDefaults.maxOutputTokens = tokens
+        markDirty()
+    }
+
     // MARK: - Internals
 
     private func markChanged() {
