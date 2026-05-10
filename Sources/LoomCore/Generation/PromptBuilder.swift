@@ -14,6 +14,12 @@ public struct PromptContext {
     public var modelName: String?
     public var contextBudgetTokens: Int
     public var replyBudgetTokens: Int
+    /// One-shot ad-hoc steering for this generation only ("make it
+    /// more dramatic", "first-person POV", "shorter please"). Layered
+    /// just above the mode instruction so it lands close to the
+    /// cursor (recency wins) without overriding the mode framing.
+    /// Empty or nil → no layer added.
+    public var perCallInstruction: String?
 
     public init(
         mode: GenerationMode,
@@ -24,7 +30,8 @@ public struct PromptContext {
         selectionRange: NSRange?,
         modelName: String?,
         contextBudgetTokens: Int,
-        replyBudgetTokens: Int
+        replyBudgetTokens: Int,
+        perCallInstruction: String? = nil
     ) {
         self.mode = mode
         self.project = project
@@ -35,6 +42,7 @@ public struct PromptContext {
         self.modelName = modelName
         self.contextBudgetTokens = contextBudgetTokens
         self.replyBudgetTokens = replyBudgetTokens
+        self.perCallInstruction = perCallInstruction
     }
 }
 
@@ -97,6 +105,7 @@ public enum ChicletKind: String, Codable, Equatable, CaseIterable {
     case recentProse
     case sceneAnchor
     case authorsNote
+    case perCallInstruction
     case modeInstruction
     case fewShotStyleExample
 }
@@ -264,6 +273,25 @@ public enum PromptBuilder {
             layers.append(Layer(
                 kind: .authorsNote,
                 label: "Author's Note",
+                content: formatted,
+                tokens: TokenEstimator.estimate(formatted),
+                aboveCache: false,
+                sourceId: nil,
+                evictionPriority: .max
+            ))
+        }
+
+        // Per-call instruction — one-shot ad-hoc steering for this
+        // generation only, e.g. "make it more dramatic" or
+        // "first-person POV". Lands just above the mode instruction
+        // so it sits in the recency-strong slot without overriding
+        // the mode framing itself.
+        let perCall = (context.perCallInstruction ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !perCall.isEmpty {
+            let formatted = "Per-call instruction: \(perCall)"
+            layers.append(Layer(
+                kind: .perCallInstruction,
+                label: "Per-call instruction",
                 content: formatted,
                 tokens: TokenEstimator.estimate(formatted),
                 aboveCache: false,

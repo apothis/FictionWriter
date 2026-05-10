@@ -329,8 +329,10 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         {
             _ = acceptanceMachine.handleImplicitAccept()
             trayView.setTrayMode(.editing)
+            trayView.clearInstruction()
             clearAcceptanceTint()
             lastSelectionContext = nil
+            lastPerCallInstruction = ""
             DebugLog.shared.write("[editor] acceptance: implicit (user typed)")
         }
         guard let id = session.currentSceneId else { return }
@@ -360,7 +362,14 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         }()
         lastInvokedMode = .continueProse
         textView.isEditable = false
-        coordinator.start(mode: .continueProse, cursorOffset: cursor, selectionRange: nil)
+        let instruction = trayView.instructionText
+        lastPerCallInstruction = instruction
+        coordinator.start(
+            mode: .continueProse,
+            cursorOffset: cursor,
+            selectionRange: nil,
+            perCallInstruction: instruction.isEmpty ? nil : instruction
+        )
     }
 
     private func handleExpand() {
@@ -405,10 +414,13 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
 
         lastInvokedMode = mode
         textView.isEditable = false
+        let instruction = trayView.instructionText
+        lastPerCallInstruction = instruction
         coordinator.start(
             mode: mode,
             cursorOffset: selection.location,
-            selectionRange: selection
+            selectionRange: selection,
+            perCallInstruction: instruction.isEmpty ? nil : instruction
         )
     }
 
@@ -436,8 +448,28 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     private func handleGenerationFinish() {
         textView.isEditable = true
+
+        // Reconstruct the inserted range from the coordinator's
+        // running offset. We need this BEFORE writing back to the
+        // session so we can strip any <think>...</think> blocks
+        // that leaked past the prefill suppression.
+        let nsLength = (coordinator.insertedText as NSString).length
+        guard nsLength > 0 else {
+            if let id = session.currentSceneId {
+                session.updateProse(id: id, prose: textView.string)
+            }
+            postWordCount()
+            pushTrayState()
+            return
+        }
+        var insertedRange = NSRange(
+            location: coordinator.insertionOffset - nsLength,
+            length: nsLength
+        )
+        insertedRange = stripThinkBlocks(in: insertedRange)
+
         // Sync the session's in-memory prose with what the text view
-        // shows now. Single writeback at finish (rather than per-token)
+        // shows NOW (after the strip). Single writeback at finish
         // keeps the session state consistent without churning.
         if let id = session.currentSceneId {
             session.updateProse(id: id, prose: textView.string)
@@ -445,27 +477,60 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         postWordCount()
         pushTrayState()
         DebugLog.shared.write("[editor] generation finished — text-view re-editable")
+        // If stripping consumed the entire generation, treat it as a
+        // failed run: don't drive the acceptance window. Restore the
+        // original selection if this was Expand/Rewrite so the user
+        // doesn't lose their text.
+        guard insertedRange.length > 0 else {
+            DebugLog.shared.write("[editor] generation finished — entirely <think> noise, skipping acceptance")
+            if let saved = lastSelectionContext,
+               let mode = lastInvokedMode,
+               (mode == .expand || mode == .rewrite)
+            {
+                reinsertOriginalSelection(saved)
+            }
+            lastSelectionContext = nil
+            lastPerCallInstruction = ""
+            trayView.clearInstruction()
+            return
+        }
 
-        // Drive the acceptance machine + show the overlay if the
-        // generation produced a non-empty insertion. coordinator's
-        // insertedText property holds the streamed result; the
-        // insertion offset comes from the coordinator's internal
-        // tracker. We reconstruct the inserted range from those.
-        let nsLength = (coordinator.insertedText as NSString).length
-        guard nsLength > 0 else { return }
-        let insertedRange = NSRange(
-            location: coordinator.insertionOffset - nsLength,
-            length: nsLength
-        )
-        // Determine the mode that just finished — coordinator doesn't
-        // currently expose it, but the acceptance machine only
-        // strictly needs it for the redo path. Use .continueProse as
-        // a safe default; the editor can carry a `lastMode` field
-        // if the redo path needs to be tighter.
         let mode = lastInvokedMode ?? .continueProse
         acceptanceMachine.handleGenerationFinished(insertedRange: insertedRange, mode: mode)
         applyAcceptanceTint(insertedRange)
         trayView.setTrayMode(.acceptance)
+    }
+
+    /// Strip any `<think>...</think>` blocks (including trailing
+    /// whitespace) from the given range in the text view. Returns the
+    /// updated range whose location is unchanged but whose length
+    /// reflects the cleaned text. Used at generation finish — the
+    /// Qwen ChatML prefill (`<think>\n\n</think>\n\n`) usually
+    /// suppresses thinking, but the model can still emit a thinking
+    /// block in some prompts. Post-finish strip is a cheap safety net.
+    private func stripThinkBlocks(in range: NSRange) -> NSRange {
+        guard let storage = textView.textStorage else { return range }
+        let nsString = storage.string as NSString
+        let safeRange = NSRange(
+            location: max(0, min(range.location, nsString.length)),
+            length: max(0, min(range.length, nsString.length - max(0, min(range.location, nsString.length))))
+        )
+        let originalText = nsString.substring(with: safeRange)
+        let cleaned = ThinkBlockStripper.strip(originalText)
+        guard cleaned != originalText else { return safeRange }
+
+        suppressWriteback = true
+        suppressImplicitAccept = true
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: DesignTokens.Typography.body,
+            .foregroundColor: DesignTokens.Foreground.primary,
+        ]
+        let replacement = NSAttributedString(string: cleaned, attributes: attributes)
+        storage.replaceCharacters(in: safeRange, with: replacement)
+        suppressWriteback = false
+        suppressImplicitAccept = false
+        DebugLog.shared.write("[editor] stripped <think> block(s): \(safeRange.length - (cleaned as NSString).length) chars removed")
+        return NSRange(location: safeRange.location, length: (cleaned as NSString).length)
     }
 
     /// Tracks which mode the editor most recently invoked, so the
@@ -481,6 +546,13 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// "sketch to expand" / "passage to rewrite" framing, so the
     /// model generates from the scene opening instead.
     private var lastSelectionContext: (range: NSRange, text: String)?
+
+    /// Per-call instruction text that fired the most recent
+    /// generation. Replayed verbatim on Keep & Redo so the redo
+    /// honours the same one-shot steering as the original call.
+    /// Cleared on accept / reject / implicit-accept (i.e. anywhere
+    /// the cycle ends).
+    private var lastPerCallInstruction: String = ""
 
     /// Apply the 6%-alpha accent tint to the inserted range as a
     /// background-color attribute. Removed by `clearAcceptanceTint`
@@ -524,34 +596,57 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             // pure accept ends the cycle; clear it.
             if case .accept = transition {
                 lastSelectionContext = nil
+                lastPerCallInstruction = ""
+                trayView.clearInstruction()
             }
         case .removeText(let range):
             removeRange(range, label: "reject")
+            // For Expand/Rewrite the original selection was deleted
+            // up-front, so a bare remove leaves a hole where the
+            // user's prose used to be. Restore the original passage
+            // at the same location.
+            if let saved = lastSelectionContext,
+               let mode = lastInvokedMode,
+               (mode == .expand || mode == .rewrite)
+            {
+                reinsertOriginalSelection(saved)
+                DebugLog.shared.write("[editor] reject: restored original selection (mode=\(mode.rawValue))")
+            }
             // Reject ends the cycle.
             lastSelectionContext = nil
+            lastPerCallInstruction = ""
+            trayView.clearInstruction()
         case .removeAndRestart(let range, let mode):
             removeRange(range, label: "redo")
+            let savedInstruction = lastPerCallInstruction
+            let perCall: String? = savedInstruction.isEmpty ? nil : savedInstruction
             if mode == .expand || mode == .rewrite,
                let saved = lastSelectionContext
             {
                 // Re-insert the original passage at the deletion point
                 // so PromptBuilder can read it from the session again.
                 // Then re-fire the same mode with the original
-                // selection range.
+                // selection range AND the same per-call instruction.
                 reinsertOriginalSelection(saved)
                 lastInvokedMode = mode
                 textView.isEditable = false
                 coordinator.start(
                     mode: mode,
                     cursorOffset: saved.range.location,
-                    selectionRange: saved.range
+                    selectionRange: saved.range,
+                    perCallInstruction: perCall
                 )
             } else {
                 // Continue mode (or any future mode with no saved
                 // selection): re-fire from the prior cursor.
                 lastInvokedMode = mode
                 textView.isEditable = false
-                coordinator.start(mode: mode, cursorOffset: range.location, selectionRange: nil)
+                coordinator.start(
+                    mode: mode,
+                    cursorOffset: range.location,
+                    selectionRange: nil,
+                    perCallInstruction: perCall
+                )
             }
         }
     }

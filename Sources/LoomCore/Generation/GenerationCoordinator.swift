@@ -65,7 +65,8 @@ public final class GenerationCoordinator {
     public func start(
         mode: GenerationMode,
         cursorOffset: Int,
-        selectionRange: NSRange?
+        selectionRange: NSRange?,
+        perCallInstruction: String? = nil
     ) {
         cancel()
 
@@ -86,7 +87,8 @@ public final class GenerationCoordinator {
             selectionRange: selectionRange,
             modelName: AppState.shared.lastProbedModelName,
             contextBudgetTokens: session.project.settings.contextBudgetTokens,
-            replyBudgetTokens: session.project.settings.generationDefaults.maxOutputTokens
+            replyBudgetTokens: session.project.settings.generationDefaults.maxOutputTokens,
+            perCallInstruction: perCallInstruction
         )
         let assembled = PromptBuilder.build(context)
 

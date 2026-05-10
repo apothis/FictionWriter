@@ -138,6 +138,35 @@ func phase1PromptBuilderLayersTests() -> TestSuite {
         try expectTrue(result.userBlock.contains("She walked into the room"))
     }
 
+    s.test("Per-call instruction layer is injected when set, and lands between prose and mode instruction") {
+        // The per-call instruction is one-shot ad-hoc steering. It
+        // should sit close to the cursor (recency wins) but not
+        // override the mode instruction itself — so: above mode,
+        // below prose.
+        let project = Project(title: "T")
+        let scene = Scene.empty(id: UUID(), title: "Scene 1")
+        let prose = "She walked into the room and looked around."
+        var ctx = makeContinueContext(project: project, scene: scene, prose: prose)
+        ctx.perCallInstruction = "Shift to first-person POV."
+        let result = PromptBuilder.build(ctx)
+        try expectTrue(result.userBlock.contains("Per-call instruction: Shift to first-person POV."))
+        let proseIdx = try expectNotNil(result.userBlock.range(of: "She walked into the room")?.lowerBound)
+        let perCallIdx = try expectNotNil(result.userBlock.range(of: "Per-call instruction:")?.lowerBound)
+        let modeIdx = try expectNotNil(result.userBlock.range(of: "Continue from immediately after")?.lowerBound)
+        try expectTrue(perCallIdx > proseIdx, "per-call instruction must land below recent-prose")
+        try expectTrue(modeIdx > perCallIdx, "mode instruction must land below per-call instruction")
+    }
+
+    s.test("Per-call instruction is omitted when nil or whitespace-only") {
+        let project = Project(title: "T")
+        let scene = Scene.empty(id: UUID(), title: "Scene 1")
+        let prose = "Some prose."
+        var ctx = makeContinueContext(project: project, scene: scene, prose: prose)
+        ctx.perCallInstruction = "   "
+        let result = PromptBuilder.build(ctx)
+        try expectFalse(result.userBlock.contains("Per-call instruction:"))
+    }
+
     s.test("Rewrite mode instruction lands AFTER the recent-prose context (recency wins)") {
         // The "Passage to rewrite:" + terminal instruction must land
         // below the recent-prose layer so the model's attention

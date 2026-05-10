@@ -43,7 +43,21 @@ public final class GenerationTrayView: NSView {
     private let historyDisclosureButton: NSButton
     private let progressIndicator: NSProgressIndicator
     private let stateLabel: NSTextField
+    private let instructionField: NSTextField
     private(set) public var historyExpanded: Bool = false
+
+    /// One-shot ad-hoc steering for the next generation only — empty
+    /// string when the field is blank.
+    public var instructionText: String {
+        instructionField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Clear the per-call instruction field. Called by the editor
+    /// after a generation fires so the steering doesn't persist
+    /// into subsequent calls without the user re-affirming it.
+    public func clearInstruction() {
+        instructionField.stringValue = ""
+    }
 
     /// Generation state for the busy indicator. The editor flips
     /// these via setGenerationStarted / setStreaming / setGenerationFinished.
@@ -69,6 +83,7 @@ public final class GenerationTrayView: NSView {
         historyDisclosureButton = NSButton(title: "▸ History", target: nil, action: nil)
         progressIndicator = NSProgressIndicator()
         stateLabel = NSTextField(labelWithString: "")
+        instructionField = NSTextField()
         super.init(frame: frameRect)
         configure()
     }
@@ -135,11 +150,23 @@ public final class GenerationTrayView: NSView {
         historyDisclosureButton.font = DesignTokens.Typography.subheadline
         historyDisclosureButton.translatesAutoresizingMaskIntoConstraints = false
 
+        // Per-call instruction field — single-line, slim, sits between
+        // the mode buttons and the History disclosure. Empty by default;
+        // editor reads its value at generation start and clears it.
+        instructionField.translatesAutoresizingMaskIntoConstraints = false
+        instructionField.placeholderString = "Instruction for this generation (optional) — e.g. \"more dramatic\""
+        instructionField.font = DesignTokens.Typography.subheadline
+        instructionField.bezelStyle = .roundedBezel
+        instructionField.isBordered = true
+        instructionField.isBezeled = true
+        instructionField.focusRingType = .default
+
         addSubview(editingButtons)
         addSubview(acceptanceButtons)
         addSubview(progressIndicator)
         addSubview(stateLabel)
         addSubview(tokenEstimateLabel)
+        addSubview(instructionField)
         addSubview(historyDisclosureButton)
 
         NSLayoutConstraint.activate([
@@ -164,7 +191,11 @@ public final class GenerationTrayView: NSView {
             progressIndicator.trailingAnchor.constraint(equalTo: stateLabel.leadingAnchor, constant: -DesignTokens.Spacing.xs),
             progressIndicator.leadingAnchor.constraint(greaterThanOrEqualTo: editingButtons.trailingAnchor, constant: DesignTokens.Spacing.sm),
 
-            historyDisclosureButton.topAnchor.constraint(equalTo: editingButtons.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            instructionField.topAnchor.constraint(equalTo: editingButtons.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            instructionField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DesignTokens.Spacing.md),
+            instructionField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DesignTokens.Spacing.md),
+
+            historyDisclosureButton.topAnchor.constraint(equalTo: instructionField.bottomAnchor, constant: DesignTokens.Spacing.sm),
             historyDisclosureButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DesignTokens.Spacing.md),
             historyDisclosureButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -DesignTokens.Spacing.sm),
         ])
