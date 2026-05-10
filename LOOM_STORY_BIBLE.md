@@ -2,6 +2,8 @@
 
 > **Status: Phase 0 design lock (2026-05-10).** Specifies how Bible content is authored, stamped, queried, and injected into prompts. Builds on RPClient's Memory + Entity ideas; extends to fiction with the Re3 Edit pattern[L4]. The novel piece — knowledge-state-per-character-per-scene — is Loom's distinctive engineering.
 >
+> **Memory-architecture supersession note (2026-05-10 PM).** Sections in this doc that describe injection mechanics ([`#4`](#4-lorebook--selective-injection), §5, §6) are refined and extended in [`LOOM_MEMORY.md`](LOOM_MEMORY.md). Notable refinements after Round-2 research: (a) Subcontext-packing of multiple firing entries (NovelAI pattern), (b) Auto-summary embedding-retrieval per scene (AI Dungeon Memory Bank pattern), (c) Pinned spans alongside pinned facts (character.ai pattern), (d) Eviction-order surfacing (AI Dungeon publishes its order). Where this doc and `LOOM_MEMORY.md` disagree on injection mechanics, **`LOOM_MEMORY.md` wins**. The authoring-model and knowledge-ledger sections of this doc remain authoritative for those specific topics.
+>
 > Companion to [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md), [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md). Citations to [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md).
 
 ---

@@ -226,12 +226,14 @@ Total: ~9.5 days serial; can compress to 7–8 with parallel-able sub-steps once
 
 **Tasks:**
 - New `PromptBuilder.swift` (NOT a copy of RPClient's chat-shaped one — see [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §O.6).
-- Implements the layered assembly per [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) §1.1.
-- Phase 1 layers wired: System / Memory / Bible-Constant (always-include characters) / Recent-prose / Author's Note / Mode-instruction.
+- Implements the layered assembly per [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §4.1 + §A3 (which supersedes [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) §1.1 where they conflict).
+- Phase 1 layers wired (per [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §4.6): System / Project Memory / Style guide (Phase 1: empty) / Bible-Constant (always-include protagonists) / Recent-prose / Current-scene anchor / Author's Note (bracketed `[...]`) / Mode-instruction.
+- **Cache boundary contract enforced from this commit** ([`LOOM_MEMORY.md`](LOOM_MEMORY.md) §1.5). Above-cache layers come first; below-cache layers second; eviction order published in `[gen]` log lines.
 - Token-budget allocation per [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) §1.2 at user's `contextBudgetTokens` setting.
 - Instruct-template handler: Phase 1 supports `chatml`, `mistralV3`, `mistralV7`, `llama3`, `alpaca`, `raw`, `auto` (probe-and-detect on `auto`).
 - Continue mode: user clicks button → PromptBuilder assembles → KoboldClient streams → tokens land in editor as ghost text → completion fires Acceptance UI.
-- `[gen] continue: ctx=4500 reply=512 model=Qwen2.5-72B` debug log line.
+- `[gen] continue: ctx=4500 reply=512 model=Qwen2.5-72B above-cache=2300 below-cache=2200` debug log line.
+- `[gen] cache: above=<tokens> below=<tokens> evicted=<list>` line when budget eviction fires.
 
 **Tests:**
 - `Phase1PromptBuilderLayers` (~12) — pure: each layer renders correctly; budget eviction works.

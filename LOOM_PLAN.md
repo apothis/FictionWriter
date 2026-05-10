@@ -25,7 +25,7 @@ A **local-LLM-powered fiction-writing app for macOS**, built on the same kobold 
 
 | # | Loom item | Status | Phase | Pointer |
 |---|---|---|---|---|
-| L0 | Phase 0 — research + design docs | ✅ landing 2026-05-10 | 0 | this doc + [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) |
+| L0 | Phase 0 — research + design docs | ✅ landing 2026-05-10 | 0 | this doc + [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) + [`LOOM_MEMORY.md`](LOOM_MEMORY.md) (memory deep-dive addendum) |
 | L1 | Editor MVP (single-window, NSTextView, kobold wired, Continue + Expand, .md export) | ⏳ next | 1 | [`LOOM_PHASE1_EDITOR_MVP.md`](LOOM_PHASE1_EDITOR_MVP.md) |
 | L2 | Story Bible v1 (Characters + Settings + basic Timeline; injection into prompts) | pending | 2 | [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md), [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) |
 | L3 | Hierarchical structure + navigation (Project tree → Parts → Chapters → Scenes; Corkboard view; word counts) | pending | 3 | TBD |
@@ -40,6 +40,10 @@ A **local-LLM-powered fiction-writing app for macOS**, built on the same kobold 
 - **Plottr-shaped 2D Timeline × Plotline grid**[E1] — high value, large scope; Phase 4+ candidate (after generation modes are settled).
 - **Snapshots-before-AI-rewrite**[J1] — small implementation, high user value; could shift forward into Phase 2 if cheap.
 - **Focus mode (current-paragraph emphasis)**[iA Writer] — Phase 1 candidate if cheap; otherwise defer.
+- **Pinned spans (raw paragraphs, never evicted)** [character.ai pattern, [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §A2.3] — Phase 2 candidate; cheap to implement, high trust value.
+- **Bracketed `[...]` Author's Note convention** [AI Dungeon pattern, [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §A2.2] — Phase 1 default framing; free.
+- **Subcontext-packing for keyed bible entries** [NovelAI pattern, [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §A2.6] — Phase 2.
+- **Eviction-order surfacing in History tab** [AI Dungeon pattern, [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §A2.7] — Phase 1 if cheap.
 
 ---
 

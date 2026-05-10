@@ -2,6 +2,8 @@
 
 > **Status: Phase 0 design lock (2026-05-10).** The load-bearing engineering doc for prompt templates and context assembly. Companion to [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md), [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md). Citations into [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md).
 >
+> **Memory-architecture supersession note (2026-05-10 PM).** [`LOOM_MEMORY.md`](LOOM_MEMORY.md) is the authoritative memory-architecture spec; it inherits RPClient's six-layer model + precedence contract and extends with Round-2 research findings (AI Dungeon Memory Bank, NovelAI Subcontext, character.ai Pinned Messages, RAPTOR/LightRAG/SCORE academic patterns). Where this doc's §1 (common context-assembly) and the layer set in [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §4 disagree, **`LOOM_MEMORY.md` wins**. The token-budget allocations in §1.2 below are still load-bearing; the layer order is refined in `LOOM_MEMORY.md` §4.1 + §A3.
+>
 > **Scope.** Each mode's prompt skeleton + context-assembly strategy + output handling. Token-budget allocation at 8k / 16k / 32k context. Phase mapping noted per mode.
 
 ---
