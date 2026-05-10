@@ -1,15 +1,11 @@
 import AppKit
 
 /// Phase 1 sub-step 1.d placeholder view controllers. Each sub-step
-/// 1.e / 1.f / 1.g replaces these with the real Sidebar/Editor/Inspector
+/// 1.f / 1.g replaces these with the real Editor / Inspector
 /// implementations. Centred role label in `secondaryLabelColor` so the
-/// three-pane scaffold is visually obvious in screenshots while the
-/// real surfaces don't exist.
-public final class SidebarPlaceholderViewController: PlaceholderViewController {
-    public init() { super.init(roleLabel: "Sidebar") }
-    @available(*, unavailable) public required init?(coder: NSCoder) { nil }
-}
-
+/// three-pane scaffold is visually obvious while the real surfaces
+/// don't exist. (1.e replaced the sidebar's placeholder with the real
+/// SidebarController.)
 public final class EditorPlaceholderViewController: PlaceholderViewController {
     public init() { super.init(roleLabel: "Editor") }
     @available(*, unavailable) public required init?(coder: NSCoder) { nil }

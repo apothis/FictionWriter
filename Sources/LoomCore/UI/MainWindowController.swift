@@ -16,7 +16,7 @@ public final class MainWindowController: NSWindowController {
     private let splitVC: NSSplitViewController
 
     public init() {
-        let sidebar = SidebarPlaceholderViewController()
+        let sidebar = SidebarController(session: AppState.shared.currentSession)
         let editor = EditorPlaceholderViewController()
         let inspector = InspectorPlaceholderViewController()
 

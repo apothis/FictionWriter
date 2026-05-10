@@ -14,6 +14,7 @@ public final class AppState {
     public let settingsStore: AppSettingsStore
     public private(set) var settings: AppSettings
     public let registry: KoboldClientRegistry
+    public let currentSession: ProjectSession
 
     /// Test-only init. Production code uses `.shared`.
     public init(settingsStore: AppSettingsStore = AppSettingsStore()) {
@@ -23,7 +24,13 @@ public final class AppState {
             profiles: self.settings.servers,
             defaultServerId: self.settings.defaultServerId
         )
-        DebugLog.shared.write("[loom] app-state init servers=\(self.settings.servers.count) default=\(self.settings.defaultServerId?.uuidString ?? "nil")")
+        // Phase 1 boots into an in-memory "Untitled" project with a
+        // single starting scene so the user can begin typing immediately.
+        // File picker / "open existing project" land when needed.
+        let session = ProjectSession(project: Project(title: "Untitled"))
+        _ = session.addScene()
+        self.currentSession = session
+        DebugLog.shared.write("[loom] app-state init servers=\(self.settings.servers.count) default=\(self.settings.defaultServerId?.uuidString ?? "nil") session=\(session.project.title)")
     }
 
     /// Replace settings in memory + on disk, then refresh the registry.
