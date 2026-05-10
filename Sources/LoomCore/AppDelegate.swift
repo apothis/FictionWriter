@@ -9,7 +9,7 @@ import AppKit
 /// later sub-steps need entry points; 1.a keeps the standard AppKit
 /// menu only so a sane "Quit Loom" is reachable.
 public final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var window: NSWindow!
+    private var mainWindow: MainWindowController!
 
     public override init() {
         super.init()
@@ -23,18 +23,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         buildMenu()
 
-        let frame = NSRect(x: 0, y: 0, width: 1100, height: 720)
-        window = NSWindow(
-            contentRect: frame,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Loom"
-        window.center()
-        window.setFrameAutosaveName("Loom.MainWindow")
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        mainWindow = MainWindowController()
+        mainWindow.showAndActivate()
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
