@@ -17,6 +17,8 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var textView: NSTextView!
     private var trayView: GenerationTrayView!
     private var coordinator: GenerationCoordinator!
+    private var acceptanceOverlay: AcceptanceOverlayView!
+    private var acceptanceMachine = AcceptanceMachine()
     private var selectionObserver: NSObjectProtocol?
     private var resizeObserver: NSObjectProtocol?
     private var textSelectionObserver: NSObjectProtocol?
@@ -27,6 +29,11 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// land at the cursor — neither should round-trip through
     /// `session.updateProse`.
     private var suppressWriteback: Bool = false
+    /// True only during the pre-stream selection deletion in Expand
+    /// mode — used to skip the implicit-accept path that would
+    /// otherwise fire when our own programmatic delete looks like the
+    /// user typing.
+    private var suppressImplicitAccept: Bool = false
 
     /// Posted on every text change; userInfo carries `wordCount: Int`
     /// and `sceneId: UUID`. Status strip listens once it lands in 1.m.
@@ -114,8 +121,20 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         tray.onExpandClicked = { [weak self] in self?.handleExpand() }
         self.trayView = tray
 
+        // Acceptance overlay — pinned at the top of the editor pane,
+        // hidden by default. Shown when the acceptance machine moves
+        // to .awaiting (1.j.B). Per-block-anchored positioning is
+        // §1.m polish (HANDOFF.md §2.2 flagged it as finicky on macOS).
+        let overlay = AcceptanceOverlayView()
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        overlay.onAccept = { [weak self] in self?.applyAcceptanceTransition(.accept) }
+        overlay.onReject = { [weak self] in self?.applyAcceptanceTransition(.reject) }
+        overlay.onRedo = { [weak self] in self?.applyAcceptanceTransition(.redo) }
+        self.acceptanceOverlay = overlay
+
         container.addSubview(scroll)
         container.addSubview(tray)
+        container.addSubview(overlay)
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: container.topAnchor),
             scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -124,6 +143,8 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             tray.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             tray.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             tray.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            overlay.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.Spacing.sm),
+            overlay.centerXAnchor.constraint(equalTo: container.centerXAnchor),
         ])
 
         self.view = container
@@ -205,8 +226,38 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         pushTrayState()
     }
 
+    /// Intercept ⏎ and ⌫ during the acceptance window — Phase 1.j.B
+/// keyboard shortcuts. ⌘⇧R (Keep & Redo) is reachable from the overlay
+/// button; an in-app shortcut for it is 1.m polish.
+    public func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard case .awaiting = acceptanceMachine.state else { return false }
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            applyAcceptanceTransition(.accept)
+            return true
+        }
+        if commandSelector == #selector(NSResponder.deleteBackward(_:))
+            || commandSelector == #selector(NSResponder.deleteForward(_:))
+        {
+            applyAcceptanceTransition(.reject)
+            return true
+        }
+        return false
+    }
+
     public func textDidChange(_ notification: Notification) {
         guard !suppressWriteback else { return }
+        // If the user typed during the acceptance window, treat that
+        // as Accept (Cursor / Copilot ghost-text convention). Skip
+        // when the editor itself is causing the change (e.g. the
+        // pre-Expand selection delete).
+        if !suppressImplicitAccept,
+           case .awaiting = acceptanceMachine.state
+        {
+            _ = acceptanceMachine.handleImplicitAccept()
+            acceptanceOverlay.hide()
+            clearAcceptanceTint()
+            DebugLog.shared.write("[editor] acceptance: implicit (user typed)")
+        }
         guard let id = session.currentSceneId else { return }
         let prose = textView.string
         session.updateProse(id: id, prose: prose)
@@ -226,23 +277,42 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     private func handleContinue() {
         guard !coordinator.isGenerating else { return }
-        // Continue uses the cursor position; if there's a selection,
-        // continue from the end of it.
         let cursor: Int = {
             if let range = textView.selectedRanges.first as? NSValue {
                 return NSMaxRange(range.rangeValue)
             }
             return (textView.string as NSString).length
         }()
-        // Lock the text view while streaming; user can cancel via the
-        // tray (1.j wires the cancel UX). Phase 1.j replaces this with
-        // the proper acceptance overlay.
+        lastInvokedMode = .continueProse
         textView.isEditable = false
         coordinator.start(mode: .continueProse, cursorOffset: cursor, selectionRange: nil)
     }
 
     private func handleExpand() {
-        // 1.j scope.
+        guard !coordinator.isGenerating else { return }
+        guard let value = textView.selectedRanges.first as? NSValue else { return }
+        let selection = value.rangeValue
+        guard selection.length > 0 else { return }
+
+        // Expand replaces the selection with generated prose. Delete
+        // the selection now so the cursor sits at selection.location;
+        // PromptBuilder reads the *original* prose from the session
+        // (which still has it because we suppress writeback during
+        // this delete) and frames the selected region as the sketch.
+        suppressWriteback = true
+        suppressImplicitAccept = true
+        textView.textStorage?.deleteCharacters(in: selection)
+        textView.setSelectedRange(NSRange(location: selection.location, length: 0))
+        suppressWriteback = false
+        suppressImplicitAccept = false
+
+        lastInvokedMode = .expand
+        textView.isEditable = false
+        coordinator.start(
+            mode: .expand,
+            cursorOffset: selection.location,
+            selectionRange: selection
+        )
     }
 
     /// Insert a streamed token at the coordinator's running insertion
@@ -278,6 +348,97 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         postWordCount()
         pushTrayState()
         DebugLog.shared.write("[editor] generation finished — text-view re-editable")
+
+        // Drive the acceptance machine + show the overlay if the
+        // generation produced a non-empty insertion. coordinator's
+        // insertedText property holds the streamed result; the
+        // insertion offset comes from the coordinator's internal
+        // tracker. We reconstruct the inserted range from those.
+        let nsLength = (coordinator.insertedText as NSString).length
+        guard nsLength > 0 else { return }
+        let insertedRange = NSRange(
+            location: coordinator.insertionOffset - nsLength,
+            length: nsLength
+        )
+        // Determine the mode that just finished — coordinator doesn't
+        // currently expose it, but the acceptance machine only
+        // strictly needs it for the redo path. Use .continueProse as
+        // a safe default; the editor can carry a `lastMode` field
+        // if the redo path needs to be tighter.
+        let mode = lastInvokedMode ?? .continueProse
+        acceptanceMachine.handleGenerationFinished(insertedRange: insertedRange, mode: mode)
+        applyAcceptanceTint(insertedRange)
+        acceptanceOverlay.show()
+    }
+
+    /// Tracks which mode the editor most recently invoked, so the
+    /// acceptance machine can re-fire it on Redo. Set in
+    /// handleContinue / handleExpand; consumed in handleGenerationFinish.
+    private var lastInvokedMode: GenerationMode?
+
+    /// Apply the 6%-alpha accent tint to the inserted range as a
+    /// background-color attribute. Removed by `clearAcceptanceTint`
+    /// when the user accepts/rejects/types.
+    private func applyAcceptanceTint(_ range: NSRange) {
+        guard let storage = textView.textStorage else { return }
+        let tint = DesignTokens.Foreground.accent.withAlphaComponent(0.06)
+        let safeRange = NSRange(
+            location: max(0, min(range.location, storage.length)),
+            length: max(0, min(range.length, storage.length - max(0, min(range.location, storage.length))))
+        )
+        storage.addAttribute(.backgroundColor, value: tint, range: safeRange)
+    }
+
+    private func clearAcceptanceTint() {
+        guard let storage = textView.textStorage else { return }
+        let fullRange = NSRange(location: 0, length: storage.length)
+        storage.removeAttribute(.backgroundColor, range: fullRange)
+    }
+
+    private enum AcceptanceTransition {
+        case accept
+        case reject
+        case redo
+    }
+
+    private func applyAcceptanceTransition(_ transition: AcceptanceTransition) {
+        let action: AcceptanceMachine.Action
+        switch transition {
+        case .accept: action = acceptanceMachine.handleAccept()
+        case .reject: action = acceptanceMachine.handleReject()
+        case .redo:   action = acceptanceMachine.handleRedo()
+        }
+        acceptanceOverlay.hide()
+        clearAcceptanceTint()
+
+        switch action {
+        case .nothing:
+            DebugLog.shared.write("[editor] acceptance: \(transition) — nothing")
+        case .removeText(let range):
+            removeRange(range, label: "reject")
+        case .removeAndRestart(let range, let mode):
+            removeRange(range, label: "redo")
+            // Re-fire same mode at the prior cursor.
+            lastInvokedMode = mode
+            textView.isEditable = false
+            coordinator.start(mode: mode, cursorOffset: range.location, selectionRange: nil)
+        }
+    }
+
+    private func removeRange(_ range: NSRange, label: String) {
+        guard let storage = textView.textStorage else { return }
+        let safeRange = NSRange(
+            location: max(0, min(range.location, storage.length)),
+            length: max(0, min(range.length, storage.length - max(0, min(range.location, storage.length))))
+        )
+        suppressWriteback = true
+        storage.deleteCharacters(in: safeRange)
+        suppressWriteback = false
+        textView.setSelectedRange(NSRange(location: safeRange.location, length: 0))
+        if let id = session.currentSceneId {
+            session.updateProse(id: id, prose: textView.string)
+        }
+        DebugLog.shared.write("[editor] acceptance: \(label) — removed range \(safeRange)")
     }
 
     private func postWordCount() {
