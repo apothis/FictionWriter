@@ -692,3 +692,164 @@ The Round 2 agents flagged several issues worth carrying forward:
 - ConStory-Bench is recent (arXiv 2603) and not yet a community standard. Agent 3 explicitly flags this.
 
 For Phase 1 implementation, none of these caveats block — they affect Phase 4+ design refinements and Phase 5 evaluation harness setup.
+
+---
+
+## B. Round 3 — verified refinements (2026-05-10 evening)
+
+User-approved permission pass-through enabled deeper WebFetch on previously-uncertain claims. Findings here either **verify** earlier claims, **falsify** earlier flagged-uncertain ones, or surface **new patterns** the earlier rounds missed.
+
+### B1. Falsified claims (correcting Round 1/2)
+
+- **NovelAI Lorebook does NOT have `Probability`, `Cooldown`, or `Trigger` fields.**[B1] The Round 2 agent flagged this as uncertain; verified from the official docs. The actual entry fields are: Entry Title (org-only), Entry Text, Activation Keys (incl. `/regex/` and `&` AND-gating), Search Range (≤ 10000 chars), Key-Relative Insertion (newline offset, signed), Insertion Order (priority), Token Budget, Prefix/Suffix, Always On, Subcontext (per-category packing). **Loom should not invent these field names** — they may have been confused into Round-1 prompts from SillyTavern (where `groupWeight` exists, see B3) or Miku.gg.
+- **KoboldCpp World Info does NOT have `Probability`, `Cooldown`, `Group Injection`, or `Selective Injection` mechanics.**[B2] KoboldCpp's wiki documents the simpler "key match → content inject" model. The richer mechanics belong to SillyTavern's WI implementation (which uses koboldcpp as a backend but adds its own mechanics on top). **Implication:** Loom's Phase 2 lorebook design should mirror SillyTavern's mechanics, not KoboldCpp's bare-bones version, even though the *backend* is KoboldCpp.
+
+### B2. Verified concrete numbers
+
+**SillyTavern Chat Vectorization defaults**[B3] (the production defaults — useful as Loom's Phase 5 starting point):
+
+| Knob | Default | Notes |
+|---|---|---|
+| Chunk size | **400 characters** (not tokens) | Configurable via "Chunk size (chars)" |
+| Chunk boundary | Paragraph break, line break, or word boundary | Shared with Data Bank |
+| Query window | Last **2 messages** | Embed concatenation as the query |
+| Relevance threshold | **25%** (0.25 cosine) | Configurable via "Score threshold" |
+| Recency exclusion | Last **5 messages** | Configurable via "Retain#" |
+| Top-K retrieval | **3 most relevant** | Configurable via "Insert#" |
+| Insertion default | **Top of chat after Main Prompt** | Alternatives: before Main Prompt, in-chat at depth-2 |
+
+**Loom adoption:** translate from messages to scenes. 400-char chunk size is too small for prose (paragraph average ≈ 400-800 chars); recommend **scene-summary as the indexed unit, scene prose as the payload** (per [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §2.1 SillyTavern summary-driven retrieval pattern). Top-K=3, threshold 0.25-0.55 (model-dependent), recency-exclude last 4 scenes.
+
+**Critical SillyTavern warning, verified from docs:**[B3]
+
+> Chat Vectorization restructures the prompt prefix between the LLM calls, which can lead to frequent cache misses.
+
+This is the empirical confirmation of the cache-boundary rule. SillyTavern itself tells users to **choose between vectorization and prompt caching**. **Loom resolves this by placing vector hits BELOW the cache boundary** — already in design ([`LOOM_MEMORY.md`](LOOM_MEMORY.md) §1.5, §4.1). Confirmed correct.
+
+**KoboldCpp embedding endpoint, verified:**[B2]
+- Flag: `--embeddingsmodel <path-to-gguf>`
+- Endpoints: `/v1/embeddings` and `/api/extra/embeddings`
+- `--embeddingsmaxctx` for max context
+- `--embeddingsgpu` available but minimal speedup; keep on CPU
+- Context Shifting on by default; `--noshift` to disable
+- `--smartcache X` opt-in for KV snapshot caching
+
+These are exactly the flags Loom's Phase 5 will need. RPClient's [`Sources/RPClientCore/Memory/RetrievalEngine.swift`](../../RPClient/Sources/RPClientCore/Memory/RetrievalEngine.swift) and [`VectorStore.swift`](../../RPClient/Sources/RPClientCore/Memory/VectorStore.swift) already wire this; direct reuse with minor adapters.
+
+### B3. New pattern surfaced — sphiratrioth's lorebook-as-active-scenario
+
+The single highest-value Round 3 finding. SillyTavern has a power-user idiom that converts lorebooks from a **passive lore retrieval system** into a **conditional behavior engine** — dice-roll outcomes, scenario state shifts, behavioral constraints, all driven by lorebook entry configurations.[B4]
+
+Mechanics (verified from the Hugging Face writeup):
+
+| Field | Setting | Purpose |
+|---|---|---|
+| **Group** | Same string across N entries | Entries roll from a shared probability pool |
+| **Position** | `(System)` | Inserted as system message; **auto-deleted from context** after the model reads it (no permanent footprint) |
+| **Depth** | 0 or 1 | 0 = elegant ordering without semantic effect on next gen |
+| **Order** | 100 | Standard insertion order |
+| **Trigger** | 100 | Standard trigger strength |
+| **Prevent recursion** | ON | Entry doesn't activate other entries |
+| **Group Weight** | `100 / N` per entry | Distributes probability equally; weights sum to 100 per group |
+| **Sticky** | ≥ 4 messages | Keeps instruction active for N following messages |
+
+**Activation modes:**
+
+1. **Deterministic** (Weight=100): single specific trigger word always fires the entry. Used when guaranteed behavior is wanted.
+2. **Probabilistic rolling** (Weight=100/N): N entries share a trigger word; one fires per match by weight. Example: a `combat` group with three entries (success / failure / critical) at weight 33.33 each — typing "attack" rolls one outcome.
+
+**Phrasing template** (improves compliance across Mistral, LLaMA, Qwen, Gemma): `"{{char}} will instantly [ACTION]"` or `"[EVENT] will instantly [HAPPEN]"`. The "WILL INSTANTLY" framing is doing the load-bearing work.
+
+**Use-case groups** the recipe demonstrates:
+
+- Combat resolution (attack success/failure/critical)
+- Social encounters (NPC reactions)
+- Random events (weather, time-of-day, world state shifts)
+- Exploration outcomes (dungeon hazards, navigation)
+- Character behavior consistency (mood, personality enforcement)
+- **Positive-bias countering** for NSFW: explicit "the sword swing will instantly miss" overrides default LLM cooperativeness
+
+**For Loom — three implications:**
+
+1. **The lorebook entry schema in [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §3.6 should be extended** with `group: String?`, `groupWeight: Double?`, `stickyMessages: Int?`, and a `position == .system` mode that auto-evicts. This is not Phase 1 — Phase 4+ when generation modes expand.
+
+2. **A new generation mode emerges from this — "Roll outcome."** When the user is at a decision point ("Mia raises the gun"), Loom can offer a pre-configured outcome group (success / partial / failure / critical) with weights the user sets. Side-call rolls; chosen entry's text becomes the constraint passed to the main generation. Genuinely novel for fiction tools — Plottr has plot beats; Sudowrite has Brainstorm; nobody has dice-roll-shaped outcome generation.
+
+3. **Dynamic scenario state belongs in the lorebook layer, not the bible.** Weather, time-of-day, in-progress events ("the storm is escalating") are *not* timeless attributes (which is what bible Settings hold). They're transient state that should expire. NovelAI's Ephemeral Context (§A2.5) and sphiratrioth's group-weighted entries are two implementations of the same underlying concept. **Loom should support both authoring affordances:** scheduled injections (Ephemeral) and dice-rolled outcomes (groups). Phase 4+.
+
+### B4. r/LocalLLaMA April 2026 model consensus
+
+Verified consolidated list from the swyxio gist, dated April 2026 (last updated 2026-05-04):[B5]
+
+| Tier | Model | Best for |
+|---|---|---|
+| Tiny (~2B active) | **Huihui Gemma 4 E2B Abliterated v2** | MoE; punches above weight class |
+| 7B | **SultrySilicon V2** | Creative writing, roleplay |
+| 9B | **Gemma-2-Ataraxy-9B** | Creative writing; strong EQ-Bench |
+| 9B | **Huihui-GLM-4.6V-Flash** | Vision + bilingual |
+| 13B | **MythoMax-L2-13B** | Roleplay; the OG, ~59k GGUF downloads |
+| 24B | **Dan's PersonalityEngine V1.3.0** | Generalist roleplay + reasoning |
+| 27B | **Gemma 3 27B Abliterated** | Instruction-following, multimodal |
+| 31B | **Huihui Gemma 4 31B Abliterated** | Strongest dense Gemma 4 |
+| 70B | **Midnight Rose 70B v2.0.3** | High EQ-Bench at low quants |
+| 70B | **Midnight Miqu 70B v1.5** | Still community-favorite for prose |
+| 671B (MoE 37B active) | DeepSeek V3 | Recommend hosted; not local |
+
+**Notable shifts from earlier research [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §I.1:**
+
+- **Magnum / Lumimaid / Cydonia / EVA / Stheno** (the 2024-era Mistral Nemo finetunes I'd cited) are **not on the April 2026 list** as primary recommendations. Community has rotated toward Huihui Gemma 4 abliterations and Dan's PersonalityEngine.
+- **Midnight Miqu 70B v1.5** is *still* on the list — sustained 2-year community favorite.
+- **MythoMax-L2-13B** is *still* on the list — the OG at 13B.
+- **Gemma 4 abliteration family** is the dominant new entrant.
+
+**For Loom:** the design docs' "Mistral Nemo 12B" reference as the laptop sweet spot needs an asterisk — by 2026, Gemma 4 9B-31B abliteration variants are the more common community choice. The architecture is unchanged; the *recommended-defaults* hint in Settings should mention Gemma 4 abliteration (e.g., "Huihui Gemma 4 31B Abliterated for prose; Dan's PersonalityEngine 24B for roleplay-heavy scenes"). Phase 1 ships the architecture; Phase 6 polish ships the recommendations table.
+
+### B5. Style transfer 2025-26 academic — honest state of the art
+
+Verified from arXiv abstracts (search-result excerpts; not full paper reads):[B6][B7][B8]
+
+- **GPT-4o captures surface-level style but not stylometric depth.**[B6] In-context learning improves alignment but doesn't reach signature-level imitation.
+- **Few-shot still struggles with implicit writing styles of everyday authors.**[B7] Even with exemplar-based prompting, current LLMs underperform especially for informal / stylistically diverse domains.
+- **TAIL** (Task-specific Adapters for Imitation Learning) — uses LoRA + Bottleneck Adapters for parameter-efficient fine-tuning; learns from limited demonstrations.[B8]
+- **StyleTunedLM** — LoRA finetuning is **more effective** than prompt engineering or few-shot for capturing training-data style.[B8]
+- **Hierarchical zero-shot frameworks** for long-text style transfer combine sentence-level adaptation; results are framework-specific, not yet community-consensus.
+
+**Implication for Loom — honest framing:**
+
+LoRA fine-tuning is the academically-validated path to serious style imitation but is **out of scope for a single-user macOS app at the local-model tier**. Local LoRA training requires:
+- Training infrastructure (PyTorch + transformers); not in the koboldcpp single-binary world.
+- Significant compute (hours-to-days of GPU time per LoRA).
+- Per-LoRA size on disk (10s-100s MB) and per-LoRA model loading.
+
+**Loom's Phase 5 plan stays at the few-shot frontier**, with explicit acknowledgment in the docs that few-shot is the lower bar:
+
+- Distilled style descriptor (~300 tokens; tone descriptors, sentence-length profile, lexicon) — always-on.
+- Few-shot retrieval of style-matched scenes from reference texts (RAG-for-style; SillyTavern Vector Storage pattern).
+- Per-scene-type retrieval (action / dialogue / etc.) — Loom's distinctive engineering.
+
+**A "Style fine-tuning workflow" mode is a Phase 7+ R&D direction, not a commitment.** When/if local LoRA training tooling becomes turn-key (e.g., Apple's MLX-based finetuning matures), revisit. Until then, document the gap honestly: "Loom does few-shot style imitation; the academic state of the art for full style imitation is LoRA, which Loom does not ship."
+
+### B6. Verified deprecations — what NOT to inherit
+
+- **Ooba's superbooga and `long_term_memory` extensions are no longer in active development.**[B9] Both date from 2023; superseded by direct embedding-API integration in newer tools (SillyTavern Vector Storage, KoboldCpp's native embeddings endpoint). Loom **does not** mimic these extensions; it goes direct to KoboldCpp's `/v1/embeddings` per [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §M.4 and B2 above.
+- **NovelAI AI Modules (style-tuning via prompt-tuning vectors)** — discontinued late 2024 (per Round 1 [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §C.3). NovelAI now positions Lorebook + Memory as effective substitutes. Loom doesn't ship a moduling pipeline; few-shot + style descriptor is the path.
+
+### B7. Round 3 sources
+
+- [B1] NovelAI Documentation — Lorebook — `https://docs.novelai.net/en/text/lorebook/` (verified field list)
+- [B2] KoboldCpp Wiki — FAQ and Knowledgebase — `https://github.com/LostRuins/koboldcpp/wiki/The-KoboldCpp-FAQ-and-Knowledgebase`
+- [B3] SillyTavern Docs — Chat Vectorization — `https://docs.sillytavern.app/extensions/chat-vectorization/` (concrete defaults verified)
+- [B4] sphiratrioth666 — Lorebooks as ACTIVE scenario and character guidance tool — `https://huggingface.co/sphiratrioth666/Lorebooks_as_ACTIVE_scenario_and_character_guidance_tool`
+- [B5] swyxio gist — r/localLlama + r/localLLM + r/sillytavernAI preferred models list (April 2026) — `https://gist.github.com/swyxio/324fc884061bf20e97a2ecbe59bae34a`
+- [B6] Beyond the surface: stylometric analysis of GPT-4o (Oxford DSH) — `https://academic.oup.com/dsh/article/40/2/587/8118784`
+- [B7] LLMs Still Struggle to Imitate the Implicit Writing Styles of Everyday Authors (EMNLP Findings 2025) — `https://aclanthology.org/2025.findings-emnlp.532.pdf`
+- [B8] StyleTunedLM — `https://arxiv.org/html/2509.14543v1`; TAIL — `https://arxiv.org/html/2409.04574v1`
+- [B9] oobabooga/text-generation-webui-extensions; wawawario2 long_term_memory archive — `https://github.com/wawawario2/long_term_memory`
+
+### B8. What's NOT yet verified (carry forward)
+
+- **Sudowrite's actual prompt assembly.** Round 1 + 2 cited Sudowrite docs and reviews; Round 3 didn't try to reverse-engineer the wire format. Phase 5 evaluation harness can attempt this if a hypothesis-test is needed.
+- **GraphRAG / RAPTOR / LightRAG production usage at <13B.** All papers were validated with frontier models. The empirical question for Loom is whether per-scene summary clustering is reliable at 12-13B local model. Phase 5 eval harness territory.
+- **Reddit megathread quotes.** Round 3 didn't deep-read individual r/SillyTavernAI / r/LocalLLaMA threads beyond the swyxio aggregation gist. The community recipes (Marinara's LLM Hub, Sukino settings, Virt-io presets) are referenced by the search results but not deeply read. Worth a Phase 5 follow-up if a specific recipe needs validation.
+- **sqlite-vec performance at fiction scale.** RPClient research §9.10 says "<50k vectors at 384-768d is sub-50ms on Apple Silicon." Verified by anecdote from the sqlite-vec maintainer; not by Loom's own benchmark. Phase 5 should benchmark.
+

@@ -314,16 +314,36 @@ The constant/keyed/vectorised trichotomy is the right axis. **Vectorised injecti
 
 ## I. Local-model culture (r/LocalLLaMA + r/SillyTavernAI)
 
-### I.1 Top-tier fiction models (current as of 2026-05-10)
+### I.1 Top-tier fiction models
+
+**Round 3 update (2026-05-10):** the community model list rotated between research rounds. The original 2024-era Mistral Nemo finetune cluster (Magnum/Lumimaid/Cydonia/EVA/Stheno) is no longer the dominant recommendation; the April 2026 r/LocalLLaMA + r/SillyTavernAI consensus list[I1.RoundB] favors Gemma 4 abliteration variants. Both lists shown below; defer to the April-2026 list for production-default recommendations.
+
+**April 2026 community-consensus list[I1.RoundB] (current):**
+
+| Tier | Model | Best for |
+|---|---|---|
+| Tiny (~2B active MoE) | **Huihui Gemma 4 E2B Abliterated v2** | Lightweight checks; punches above weight |
+| 7B | **SultrySilicon V2** | Creative writing, roleplay |
+| 9B | **Gemma-2-Ataraxy-9B** | Creative writing; strong EQ-Bench |
+| 9B | **Huihui-GLM-4.6V-Flash** | Vision + bilingual |
+| 13B | **MythoMax-L2-13B** | The OG; ~59k GGUF downloads, sustained favorite |
+| 24B | **Dan's PersonalityEngine V1.3.0** | Generalist roleplay + reasoning + multilingual |
+| 27B | **Gemma 3 27B Abliterated** | Instruction-following, multimodal |
+| 31B | **Huihui Gemma 4 31B Abliterated** | Strongest dense Gemma 4 |
+| 70B | **Midnight Rose 70B v2.0.3** | High EQ-Bench at low quants |
+| 70B | **Midnight Miqu 70B v1.5** | Sustained 2-year community favorite for prose |
+| 671B (37B active) | DeepSeek V3 | **Hosted only** — not local-realistic |
+
+**Original survey list (kept for archival; Round 1 from arsturn/insiderllm reviews):**
 
 | Tier | Model family | Notes |
 |---|---|---|
-| 70B+ | **Qwen 2.5 72B** + Magnum/EVA finetunes | Has dethroned Llama 3.1 70B for fiction — superior creative flair.[I1] |
-| 30B-class | **Gemma 2 27B** | Best mid-range option; Gemma family has solid prose.[I1] |
-| 12-15B sweet spot | **Mistral Nemo 12B** + Lyra/Lumimaid/Magnum/Cydonia/EVA finetunes | "Undisputed champion" for laptops/mid-range GPUs; large vocab + long context.[I1] |
-| 7-8B floor | Llama 3.1 8B, Mistral 7B Instruct, Qwen 2.5 7B | Acceptable for quick drafts; often used as Loom's *summariser* not generator.[I1] |
+| 70B+ | Qwen 2.5 72B + Magnum/EVA finetunes | Was Round 1's pick; community since rotated to Midnight Miqu / Gemma 4 abliterations.[I1] |
+| 30B-class | Gemma 2 27B | Mid-range; superseded by Gemma 3 27B Abliterated and Dan's PersonalityEngine 24B. |
+| 12-15B sweet spot | Mistral Nemo 12B + Lyra/Lumimaid/Magnum/Cydonia/EVA finetunes | Community has rotated away from these specifically; Gemma 4 abliteration family + MythoMax-L2-13B are the laptop sweet spot now.[I1] |
+| 7-8B floor | Llama 3.1 8B, Mistral 7B Instruct, Qwen 2.5 7B | Acceptable for summariser side-calls; SultrySilicon V2 7B more current for prose.[I1] |
 
-**Mistral Large 2** is praised for staying on track with long projects (detailed descriptions, natural dialogue, complex narratives).[I1]
+**Mistral Large 2** is still praised for long-project consistency.[I1]
 
 ### I.2 Abliteration and uncensored finetunes
 
@@ -353,6 +373,7 @@ The mismatch trap: a model finetuned on Alpaca will degrade if prompted with Cha
 ### I.5 Sources
 
 - [I1] InsiderLLM — Best Local LLMs for Writing — `https://insiderllm.com/guides/best-local-llms-writing-creative-work/`; ArSturn — Best Ollama Models — `https://www.arsturn.com/blog/a-guide-to-the-best-ollama-models-for-creative-writing-and-rp`
+- [I1.RoundB] swyxio gist — r/localLlama + r/localLLM + r/sillytavernAI preferred models list (April 2026, last updated 2026-05-04) — `https://gist.github.com/swyxio/324fc884061bf20e97a2ecbe59bae34a`
 - [I2] smcleod.net — LLM Sampling Parameters Guide — `https://smcleod.net/2025/04/llm-sampling-parameters-guide/`
 - [I3] AntiSlop ICLR 2026 — `https://openreview.net/pdf/6916f45661bf884811be66da937b7467b97a9114.pdf`
 - [I4] Unsloth Chat Templates — `https://unsloth.ai/docs/basics/chat-templates`; Mistral docs — `https://docs.mistral.ai/cookbooks/concept-deep-dive-tokenization-chat_templates`
