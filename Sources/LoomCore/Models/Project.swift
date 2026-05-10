@@ -18,6 +18,13 @@ public struct Project: Codable, Equatable {
     public var settings: ProjectSettings
     public var manuscript: Manuscript
     public var bible: Bible
+    /// Free-form per-project notepad. Phase 1 ships a Notes inspector
+    /// tab that reads/writes this field.
+    public var notes: String
+    /// Last inspector tab the user had open. Persists per-project so
+    /// reopening a project restores their context. Optional because
+    /// fresh projects haven't had a tab selection yet.
+    public var selectedInspectorTab: InspectorTab?
 
     public init(
         id: UUID = UUID(),
@@ -28,7 +35,9 @@ public struct Project: Codable, Equatable {
         kind: ProjectKind = .originalFiction,
         settings: ProjectSettings = .defaults,
         manuscript: Manuscript = .empty,
-        bible: Bible = .empty
+        bible: Bible = .empty,
+        notes: String = "",
+        selectedInspectorTab: InspectorTab? = nil
     ) {
         self.id = id
         self.title = title
@@ -41,6 +50,8 @@ public struct Project: Codable, Equatable {
         self.settings = settings
         self.manuscript = manuscript
         self.bible = bible
+        self.notes = notes
+        self.selectedInspectorTab = selectedInspectorTab
     }
 
     public static func empty(title: String, author: String? = nil) -> Project {
@@ -62,7 +73,17 @@ public struct Project: Codable, Equatable {
         self.settings = try c.decode(ProjectSettings.self, forKey: .settings)
         self.manuscript = try c.decodeIfPresent(Manuscript.self, forKey: .manuscript) ?? .empty
         self.bible = try c.decodeIfPresent(Bible.self, forKey: .bible) ?? .empty
+        self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        self.selectedInspectorTab = try c.decodeIfPresent(InspectorTab.self, forKey: .selectedInspectorTab)
     }
+}
+
+/// Inspector tab cases. Persists on Project.selectedInspectorTab so the
+/// user's last-viewed tab survives reopen.
+public enum InspectorTab: String, Codable, Equatable, CaseIterable {
+    case bible
+    case history
+    case notes
 }
 
 public enum ProjectKind: String, Codable, Equatable, CaseIterable {

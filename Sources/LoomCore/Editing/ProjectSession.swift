@@ -114,6 +114,43 @@ public final class ProjectSession {
         markChanged()
     }
 
+    // MARK: - Bible mutations (Phase 1: characters only)
+
+    @discardableResult
+    public func addCharacter(name: String) -> Character {
+        let character = Character(name: name)
+        project.bible.characters.append(character)
+        markChanged()
+        DebugLog.shared.write("[bible] addCharacter id=\(character.id) name=\(name)")
+        return character
+    }
+
+    public func updateCharacter(_ character: Character) {
+        guard let idx = project.bible.characters.firstIndex(where: { $0.id == character.id }) else { return }
+        project.bible.characters[idx] = character
+        markChanged()
+        DebugLog.shared.write("[bible] updateCharacter id=\(character.id)")
+    }
+
+    public func deleteCharacter(id: UUID) {
+        guard let idx = project.bible.characters.firstIndex(where: { $0.id == id }) else { return }
+        project.bible.characters.remove(at: idx)
+        markChanged()
+        DebugLog.shared.write("[bible] deleteCharacter id=\(id)")
+    }
+
+    // MARK: - Notes + inspector tab
+
+    public func updateNotes(_ notes: String) {
+        project.notes = notes
+        // Notes are inspector-only — no reason to fan out a didChange
+        // notification (sidebar, editor, status strip don't render notes).
+    }
+
+    public func setSelectedInspectorTab(_ tab: InspectorTab) {
+        project.selectedInspectorTab = tab
+    }
+
     // MARK: - Internals
 
     private func markChanged() {
