@@ -1,10 +1,10 @@
-# Loom — Phase 0 Handoff
+# Loom — Handoff
 
-> **Date:** 2026-05-10. **Status: Phase 0 complete.** All 13 design docs landed; UI research pass against gold-standard prior art done; design language §14 locked. Ready for Phase 1 implementation against [`LOOM_PHASE1_EDITOR_MVP.md`](LOOM_PHASE1_EDITOR_MVP.md).
->
-> This handoff is the entry point for a subsequent context picking up Phase 1. Read **§6 ("Recommended Phase 1 entry checklist")** first; it's the smallest working set to internalise before sub-step 1.a.
+> **Date:** 2026-05-11. **Status: Phase 1 + Phase 1.5 complete.** 228 tests passing. Branch `main` is 27 commits ahead of origin (already pushed). Editor MVP shipped (Continue/Expand/Rewrite, acceptance window, History inspector, Markdown export); Phase 1.5 layered on Rewrite, per-call instruction box, Author's Note depth-N injection, and a Cmd-, Settings window. Next phase: **Phase 2 — Story Bible v1**. See **§9 (Phase 2 plan)** and **§10 (Phase 2 entry checklist)** for the kickoff.
 >
 > **Repo**: `/Volumes/SSD1/Code/FictionWriter` · pushed to [github.com/apothis/FictionWriter](https://github.com/apothis/FictionWriter) · branch `main`. RPClient (the source of inherited plumbing) at `/Volumes/SSD1/Code/RPClient`.
+>
+> The original Phase 0 handoff (§§1-8 below) remains as historical reference. The post-Phase-1 additions are in §§9-10.
 
 ---
 
@@ -79,10 +79,12 @@ These were noted in the design docs as deferred-decisions, not regressions:
 - **Cross-character ledger contradiction detection.** Lint-only posture committed; auto-resolution rejected.
 - **Time travel / non-linear narrative**: ledger queries use *chronological* order, not *narrative* order. Verify against a flashback-heavy manuscript in Phase 4.
 - **History log file proliferation.** Compaction is Phase 6 polish; Phase 1 is fine accumulating per-event files.
-- **Roll Rewrite forward into Phase 1.5.** Continue + Expand are the Phase 1 minimum, but Rewrite is the most-used mode in every prior-art tool — selecting prose and reshaping it (voice / tense / POV / length / "make it more dramatic") is the dominant fiction-tool interaction beyond first-draft generation. After Phase 1 ships, before committing to the full Phase 4 mode bundle, consider landing Rewrite alone as 1.5 to validate the mode-button + sub-mode interaction surface. Cheap to implement on top of PromptBuilder; high user-value gradient.
-- **Per-call instruction box on Continue / Expand / Rewrite.** Phase 1 carries persistent steering only (Memory + Author's Note). Sudowrite + Novelcrafter both have a "with this instruction:" text field that attaches a one-shot ad-hoc steering hint to a single mode call without polluting the persistent steering surfaces. Phase 4 (when Rewrite/Brainstorm/Critique land) is the natural moment to add this — those modes are meaningless without it, and the hint surface generalises back to Continue + Expand once it exists. Track as a Phase 4 prerequisite, not a Phase 1 add.
-- **Author's Note depth-N injection within the prefill (Phase 2).** Phase 1 places the recent prose in the assistant prefill (story-mode pattern; fixes the chat-shaped "echo the prose then continue" failure on Qwen / Gemma class instruct models — confirmed live 2026-05-10). The Author's Note remains in the user message, which structurally puts it BEFORE the prose in the assembled prompt — slightly diluting the "lower = stronger" steering effect. Phase 2 polish: split the prose at depth-N paragraphs from the cursor and inject the AN bracket between paragraph N-1 and paragraph N, so the AN sits inside the prefill close to the cursor (per LOOM_MEMORY.md §A3 + NovelAI A/N Strength convention). Implementation: extend `prefillFor(...)` or add a `prefillBody(layers, cursor) -> String` helper that splits on `\n\n`. ~30 LOC + 3-4 tests. Phase 1's "AN at end of user" is a working compromise; defer the refinement until users actually use the AN field (which has no UI yet).
-- **AppKit vs WKWebView frontend reassess at Phase 3.** The current native AppKit stack is structurally correct for Phase 1-2 (NSTextView is the centerpiece; macOS-native polish; local-first / local-model alignment; ~136 tests survive a future pivot since they're all on the model layer). The pivot question is genuinely worth re-asking at Phase 3 when Corkboard / Plan-view card-grid surfaces land — that's where AppKit gets verbose vs CSS-grid + dnd-kit. Run a 1-2 day NSCollectionView spike on the Plan-view layout (per [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §B.2.16) when Phase 3 begins. If the spike fights the framework, that's the moment to pivot — the model layer (ProjectStorage, KoboldClient, PromptBuilder, GenerationCoordinator) is decoupled enough that a UI-only rewrite to a Tauri-shaped Swift+webview architecture is the cheapest possible pivot path. Pre-Phase-3 reassess is premature.
+- ✅ **Roll Rewrite forward into Phase 1.5.** SHIPPED 2026-05-10. `.rewrite` mode wired through `GenerationModeAvailability` + `PromptBuilder` + tray. Same selection-replace mechanics as Expand; both Keep & Redo and Reject restore the original passage on cancel.
+- ✅ **Per-call instruction box on Continue / Expand / Rewrite.** SHIPPED 2026-05-10. Single-line field in the tray; layered just above the mode-instruction in the prompt so it sits in the recency-strong slot without overriding the mode framing. Cleared on cycle end (accept/reject/implicit-accept), replayed on Keep & Redo.
+- ✅ **Author's Note depth-N injection within the prefill.** SHIPPED 2026-05-10. New `AuthorsNoteInjector` splices the AN inline into the recent-prose layer N lines back from the cursor (NovelAI A/N convention). `Project.settings.authorsNoteDepthLines` defaults to 4. Standalone-AN-layer fallback kicks in when depthLines=0 or no recent prose.
+- **AppKit vs WKWebView frontend reassess at Phase 3.** The current native AppKit stack is structurally correct for Phase 1-2 (NSTextView is the centerpiece; macOS-native polish; local-first / local-model alignment; 228 tests survive a future pivot since they're all on the model layer). The pivot question is genuinely worth re-asking at Phase 3 when Corkboard / Plan-view card-grid surfaces land — that's where AppKit gets verbose vs CSS-grid + dnd-kit. Run a 1-2 day NSCollectionView spike on the Plan-view layout (per [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §B.2.16) when Phase 3 begins. If the spike fights the framework, that's the moment to pivot — the model layer (ProjectStorage, KoboldClient, PromptBuilder, GenerationCoordinator) is decoupled enough that a UI-only rewrite to a Tauri-shaped Swift+webview architecture is the cheapest possible pivot path. **Bumped: the Phase 1.5 session burned ~3 hours on AppKit/macOS 26 quirks (NSSegmentedControl action dispatch, `.fullSizeContentView` titlebar-drag hijacking inspector tab clicks, `NSTitlebarAccessoryViewController` triggering window auto-refit-to-104pt on attach, `.cgColor` capture not tracking appearance changes). All survivable for Phase 2, but a real signal that Phase 3 reassess matters.**
+- **Floating acceptance overlay revisit.** ATTEMPTED 2026-05-10 via `NSTitlebarAccessoryViewController`; reverted to merged-tray (Accept/Reject/Keep&Redo swap into the editing-button slot when generation finishes). The titlebar-accessory approach kept fighting AppKit's macOS 26 auto-refit on attach — `minSize` was ignored, post-attach `setFrame` lost a snap-back fight. Re-revisit as Phase 2/3 polish once macOS 26's titlebar machinery is better understood or after a frontend pivot.
+- **Character UX: visual save confirmation.** Background-task chip; `SaveIndicator` class added to InspectorController. Verify it's actually wired into the per-character/Notes writeback paths and behaves correctly when the user types rapidly.
 
 ### 2.2 Open for the engineer-in-Phase-1
 
@@ -213,3 +215,72 @@ These live in RPClient's memory; Loom's first context should re-state them as ne
 - `/Volumes/SSD1/Code/RPClient/V2_UI_OVERHAUL.md` §4.11 — sub-step format precedent.
 - `/Volumes/SSD1/Code/RPClient/Sources/RPClientCore/` — direct-reuse files (KoboldClient, ServerProbe, KoboldClientRegistry, DebugLog, Storage).
 - `/Volumes/SSD1/Code/RPClient/build.sh`, `/Volumes/SSD1/Code/RPClient/run.sh` — sed-and-adapt scripts.
+
+---
+
+## 9. Phase 2 plan (Story Bible v1)
+
+> **Added 2026-05-11.** Phase 2 is the **consistency engine** — Bible injection + keyed activation. Without it, Phase 3's scene-tree just multiplies content-quality problems. Bible-first ordering matches Sudowrite's evolution and Novelcrafter's design priority (per [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) live-capture findings).
+>
+> Fanfic + NSFW schemas land **now**, even though their UI/experience defers to Phases 4-5. Doing the schema migration once (when every Phase 2 item touches `Project.settings` anyway) avoids a painful repaint later. See [`LOOM_FANFIC.md`](LOOM_FANFIC.md) and [`LOOM_NSFW.md`](LOOM_NSFW.md) for the field-level requirements.
+
+### 9.1 Work-item order (TDD-shaped)
+
+| # | Item | Why now |
+|---|------|---------|
+| 1 | **`Project.kind`** (`originalFiction` / `fanfic`) + **`WritingDirection`** schema (`kind`, `register`, `explicitnessLevel`, `themes[]`, `pacing`, `fadeToBlackPolicy`) on `Project.settings` | Single migration. Every Phase 2 item touches `Project.settings`; do the schema once. |
+| 2 | **`FanficMetadata`** struct (fandoms, ATTG header, ratings, warnings, ships, tropes, AUs) — populated only when `kind == .fanfic`; nil otherwise. Placeholder UUIDs for ships/tropes/aus collections. | Fanfic UI to populate this is Phase 5.b-c; the *schema* lands now so existing projects load forward cleanly. |
+| 3 | Full **Character schema** (role, aliases, traits, speech, relationships, knowledge, notes, **`canonBrief: String?`**, **`customFields: [Field]`**) replacing today's `{name, description}` minimum. `description` survives as the long-form-notes free-form field. | Foundation for #4 + everything downstream. `customFields` is what lets Phase 5 fandom templates (HP `house`, MCU `team`) extend the entity without further schema migration. |
+| 4 | **List-detail Bible inspector** (per [`LOOM_DESIGN_LANGUAGE.md`](LOOM_DESIGN_LANGUAGE.md) §14.5.1) replacing today's flat always-expanded stack. Left 40% category sections + filter tabs; right 60% selected entity detail with sub-tabs (Description / Knowledge ledger / Relationships / Mentions / Notes). | UI for #3. |
+| 5 | **Setting + Object** entities (same shape as Character) | Schema reuses #3's pattern; small marginal cost. |
+| 6 | **Project Settings pill-pickers** (POV / Tense / Direction / Vocabulary / Explicitness) wired to `WritingDirection` from #1 | Cross-cuts NSFW + original-fiction; the surface itself is shared. |
+| 7 | **Bible-Keyed injection** mode (alias-keyword triggers) + per-kind constant/keyed pill | The actual consistency win — model finally sees relevant Bible entries when prose mentions them. |
+| 8 | **Lorebook entries** (constant + keyed). Schema requires `group`, `weight`, `sticky` fields for the Phase 4 Sphiratrioth pattern (NSFW positive-bias counters + fanfic thematic consistency). | Reuses #7 plumbing. |
+| 9 | **Snapshots** before AI rewrite (Scrivener pattern). `.loom/snapshots/<timestamp>.json` per-snapshot (matches generation-log file shape). | Insurance once Bible-edit + Direction-edit traffic ramps. |
+| 10 | **`@name` autocomplete** + inline entity references in prose (Novelcrafter `{{character.name}}` grammar adapted). Hover preview popover with avatar + role + 200-char excerpt + Open / Inspector buttons. | Polish on stable schema. |
+| 11 | **Mention sparkline** per entity (thin bar with marker dots at scenes; click marker → editor scrolls to scene) | Polish on inspector. |
+
+### 9.2 Phase 1 gaps surfaced during 1.5 (rolled into Phase 2 or earlier)
+
+These are Phase 1 contract items that didn't actually ship and turned up during live use:
+
+- **Inline floating selection toolbar** ([`LOOM_DESIGN_LANGUAGE.md`](LOOM_DESIGN_LANGUAGE.md) §14.4.1) — formatting buttons (B/I/U/S/Highlight/Quote/Heading/List) above the active selection. Phase 1 contract; not built. AI mode buttons in the toolbar are still Phase 4.
+- **`Cmd-⇧-R`** keyboard binding for Keep & Redo — the tray label promises it but no actual binding.
+- **Cancel generation mid-stream** — today you have to let it finish then Reject. Real workflow annoyance; small Phase 1 gap.
+- **Auto-probe on server add** — adding a new server profile in Settings doesn't probe it; capabilities only populate after the first generation.
+- **HANDOFF / Phase 1 docs reference 720pt `editorMaxWidth`** but the actual value is now 1080pt (bumped during 1.5 live testing). Just doc drift.
+
+### 9.3 Cross-cutting design commitments locked in by Phase 2
+
+These don't ship code in Phase 2 but the schema landed in #1-#3 must support them without further migration:
+
+- **ATTG header structure** (NovelAI Erato pattern, per [`LOOM_FANFIC.md`](LOOM_FANFIC.md)) — Phase 1 cache-boundary already places it correctly above the system prompt; just need `FanficMetadata` to carry it.
+- **Refusal detection** stays a Phase 1 *signal* (yellow chip in History, no auto-retry); Phase 4's "Continue from refusal" action depends on this surface being stable.
+- **`WritingDirection.kind == .porn`** triggers explicit Phase 2 behaviour (depth-2 Author's Note, longer Continue defaults, no scene-break suggestion). Not all of that is built in Phase 2 but the schema needs to distinguish the case.
+- **Knowledge ledger schema** on Character (`knowledge: [LedgerEntry]`) lands in #3 even though Phase 4 owns the extractor + UI. Per `LOOM_DATA_MODEL.md` §3.1's "additive schema, encode early" posture.
+
+### 9.4 Risks before #1 starts
+
+- **Project schema migration.** Existing `.loom` project bundles need to load cleanly. Default `kind = .originalFiction`, default `writingDirection = .literary/.literary/.fadeToBlack`. Tests should explicitly load a Phase-1 project bundle and assert defaults populate.
+- **`customFields` on Character.** Keep this minimal (label + value + kind enum). Avoid "schema for the schema" complexity — Phase 5 templates need a place to add fandom-specific fields, not a generic ORM.
+- **The Phase 1.5 session burned ~3 hours on AppKit/macOS 26 layout quirks.** Phase 2's list-detail Bible inspector is structurally similar to the existing inspector pane (a known-fragile area). Budget time for layout surprises; the Phase 3 frontend-reassess gate matters more after this session.
+
+---
+
+## 10. Phase 2 entry checklist (for the next context)
+
+1. Read this handoff **§9** (the Phase 2 plan) first.
+2. Skim [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §3 (Bible — entity model) — schema source of truth for #3.
+3. Skim [`LOOM_FANFIC.md`](LOOM_FANFIC.md) §1-3 and [`LOOM_NSFW.md`](LOOM_NSFW.md) §3 — what `Project.kind` + `WritingDirection` + `FanficMetadata` need to carry. Phase 2 ships the schema; Phase 4-5 ships the experience.
+4. Skim [`LOOM_DESIGN_LANGUAGE.md`](LOOM_DESIGN_LANGUAGE.md) §14.5.1 (Bible inspector list-detail two-pane) — UI grammar for #4.
+5. Read this handoff **§9.4** (risks) before opening Xcode.
+6. TDD posture stays: pure-data tests-first (red → green → commit), UI/glue honest smoke. The Phase 1.5 session drifted into test-after for a few items; correct course early.
+7. Repo state on entry:
+   - Branch `main`, 27 commits ahead of origin (pushed).
+   - 228 tests passing.
+   - `./build.sh` builds `Loom.app`; run with `./Loom.app/Contents/MacOS/Loom` (NOT `./run.sh` — it blocks).
+   - Live server at `http://192.168.1.201:5001` with Qwen3.6-27B; defaultServerId is in `~/Library/Application Support/Loom/settings.json`.
+   - Settings window: `Cmd-,` (or *Loom → Settings…*). Has working Servers + Project tabs.
+8. Begin Phase 2 #1 (Project schema migration + tests).
+
+Estimated time-to-end-of-Phase-2: 3-5 days of focused work. Phase 2 #1-#3 land first; everything else parallelises on top.
