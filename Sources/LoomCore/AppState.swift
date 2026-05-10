@@ -15,6 +15,11 @@ public final class AppState {
     public private(set) var settings: AppSettings
     public let registry: KoboldClientRegistry
     public let currentSession: ProjectSession
+    /// Model name returned by the most recent successful ServerProbe.
+    /// Set by AppDelegate's launch + project-replace probe; consumed
+    /// by GenerationCoordinator so PromptBuilder's `.auto` template
+    /// detection can match against it (e.g. "Qwen3.6-..." → .chatml).
+    public var lastProbedModelName: String?
 
     /// Test-only init. Production code uses `.shared`.
     public init(settingsStore: AppSettingsStore = AppSettingsStore()) {

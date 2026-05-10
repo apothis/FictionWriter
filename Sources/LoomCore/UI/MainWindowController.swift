@@ -72,8 +72,17 @@ public final class MainWindowController: NSWindowController {
             defer: false
         )
         window.title = "Loom"
-        window.center()
+        // Restore the previous frame when one is saved AND it lands on a
+        // currently-visible screen; otherwise centre. Order matters —
+        // setFrameUsingName loads the saved value; setFrameAutosaveName
+        // wires up auto-save going forward. (The previous order called
+        // center() after setFrameAutosaveName, which clobbered the
+        // restored frame on every launch.)
+        let restored = window.setFrameUsingName("Loom.MainWindow")
         window.setFrameAutosaveName("Loom.MainWindow")
+        if !restored || !Self.isFrameOnVisibleScreen(window.frame) {
+            window.center()
+        }
 
         // Compose: splitVC.view above the status strip inside a single
         // contentView. (Replaces the previous direct
@@ -118,6 +127,22 @@ public final class MainWindowController: NSWindowController {
     public func showAndActivate() {
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Sanity check: a saved frame from a previous launch may sit
+    /// entirely off the user's current screen layout (laptop without
+    /// its external monitor, screen resized, etc.). We accept frames
+    /// that have at least 80pt × 80pt of overlap with any visible
+    /// screen; smaller fragments fall through to center().
+    private static func isFrameOnVisibleScreen(_ frame: NSRect) -> Bool {
+        let minOverlap: CGFloat = 80
+        for screen in NSScreen.screens {
+            let intersection = screen.visibleFrame.intersection(frame)
+            if intersection.width >= minOverlap && intersection.height >= minOverlap {
+                return true
+            }
+        }
+        return false
     }
 
     private func observeSession() {

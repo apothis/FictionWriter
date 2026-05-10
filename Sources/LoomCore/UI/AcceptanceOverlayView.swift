@@ -33,7 +33,7 @@ public final class AcceptanceOverlayView: NSView {
     @available(*, unavailable) public required init?(coder: NSCoder) { nil }
 
     private static func makeButton(title: String) -> NSButton {
-        let b = NSButton(title: title, target: nil, action: nil)
+        let b = LoomActionButton(title: title, target: nil, action: nil)
         b.bezelStyle = .rounded
         b.controlSize = .small
         b.font = DesignTokens.Typography.subheadline

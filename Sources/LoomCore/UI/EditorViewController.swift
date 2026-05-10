@@ -28,7 +28,11 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var textSelectionObserver: NSObjectProtocol?
     private var generationTokenObserver: NSObjectProtocol?
     private var generationFinishObserver: NSObjectProtocol?
+    private var generationStartObserver: NSObjectProtocol?
     private var insertAgainObserver: NSObjectProtocol?
+    /// Flipped from .thinking to .streaming on the first emitted token
+    /// so the tray's busy indicator reflects "model has begun replying".
+    private var firstTokenSeenThisGeneration: Bool = false
     /// Suppresses re-entrant text writes when we programmatically swap
     /// the text storage on selection change OR when streamed tokens
     /// land at the cursor — neither should round-trip through
@@ -57,6 +61,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = textSelectionObserver { NotificationCenter.default.removeObserver(o) }
         if let o = generationTokenObserver { NotificationCenter.default.removeObserver(o) }
         if let o = generationFinishObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = generationStartObserver { NotificationCenter.default.removeObserver(o) }
         if let o = insertAgainObserver { NotificationCenter.default.removeObserver(o) }
         if let o = emptyStateClickedObserver { NotificationCenter.default.removeObserver(o) }
         if let o = sessionDidChangeObserver { NotificationCenter.default.removeObserver(o) }
@@ -208,6 +213,14 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         // notifications. EditorVC inserts each token at the running
         // offset and unfreezes the text view on finish.
         coordinator = GenerationCoordinator(session: session, registry: AppState.shared.registry)
+        generationStartObserver = NotificationCenter.default.addObserver(
+            forName: GenerationCoordinator.didStartNotification,
+            object: coordinator,
+            queue: .main
+        ) { [weak self] _ in
+            self?.firstTokenSeenThisGeneration = false
+            self?.trayView.setGenerationState(.thinking)
+        }
         generationTokenObserver = NotificationCenter.default.addObserver(
             forName: GenerationCoordinator.didEmitTokenNotification,
             object: coordinator,
@@ -215,6 +228,13 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         ) { [weak self] note in
             guard let token = note.userInfo?["token"] as? String,
                   let offset = note.userInfo?["insertionOffset"] as? Int else { return }
+            // First token: flip the busy indicator from "thinking" to
+            // "streaming" so the user knows the model is actively
+            // replying (vs still pre-fill / KV-cache warming).
+            if let self = self, !self.firstTokenSeenThisGeneration {
+                self.firstTokenSeenThisGeneration = true
+                self.trayView.setGenerationState(.streaming)
+            }
             self?.insertGeneratedToken(token, at: offset)
         }
         generationFinishObserver = NotificationCenter.default.addObserver(
@@ -222,6 +242,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             object: coordinator,
             queue: .main
         ) { [weak self] _ in
+            self?.trayView.setGenerationState(.idle)
             self?.handleGenerationFinish()
         }
         insertAgainObserver = NotificationCenter.default.addObserver(

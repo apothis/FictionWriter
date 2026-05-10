@@ -29,7 +29,18 @@ public final class GenerationTrayView: NSView {
     private let critiqueButton: NSButton
     private let tokenEstimateLabel: NSTextField
     private let historyDisclosureButton: NSButton
+    private let progressIndicator: NSProgressIndicator
+    private let stateLabel: NSTextField
     private(set) public var historyExpanded: Bool = false
+
+    /// Generation state for the busy indicator. The editor flips
+    /// these via setGenerationStarted / setStreaming / setGenerationFinished.
+    public enum GenerationState {
+        case idle
+        case thinking      // request fired, no tokens yet
+        case streaming     // first token arrived
+    }
+    private var generationState: GenerationState = .idle
 
     public override init(frame frameRect: NSRect) {
         continueButton = Self.makeModeButton(title: "Continue")
@@ -39,6 +50,8 @@ public final class GenerationTrayView: NSView {
         critiqueButton = Self.makeModeButton(title: "Critique")
         tokenEstimateLabel = NSTextField(labelWithString: "—")
         historyDisclosureButton = NSButton(title: "▸ History", target: nil, action: nil)
+        progressIndicator = NSProgressIndicator()
+        stateLabel = NSTextField(labelWithString: "")
         super.init(frame: frameRect)
         configure()
     }
@@ -46,7 +59,7 @@ public final class GenerationTrayView: NSView {
     @available(*, unavailable) public required init?(coder: NSCoder) { nil }
 
     private static func makeModeButton(title: String) -> NSButton {
-        let b = NSButton(title: title, target: nil, action: nil)
+        let b = LoomActionButton(title: title, target: nil, action: nil)
         b.bezelStyle = .rounded
         b.controlSize = .regular
         b.font = DesignTokens.Typography.headline
@@ -76,12 +89,25 @@ public final class GenerationTrayView: NSView {
         tokenEstimateLabel.textColor = DesignTokens.Foreground.secondary
         tokenEstimateLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        progressIndicator.style = .spinning
+        progressIndicator.controlSize = .small
+        progressIndicator.isDisplayedWhenStopped = false
+        progressIndicator.translatesAutoresizingMaskIntoConstraints = false
+
+        stateLabel.font = DesignTokens.Typography.subheadline
+        stateLabel.textColor = DesignTokens.Foreground.accent
+        stateLabel.alignment = .right
+        stateLabel.translatesAutoresizingMaskIntoConstraints = false
+        stateLabel.stringValue = ""
+
         historyDisclosureButton.bezelStyle = .inline
         historyDisclosureButton.controlSize = .small
         historyDisclosureButton.font = DesignTokens.Typography.subheadline
         historyDisclosureButton.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(buttonsRow)
+        addSubview(progressIndicator)
+        addSubview(stateLabel)
         addSubview(tokenEstimateLabel)
         addSubview(historyDisclosureButton)
 
@@ -96,7 +122,13 @@ public final class GenerationTrayView: NSView {
 
             tokenEstimateLabel.centerYAnchor.constraint(equalTo: buttonsRow.centerYAnchor),
             tokenEstimateLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DesignTokens.Spacing.md),
-            tokenEstimateLabel.leadingAnchor.constraint(greaterThanOrEqualTo: buttonsRow.trailingAnchor, constant: DesignTokens.Spacing.sm),
+
+            stateLabel.centerYAnchor.constraint(equalTo: buttonsRow.centerYAnchor),
+            stateLabel.trailingAnchor.constraint(equalTo: tokenEstimateLabel.leadingAnchor, constant: -DesignTokens.Spacing.md),
+
+            progressIndicator.centerYAnchor.constraint(equalTo: buttonsRow.centerYAnchor),
+            progressIndicator.trailingAnchor.constraint(equalTo: stateLabel.leadingAnchor, constant: -DesignTokens.Spacing.xs),
+            progressIndicator.leadingAnchor.constraint(greaterThanOrEqualTo: buttonsRow.trailingAnchor, constant: DesignTokens.Spacing.sm),
 
             historyDisclosureButton.topAnchor.constraint(equalTo: buttonsRow.bottomAnchor, constant: DesignTokens.Spacing.sm),
             historyDisclosureButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DesignTokens.Spacing.md),
@@ -144,15 +176,40 @@ public final class GenerationTrayView: NSView {
         }
     }
 
+    /// Flip the busy indicator. Editor calls these from the
+    /// coordinator's didStart / didEmitToken (first only) / didFinish
+    /// notifications. Buttons disable while non-idle so the user
+    /// can't double-fire.
+    public func setGenerationState(_ state: GenerationState) {
+        generationState = state
+        switch state {
+        case .idle:
+            progressIndicator.stopAnimation(nil)
+            stateLabel.stringValue = ""
+            continueButton.isEnabled = true
+            expandButton.isEnabled = true
+        case .thinking:
+            progressIndicator.startAnimation(nil)
+            stateLabel.stringValue = "Thinking…"
+            continueButton.isEnabled = false
+            expandButton.isEnabled = false
+        case .streaming:
+            progressIndicator.startAnimation(nil)
+            stateLabel.stringValue = "Streaming…"
+            continueButton.isEnabled = false
+            expandButton.isEnabled = false
+        }
+    }
+
     // MARK: - Actions
 
     @objc private func continueClicked() {
-        DebugLog.shared.write("[gen] tray: continue clicked (no-op until 1.i)")
+        DebugLog.shared.write("[gen] tray: continue clicked")
         onContinueClicked?()
     }
 
     @objc private func expandClicked() {
-        DebugLog.shared.write("[gen] tray: expand clicked (no-op until 1.i)")
+        DebugLog.shared.write("[gen] tray: expand clicked")
         onExpandClicked?()
     }
 

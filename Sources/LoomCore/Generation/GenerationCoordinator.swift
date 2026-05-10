@@ -74,6 +74,8 @@ public final class GenerationCoordinator {
         }
 
         // Build the prompt. PromptBuilder is pure; no network yet.
+        // Pass the last-probed model name so `.auto` template detection
+        // resolves against the live model (e.g. "Qwen3.6-..." → .chatml).
         let context = PromptContext(
             mode: mode,
             project: session.project,
@@ -81,7 +83,7 @@ public final class GenerationCoordinator {
             currentSceneId: sceneId,
             cursorOffset: cursorOffset,
             selectionRange: selectionRange,
-            modelName: nil, // probed lazily later; explicit template wins
+            modelName: AppState.shared.lastProbedModelName,
             contextBudgetTokens: session.project.settings.contextBudgetTokens,
             replyBudgetTokens: session.project.settings.generationDefaults.maxOutputTokens
         )
@@ -110,9 +112,15 @@ public final class GenerationCoordinator {
             maxLengthOverride: session.project.settings.generationDefaults.maxOutputTokens
         )
 
-        // Resolve client + kick off the stream. KoboldClient's callbacks
-        // arrive on a URLSession delegate queue; marshal to main here.
-        let client = registry.client(forProfileId: session.project.settings.serverProfileId)
+        // Resolve client + kick off the stream. The project's
+        // serverProfileId overrides the global AppSettings default
+        // (per-project servers are a Phase 2+ feature; Phase 1 just
+        // wants "use whatever AppSettings says is default" when the
+        // project doesn't override). KoboldClient's callbacks arrive
+        // on a URLSession delegate queue; marshal to main here.
+        let profileId = session.project.settings.serverProfileId
+            ?? AppState.shared.settings.defaultServerId
+        let client = registry.client(forProfileId: profileId)
         activeClient = client
 
         isGenerating = true
