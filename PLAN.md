@@ -1,4 +1,19 @@
-# Loom — plan for the plan
+# Loom — plan for the plan (HISTORICAL)
+
+> **⚠️ SUPERSEDED 2026-05-10 by [`LOOM_PLAN.md`](LOOM_PLAN.md).** This file is retained as historical scaffolding — the meta-plan that drove the Phase 0 research + design pass. The substantive plan documents now exist:
+>
+> - [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) — citation-grounded prior-art synthesis.
+> - [`LOOM_PLAN.md`](LOOM_PLAN.md) — the long-lived plan (this file's successor).
+> - [`LOOM_DESIGN_LANGUAGE.md`](LOOM_DESIGN_LANGUAGE.md) — RPClient design language + Loom-specific surfaces.
+> - [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) — Codable shapes + on-disk format.
+> - [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) — prompt templates.
+> - [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) — consistency engine.
+> - [`LOOM_PHASE1_EDITOR_MVP.md`](LOOM_PHASE1_EDITOR_MVP.md) — first-shippable slice.
+> - [`HANDOFF.md`](HANDOFF.md) — what's settled, what's open, where research changed this strawman.
+>
+> Text below is the original 2026-05-09/10 scaffolding plan; do not edit. New plan content lives in `LOOM_PLAN.md`.
+
+---
 
 > **Status:** scaffolding only. This document is the meta-plan: what gets researched, what design docs exist, and what order things ship. The substantive plan documents (research synthesis, design language, data model, etc.) are produced in the next working session and should replace / extend the placeholders here.
 
