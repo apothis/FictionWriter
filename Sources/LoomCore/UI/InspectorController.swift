@@ -1,5 +1,46 @@
 import AppKit
 
+/// Tiny "Saved" label that pops in instantly on each writeback and
+/// fades out shortly after. Coalesces rapid keystrokes — one indicator
+/// per inspector tab is enough; the per-keystroke writeback path simply
+/// calls `flash()` after `session.updateX(...)`.
+final class SaveIndicator: NSView {
+    private let label = NSTextField(labelWithString: "Saved")
+    private var pendingFadeOut: DispatchWorkItem?
+
+    init() {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        label.font = DesignTokens.Typography.caption1
+        label.textColor = DesignTokens.Foreground.tertiary
+        label.alphaValue = 0
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: topAnchor),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { nil }
+
+    func flash() {
+        pendingFadeOut?.cancel()
+        label.alphaValue = 1
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = DesignTokens.Motion.hoverFade
+                self.label.animator().alphaValue = 0
+            }
+        }
+        pendingFadeOut = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+    }
+}
+
 /// The tabbed inspector pane. Three tabs in Phase 1:
 ///   - Bible: Phase 1 minimum is characters only (name + description),
 ///     stacked. List-detail two-pane layout per LOOM_DESIGN_LANGUAGE.md
@@ -127,6 +168,7 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
     public let session: ProjectSession
     private var stack: NSStackView!
     private var rows: [UUID: BibleCharacterRow] = [:]
+    private let saveIndicator = SaveIndicator()
 
     public init(session: ProjectSession) {
         self.session = session
@@ -170,6 +212,7 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
         addBtn.font = DesignTokens.Typography.subheadline
 
         header.addArrangedSubview(title)
+        header.addArrangedSubview(saveIndicator)
         header.addArrangedSubview(NSView())   // spacer
         header.addArrangedSubview(addBtn)
 
@@ -211,6 +254,7 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
         for character in session.project.bible.characters {
             let row = BibleCharacterRow(character: character) { [weak self] updated in
                 self?.session.updateCharacter(updated)
+                self?.saveIndicator.flash()
             } onDelete: { [weak self] id in
                 self?.session.deleteCharacter(id: id)
                 self?.reload()
@@ -346,6 +390,7 @@ public final class NotesInspectorViewController: NSViewController, NSTextViewDel
     public let session: ProjectSession
     private var textView: NSTextView!
     private var suppressWriteback: Bool = false
+    private let saveIndicator = SaveIndicator()
 
     public init(session: ProjectSession) {
         self.session = session
@@ -378,9 +423,31 @@ public final class NotesInspectorViewController: NSViewController, NSTextViewDel
         scroll.documentView = tv
         self.textView = tv
 
+        // Slim header carries the shared save indicator. The Bible tab
+        // gets its indicator inside its existing "Characters" row; Notes
+        // has no native header otherwise, so this strip is the minimum
+        // chrome needed to surface "Saved" feedback.
+        let header = NSStackView()
+        header.translatesAutoresizingMaskIntoConstraints = false
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = DesignTokens.Spacing.sm
+        header.edgeInsets = NSEdgeInsets(
+            top: 0,
+            left: DesignTokens.Spacing.md,
+            bottom: 0,
+            right: DesignTokens.Spacing.md
+        )
+        header.addArrangedSubview(NSView())
+        header.addArrangedSubview(saveIndicator)
+
+        container.addSubview(header)
         container.addSubview(scroll)
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: container.topAnchor),
+            header.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.Spacing.xs),
+            header.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: DesignTokens.Spacing.xs),
             scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
@@ -392,5 +459,6 @@ public final class NotesInspectorViewController: NSViewController, NSTextViewDel
     public func textDidChange(_ notification: Notification) {
         guard !suppressWriteback else { return }
         session.updateNotes(textView.string)
+        saveIndicator.flash()
     }
 }
