@@ -99,6 +99,13 @@ public struct ProjectSettings: Codable, Equatable {
     public var authorsNoteDepthLines: Int
     public var memory: String
     public var instructTemplate: InstructTemplate
+    /// Phase 2 #1 — see WritingDirection.swift. Carries the
+    /// per-project `kind` / `register` / `explicitnessLevel` /
+    /// `themes` / `pacing` / `fadeToBlackPolicy` configuration.
+    /// Non-optional so projects always read a sensible default;
+    /// the decode path is lazy-versioned so Phase 1 bundles load
+    /// cleanly with the literary defaults populated.
+    public var writingDirection: WritingDirection
 
     public init(
         serverProfileId: UUID? = nil,
@@ -107,7 +114,8 @@ public struct ProjectSettings: Codable, Equatable {
         authorsNote: String = "",
         authorsNoteDepthLines: Int = 4,
         memory: String = "",
-        instructTemplate: InstructTemplate = .auto
+        instructTemplate: InstructTemplate = .auto,
+        writingDirection: WritingDirection = .defaults
     ) {
         self.serverProfileId = serverProfileId
         self.contextBudgetTokens = contextBudgetTokens
@@ -116,6 +124,7 @@ public struct ProjectSettings: Codable, Equatable {
         self.authorsNoteDepthLines = authorsNoteDepthLines
         self.memory = memory
         self.instructTemplate = instructTemplate
+        self.writingDirection = writingDirection
     }
 
     public static let defaults = ProjectSettings()
@@ -129,6 +138,7 @@ public struct ProjectSettings: Codable, Equatable {
         self.authorsNoteDepthLines = try c.decodeIfPresent(Int.self, forKey: .authorsNoteDepthLines) ?? 4
         self.memory = try c.decodeIfPresent(String.self, forKey: .memory) ?? ""
         self.instructTemplate = try c.decodeIfPresent(InstructTemplate.self, forKey: .instructTemplate) ?? .auto
+        self.writingDirection = try c.decodeIfPresent(WritingDirection.self, forKey: .writingDirection) ?? .defaults
     }
 }
 
