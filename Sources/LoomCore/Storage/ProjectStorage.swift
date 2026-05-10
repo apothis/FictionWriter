@@ -45,9 +45,52 @@ public final class ProjectStorage {
 
     public func saveProject(_ project: Project, at url: URL) throws {
         let projectJSON = url.appendingPathComponent("project.json")
+        let backupJSON = url.appendingPathComponent("project.json.bak")
+        // Backup-on-save: if the existing project.json is intact (we
+        // can decode it), copy it to .bak BEFORE we overwrite. Cheap
+        // insurance against a torn-write or a corrupted in-memory
+        // Project struct (1.m §4.4 corrupt-file recovery path).
+        if fm.fileExists(atPath: projectJSON.path),
+           let existing = try? Data(contentsOf: projectJSON),
+           (try? JSONDecoder.loom.decode(Project.self, from: existing)) != nil {
+            try? fm.removeItem(at: backupJSON)
+            try? fm.copyItem(at: projectJSON, to: backupJSON)
+        }
         let data = try JSONEncoder.loomPretty.encode(project)
         try atomicWrite(data, to: projectJSON)
         DebugLog.shared.write("[storage] wrote project.json (\(data.count) bytes) at=\(url.lastPathComponent)")
+    }
+
+    /// Best-effort load with backup recovery. Tries `project.json`
+    /// first; on decode failure, falls back to `project.json.bak`. The
+    /// scenes/* path uses the same loadScene loop as `loadProject`,
+    /// so the recovered project still pulls live scene .md files
+    /// (which are independently maintained — corruption is mostly a
+    /// project.json concern, not the per-scene files).
+    public func loadProjectWithRecovery(from url: URL) throws -> LoadedProject {
+        do {
+            return try loadProject(from: url)
+        } catch ProjectStorageError.missingProjectJSON {
+            // No main file at all — propagate.
+            throw ProjectStorageError.missingProjectJSON(url)
+        } catch {
+            // Decode failure or other read failure — try the backup.
+            let backupJSON = url.appendingPathComponent("project.json.bak")
+            guard fm.fileExists(atPath: backupJSON.path) else {
+                throw error
+            }
+            let mainJSON = url.appendingPathComponent("project.json")
+            // Replace project.json with the backup contents IN MEMORY:
+            // the live load path expects to read project.json. We
+            // could either restore the file or read the backup
+            // directly. Restoring the file is simpler and gives the
+            // user a consistent state on next launch.
+            let backupData = try Data(contentsOf: backupJSON)
+            try? fm.removeItem(at: mainJSON)
+            try backupData.write(to: mainJSON)
+            DebugLog.shared.write("[storage] restored project.json from backup at=\(url.lastPathComponent)")
+            return try loadProject(from: url)
+        }
     }
 
     /// Load a project from disk. Returns the Project struct AND a map of

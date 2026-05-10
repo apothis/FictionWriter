@@ -14,6 +14,7 @@ import AppKit
 /// persistence is deferred — sub-step 1.m polish if it matters.
 public final class MainWindowController: NSWindowController {
     private let splitVC: NSSplitViewController
+    private let statusStrip: StatusStripView
     private var replaceObserver: NSObjectProtocol?
     private var dirtyObserver: NSObjectProtocol?
 
@@ -50,6 +51,13 @@ public final class MainWindowController: NSWindowController {
         split.splitView.autosaveName = "Loom.MainSplitView"
         self.splitVC = split
 
+        // Status strip pinned at the bottom of the window — full width
+        // (1.m §14.8 spec). Sits OUTSIDE the splitVC so it spans across
+        // sidebar + editor + inspector.
+        let strip = StatusStripView()
+        strip.translatesAutoresizingMaskIntoConstraints = false
+        self.statusStrip = strip
+
         let frame = NSRect(
             x: 0, y: 0,
             width: DesignTokens.Editor.sidebarDefaultWidth
@@ -66,7 +74,33 @@ public final class MainWindowController: NSWindowController {
         window.title = "Loom"
         window.center()
         window.setFrameAutosaveName("Loom.MainWindow")
-        window.contentViewController = split
+
+        // Compose: splitVC.view above the status strip inside a single
+        // contentView. (Replaces the previous direct
+        // window.contentViewController = split assignment.)
+        let content = NSView()
+        content.translatesAutoresizingMaskIntoConstraints = false
+        split.view.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(split.view)
+        content.addSubview(strip)
+        NSLayoutConstraint.activate([
+            split.view.topAnchor.constraint(equalTo: content.topAnchor),
+            split.view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            split.view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            split.view.bottomAnchor.constraint(equalTo: strip.topAnchor),
+            strip.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            strip.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            strip.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            strip.heightAnchor.constraint(equalToConstant: 22),
+        ])
+        window.contentView = content
+        // Add the splitVC as a child of a host VC so its lifecycle is
+        // honoured (the framework expects child controllers to have a
+        // parent).
+        let host = NSViewController()
+        host.view = content
+        host.addChild(split)
+        window.contentViewController = host
 
         super.init(window: window)
         refreshTitleFromSession()

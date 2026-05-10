@@ -19,6 +19,10 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var coordinator: GenerationCoordinator!
     private var acceptanceOverlay: AcceptanceOverlayView!
     private var acceptanceMachine = AcceptanceMachine()
+    private var emptyStateView: EmptyProjectStateView!
+    private var emptyStateClickedObserver: NSObjectProtocol?
+    private var sessionDidChangeObserver: NSObjectProtocol?
+    private var sessionDidReplaceObserver: NSObjectProtocol?
     private var selectionObserver: NSObjectProtocol?
     private var resizeObserver: NSObjectProtocol?
     private var textSelectionObserver: NSObjectProtocol?
@@ -54,6 +58,9 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = generationTokenObserver { NotificationCenter.default.removeObserver(o) }
         if let o = generationFinishObserver { NotificationCenter.default.removeObserver(o) }
         if let o = insertAgainObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = emptyStateClickedObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = sessionDidChangeObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = sessionDidReplaceObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     public override func loadView() {
@@ -123,6 +130,16 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         tray.onExpandClicked = { [weak self] in self?.handleExpand() }
         self.trayView = tray
 
+        // Empty-project placeholder per LOOM_DESIGN_LANGUAGE.md §14.7.
+        // Overlaid on top of the scroll view; shown when
+        // EmptyProjectState.shouldShow(in: session) is true. The
+        // text view stays in the hierarchy underneath — the empty
+        // view just hides it visually.
+        let empty = EmptyProjectStateView()
+        empty.translatesAutoresizingMaskIntoConstraints = false
+        empty.isHidden = true
+        self.emptyStateView = empty
+
         // Acceptance overlay — pinned at the top of the editor pane,
         // hidden by default. Shown when the acceptance machine moves
         // to .awaiting (1.j.B). Per-block-anchored positioning is
@@ -136,6 +153,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
 
         container.addSubview(scroll)
         container.addSubview(tray)
+        container.addSubview(empty)
         container.addSubview(overlay)
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: container.topAnchor),
@@ -145,6 +163,10 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             tray.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             tray.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             tray.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            empty.topAnchor.constraint(equalTo: scroll.topAnchor),
+            empty.leadingAnchor.constraint(equalTo: scroll.leadingAnchor),
+            empty.trailingAnchor.constraint(equalTo: scroll.trailingAnchor),
+            empty.bottomAnchor.constraint(equalTo: scroll.bottomAnchor),
             overlay.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.Spacing.sm),
             overlay.centerXAnchor.constraint(equalTo: container.centerXAnchor),
         ])
@@ -210,9 +232,37 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             guard let text = note.userInfo?["text"] as? String else { return }
             self?.insertTextAtCursor(text)
         }
+        emptyStateClickedObserver = NotificationCenter.default.addObserver(
+            forName: EmptyProjectStateView.createSceneClickedNotification,
+            object: emptyStateView,
+            queue: .main
+        ) { [weak self] _ in
+            _ = self?.session.addScene()
+        }
+        sessionDidChangeObserver = NotificationCenter.default.addObserver(
+            forName: ProjectSession.didChangeNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshEmptyState()
+        }
+        sessionDidReplaceObserver = NotificationCenter.default.addObserver(
+            forName: ProjectSession.didReplaceNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshEmptyState()
+        }
 
         refreshFromSession()
+        refreshEmptyState()
         updateTextContainerInset()
+    }
+
+    private func refreshEmptyState() {
+        let shouldShow = EmptyProjectState.shouldShow(in: session)
+        emptyStateView.isHidden = !shouldShow
+        emptyStateView.setProjectTitle(session.project.title)
     }
 
     public override func viewDidAppear() {

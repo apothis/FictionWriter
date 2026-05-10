@@ -183,6 +183,22 @@ final class HistoryEntryRowView {
 
         header.addArrangedSubview(disclosure)
         header.addArrangedSubview(summary)
+        // Refusal chip — yellow pill when the response looks like a
+        // model refusal (per RefusalDetector). Signal-not-block:
+        // Loom never blocks the insertion, just flags it visually.
+        if entry.response.refusalDetected {
+            let chip = NSTextField(labelWithString: "refusal?")
+            chip.font = DesignTokens.Typography.caption2
+            chip.textColor = DesignTokens.Foreground.warning
+            chip.wantsLayer = true
+            chip.layer?.backgroundColor = DesignTokens.Foreground.warning
+                .withAlphaComponent(0.15).cgColor
+            chip.layer?.cornerRadius = DesignTokens.Radius.chip
+            chip.drawsBackground = false
+            chip.isBezeled = false
+            chip.isEditable = false
+            header.addArrangedSubview(chip)
+        }
         header.addArrangedSubview(NSView())  // spacer
 
         container.addSubview(header)

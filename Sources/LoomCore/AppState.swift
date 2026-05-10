@@ -54,16 +54,25 @@ public final class AppState {
         try storage.saveScene(starter, in: url)
         try storage.saveProject(project, at: url)
         currentSession.replace(project: project, scenes: [starter.id: starter], url: url)
+        try pushRecentAndSave(url)
         DebugLog.shared.write("[loom] createProject at=\(url.lastPathComponent)")
     }
 
     /// Load an existing `.loom` directory at `url` and switch the
-    /// current session to it.
+    /// current session to it. Uses the recovery path so a corrupt
+    /// `project.json` falls back to `project.json.bak` automatically.
     public func openProject(at url: URL) throws {
         let storage = ProjectStorage()
-        let loaded = try storage.loadProject(from: url)
+        let loaded = try storage.loadProjectWithRecovery(from: url)
         currentSession.replace(project: loaded.project, scenes: loaded.scenes, url: url)
+        try pushRecentAndSave(url)
         DebugLog.shared.write("[loom] openProject at=\(url.lastPathComponent) scenes=\(loaded.scenes.count)")
+    }
+
+    private func pushRecentAndSave(_ url: URL) throws {
+        var newSettings = settings
+        newSettings.pushRecentProject(url)
+        try updateSettings(newSettings)
     }
 
     /// Save the current in-memory session to a new on-disk location

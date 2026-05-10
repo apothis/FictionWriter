@@ -238,7 +238,7 @@ public final class GenerationCoordinator {
                 rawText: insertedText,
                 completionTokens: TokenEstimator.estimate(insertedText),
                 stopReason: nil,
-                refusalDetected: false,
+                refusalDetected: RefusalDetector.looksLikeRefusal(insertedText),
                 elapsedMs: elapsedMs
             )
         )

@@ -8,8 +8,9 @@ import AppKit
 /// (File → New Project, Open, Export, etc.) lands incrementally as
 /// later sub-steps need entry points; 1.a keeps the standard AppKit
 /// menu only so a sane "Quit Loom" is reachable.
-public final class AppDelegate: NSObject, NSApplicationDelegate {
+public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var mainWindow: MainWindowController!
+    private weak var recentProjectsMenu: NSMenu?
 
     public override init() {
         super.init()
@@ -25,6 +26,38 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         mainWindow = MainWindowController()
         mainWindow.showAndActivate()
+
+        // Probe the configured server (or localhost fallback) once on
+        // launch so the status strip dot reflects reachability. 1.m
+        // ships single-shot probing; periodic re-probe is Phase 2 polish.
+        probeAndPublishServerStatus()
+        NotificationCenter.default.addObserver(
+            forName: ProjectSession.didReplaceNotification,
+            object: AppState.shared.currentSession,
+            queue: .main
+        ) { [weak self] _ in
+            self?.probeAndPublishServerStatus()
+        }
+    }
+
+    private func probeAndPublishServerStatus() {
+        let client = AppState.shared.registry.clientForDefault()
+        ServerProbe.probe(baseURL: client.baseURL) { result in
+            DispatchQueue.main.async {
+                let status: StatusStripView.ServerStatus
+                switch result {
+                case .success(let caps):
+                    status = .reachable(model: caps.modelName)
+                case .failure:
+                    status = .unreachable
+                }
+                NotificationCenter.default.post(
+                    name: StatusStripView.serverStatusChangedNotification,
+                    object: nil,
+                    userInfo: ["status": status]
+                )
+            }
+        }
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -82,6 +115,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: "o")
         openProject.target = self
         fileMenu.addItem(openProject)
+
+        // Open Recent — submenu rebuilt on every menu open so recently-
+        // used projects surface in real time as the user creates / opens.
+        let openRecent = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
+        let recentSubmenu = NSMenu(title: "Open Recent")
+        recentSubmenu.delegate = self
+        openRecent.submenu = recentSubmenu
+        recentProjectsMenu = recentSubmenu
+        fileMenu.addItem(openRecent)
 
         fileMenu.addItem(NSMenuItem.separator())
 
@@ -202,7 +244,53 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try AppState.shared.openProject(at: url)
         } catch {
-            NSAlert(error: error).runModal()
+            // Decode error after the recovery path means the backup
+            // was missing OR also corrupt. Surface a clear alert
+            // rather than burying the user.
+            let alert = NSAlert()
+            alert.messageText = "Couldn’t open this project"
+            alert.informativeText = "The project at \(url.lastPathComponent) couldn't be loaded.\n\n\(error.localizedDescription)"
+            alert.alertStyle = .warning
+            alert.runModal()
         }
+    }
+
+    // MARK: - NSMenuDelegate (Open Recent)
+
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === recentProjectsMenu else { return }
+        menu.removeAllItems()
+        let recents = AppState.shared.settings.recentProjectURLs
+        if recents.isEmpty {
+            let none = NSMenuItem(title: "(empty)", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            menu.addItem(none)
+            return
+        }
+        for url in recents {
+            let item = NSMenuItem(
+                title: url.lastPathComponent,
+                action: #selector(recentProjectClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = url
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+        let clear = NSMenuItem(title: "Clear Menu", action: #selector(clearRecentProjectsClicked), keyEquivalent: "")
+        clear.target = self
+        menu.addItem(clear)
+    }
+
+    @objc private func recentProjectClicked(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        tryOpenProject(at: url)
+    }
+
+    @objc private func clearRecentProjectsClicked() {
+        var settings = AppState.shared.settings
+        settings.recentProjectURLs = []
+        try? AppState.shared.updateSettings(settings)
     }
 }
