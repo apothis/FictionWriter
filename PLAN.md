@@ -43,11 +43,13 @@ Same Swift Package layout, same Swift+AppKit posture, same:
 
 ## 4. Plan documents (to produce in the next context)
 
+**Research is the load-bearing phase**, not a step. The user's directive is to take Loom from the best similar systems (Sudowrite, Novelcrafter, NovelAI, Scrivener, KoboldAI / SillyTavern story modes, Backyard.ai, Risu, Agnai, etc.) and add what's missing — long-text ingestion, NSFW with no limits, deep consistency tracking. Every design decision in the docs below should be traceable back to either (a) a pattern from a prior-art system that worked, or (b) a deliberate extension beyond prior art with stated rationale (often the user's specific requirements). "Vibes" decisions get flagged and challenged.
+
 In order of dependency. Each is its own .md in this repo root unless noted.
 
 | # | Doc | Contains | Phase |
 |---|---|---|---|
-| 1 | `LOOM_RESEARCH.md` | Synthesised output of 3 parallel research agents (tools survey, engineering, NSFW-friendly local-model UIs). Source of truth for "what others do, what works, what doesn't." | Pre-design |
+| 1 | `LOOM_RESEARCH.md` | Synthesised output of **five parallel research agents** (Sudowrite + Novelcrafter deep dive · other AI-fiction tools · Scrivener + non-AI long-form editors · local-model NSFW writing prior art · long-context engineering + style ingestion). The largest doc by far. Cites sources, clusters findings by theme, ends with "what's load-bearing for Loom" + "what gaps prior art doesn't fill." Every later doc cites this one. | Pre-design |
 | 2 | `LOOM_PLAN.md` | Master plan, mirrors V2_PLAN.md shape. Phase list, scope, deferred items, references. Replaces this file as the long-lived plan. | Design |
 | 3 | `LOOM_DESIGN_LANGUAGE.md` | Visual + interaction language, adapted from V2_DESIGN_LANGUAGE.md. Editor surface specifics added (cursor affordances, AI insertion grammar, sidebar pattern). | Design |
 | 4 | `LOOM_DATA_MODEL.md` | Project / Part / Chapter / Scene / Beat shapes. Entity sheet shape (incl. knowledge-state-per-scene). Timeline event shape. Style sheet (extracted from reference texts). Codable + on-disk layout. | Design |
@@ -57,7 +59,7 @@ In order of dependency. Each is its own .md in this repo root unless noted.
 
 ## 5. Phasing (provisional — refined in `LOOM_PLAN.md`)
 
-- **Phase 0** — Research + design docs (this folder fills with the .md files above). No code. End-state: all design questions answered well enough to start coding without churn.
+- **Phase 0** — **Research + design docs.** This phase exists *because* the user wants Loom to inherit the best of prior art rather than reinvent. Five research agents run in parallel; their findings drive every subsequent design choice. No code. End-state: design questions answered with prior-art citations or explicit "going beyond" rationale; coding can start without churn.
 - **Phase 1** — Editor MVP. Single-window app, NSTextView-based scene editor, kobold client wired, two generation modes (Continue / Expand), bare-bones project/scene model, save as Markdown. Goal: typing a scene sketch and getting prose back.
 - **Phase 2** — Story bible v1. Character sheets, settings, basic timeline. Bible content gets injected into generation context.
 - **Phase 3** — Hierarchical structure + navigation. Project tree (Chapters → Scenes), word counts, target lengths.
