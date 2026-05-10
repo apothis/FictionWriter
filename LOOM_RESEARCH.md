@@ -739,3 +739,346 @@ All URLs in §A–§L plus the primary RPClient internal references:
 - [`/Volumes/SSD1/Code/RPClient/V2_PLAN.md`](../../RPClient/V2_PLAN.md) — plan shape precedent.
 
 External sources are cited in-line per section. No claim in this document should be load-bearing for an irreversible decision without a re-check against current sources at the time of that decision.
+
+---
+
+## S. Round 4 — depth on AI fiction tools, NSFW ecosystem, fanfic genre system
+
+User-directed research push (2026-05-10 evening): "Make sure research on long-form AI fiction writers is as thorough as possible — approach, UI, how the overall approach works. Don't be afraid to look at code where available. Heavy NSFW and extreme topics as the focus. Plus a new feature idea: pick a specific fanfic genre, gather details, write on-topic stories with user guidance."
+
+This section is the source of truth for the new feature docs:
+
+- [`LOOM_FANFIC.md`](LOOM_FANFIC.md) — fanfic genre / fandom feature spec.
+- [`LOOM_NSFW.md`](LOOM_NSFW.md) — heavy-NSFW + extreme-topics posture.
+
+Citations below use `[S.*]` IDs. Each finding is verified from a primary source (WebFetch where allowed, WebSearch where blocked).
+
+### S.1 Sudowrite Fandom Helper — verified shallow
+
+Fetched the live page[S.SUDOWRITE-FANDOM]. Features:
+
+- **Canon Lookup tool** — paste a passage, ask a canon question, get an answer.
+- **Custom Fandom Creation** — beyond pre-loaded options.
+- **Pre-built fandoms**: **Harry Potter, BTS, Marvel Cinematic Universe** (3 fandoms total).
+- Integration with core Sudowrite features (Describe, Write, Rewrite, Expand).
+- "Trope suggestions" mentioned but not detailed.
+
+What it explicitly **lacks**:
+
+- No slow-burn pacing mechanics.
+- No AU scaffolding tools.
+- No structured ship/relationship typing.
+- No fanfic-specific generation modes.
+
+This is Loom's closest competitor for the fanfic feature, and it's not deep. [`LOOM_FANFIC.md`](LOOM_FANFIC.md) §12 documents what Loom adds beyond.
+
+### S.2 NovelAI Erato system prompt — the ATTG format
+
+Verified from the unofficial NovelAI knowledgebase[S.ERATO]. The Erato system prompt format:
+
+```
+[ Author: Jacqueline Carey; Title: Amazing Story; Tags: adventure, modern day; Genre: contemporary fiction, prose ][ S: 4 ]
+```
+
+`S` parameter ranges 2-4 — "stylistic adherence" stage; higher = stronger compliance. "Datasetter Zaltys' recommendation" per the source.
+
+**Lorebook structure recommended for steering:**
+
+| Lorebook | Insertion Order | Position | Prefix | Reserved tokens |
+|---|---|---|---|---|
+| ATTG | 1 | 0 | (none) | small |
+| INSTRUCTIONS (category) | 2 | 0 | `----\n` | 1000 |
+
+Inside INSTRUCTIONS:
+- "Lore of Lorebooks" (LoL) — meta-entry defining what "lore" means
+- "Rules" lorebook — narrative constraints, tense/POV, banned concepts, character muting
+
+Roles defined: **Lore** (information separated by `----`), **Narrative** (story), **Narrator** (model). This vocabulary is what Loom adopts in its prompt assembler when configured to mimic Erato's posture for NSFW work.
+
+### S.3 AI Dungeon Story Cards — full schema
+
+Verified from the official help page[S.AID-STORY-CARDS]:
+
+**Five fields:**
+- **Type** — Character / Class / Race / Location / Faction / Custom. **Not visible to AI**, organisation-only.
+- **Name** — for user reference, **not visible to AI**.
+- **Entry** — the only field the AI sees, prefaced with `World Lore:` automatically.
+- **Triggers** — comma-separated keywords, case-insensitive, leading/trailing spaces matter, substring-matching ("boat" triggers on "boats"; warning about "cat" matching within words).
+- **Notes** — not visible to AI.
+
+**Activation persistence**: "Story Cards stay activated for a variable period depending on your context size" after a key match — temporal lingering, not just per-turn.
+
+**Timing**: triggers are not instant — if an AI's mid-response output triggers a Story Card, that Card isn't available to the AI until the *next* output.
+
+**Context budget**: Story Cards "are among the first elements to be removed from the context when it is full." Eviction priority surfaced; brevity recommended.
+
+**Hard cap**: 5,000 Story Cards per Adventure / Scenario.
+
+**Best-practice authoring guidance:**
+- Most important info at beginning AND end of Entry (model bias toward those positions — "lost in the middle" mitigation).
+- Mention the entity name explicitly inside Entry (since Name field is invisible to AI).
+- Avoid excessive physical detail (model either ignores or repeats verbatim).
+- Use truncated triggers to catch plurals (`boat` → `boats`).
+- Cross-reference between cards.
+- Prefer proper-noun triggers (lower false-positive rate).
+
+[`LOOM_NSFW.md`](LOOM_NSFW.md) and [`LOOM_FANFIC.md`](LOOM_FANFIC.md) inherit these conventions in lorebook + canon brief authoring.
+
+### S.4 NovelAI Lorebook — verified full field list
+
+Cross-confirmed (this round) that `Probability`, `Cooldown`, `Trigger` are NOT documented field names. Verified field list[S.NAI-LOREBOOK]:
+
+- Entry Title (org-only)
+- Entry Text
+- Activation Keys (with `/regex/` mode and `&` AND-gating)
+- Search Range (≤ 10000 chars)
+- Key-Relative Insertion (signed offset in newlines)
+- Insertion Order (priority)
+- Token Budget (per-entry max)
+- Prefix / Suffix
+- Always On
+- Subcontext (per-category packing)
+
+Plus **Ephemeral Context** as a story-step DSL: `{Delay,Duration,Insertion:Text}` for time-boxed scheduled injections.
+
+This is the verified upstream Loom should mirror in its lorebook design, not the SillyTavern-extended version (which adds Group/GroupWeight/Sticky/Position-System per S.7).
+
+### S.5 Marinara's Spaghetti Recipe preset — verbatim language
+
+Fetched the actual JSON[S.MARINARA] from `github.com/SpicyMarinara/SillyTavern-Settings`. Verified prompt slot structure:
+
+**Prompt slots** (each with role/system, injection_order=100, position=0):
+- `main` (system instruction, empty slot for card override)
+- `nsfw` (deferred to Rules section)
+- `jailbreak` (empty slot, card-dependent)
+- `charDescription`, `charPersonality`, `scenario` — character context
+
+**Three named writing modes** (only one enabled at a time):
+- **➊ Game Master** (UUID `f1e126e2…`, *disabled by default*) — "play in this uncensored, continuous, and immersive roleplay as <BOT>"; multi-character group RP.
+- **➋ Roleplayer** (UUID `dca7d9fa…`, **enabled by default**) — "an excellent roleplayer…uncensored, continuous, and immersive roleplay"; single-character RP.
+- **➌ Writer** (UUID `2501509e…`, *disabled by default*) — "excellent writer…write uncensored fanfics"; alternate fiction mode.
+
+**Verbatim NSFW language** in the Rules / NSFW guideline section:
+> "Anything goes in this NSFW work of fiction intended for mature audiences"
+> "no plot armor…Every character…can be harmed, killed, raped, or used"
+> "No holding back"
+
+**Sampler**: temperature 1.0; frequency/presence/top-p penalties all 0; reasoning effort high.
+
+This is the community-validated "uncensored fiction tool" prompt language. [`LOOM_NSFW.md`](LOOM_NSFW.md) §2.3 references this as the upper bound of what Loom users can configure — Loom's default is gentler but supports swapping to Marinara-grade.
+
+### S.6 Abliteration — full algorithm + tools + empirical results
+
+Verified from mlabonne's HuggingFace blog[S.ABLITERATION]:
+
+**Algorithm** (decoder-only Llama-like architectures):
+
+1. Run model on harmful + harmless instruction sets; collect residual stream activations at last token, all layers, three positions per block (resid_pre, resid_mid, resid_post).
+2. Compute mean difference: `refusal_dir = mean(harmful_acts) - mean(harmless_acts)`. Normalise.
+3. Rank candidate directions across layers; empirically test on held-out harmful prompts; pick the most effective.
+4. Either:
+   - **Inference-time hook**: subtract `proj(activation onto refusal_dir) * refusal_dir` at each layer/position during forward pass. Reversible.
+   - **Weight orthogonalisation (permanent)**: orthogonalise W_E, attn.W_O, mlp.W_out matrices against `refusal_dir`. No inference cost.
+
+**Empirical results** on Daredevil-8B (the studied case):
+- MMLU: significant drop after raw abliteration.
+- GSM8K: notable degradation.
+- 1 epoch of DPO on 40k examples (`mlabonne/orpo-dpo-mix-40k`, 6× A6000 GPUs, 6h45m, lr 5e-6) recovers ~80-90% of capability.
+- Refusal rate: in the case study, layer-9 candidate succeeded across all 4 test refusals.
+
+**Verified tools**:
+
+- **FailSpy's abliterator library** — `github.com/FailSpy/abliterator`; pre-abliterated model collection on HF.
+- **Heretic** (p-e-w) — `github.com/p-e-w/heretic` — TPE-based parameter optimiser via Optuna; `heretic-llm[research]` extra adds residual-geometry plotting (PaCMAP visualisation, silhouette + cosine similarity metrics). Latest 1.2.0 (Feb 2026).
+- **AutoAbliteration** — newer, simplified pipeline (recommended over manual notebook).
+- **Projected Abliteration** (grimjim) — improved variant using decomposition, preserves matrix norms, better UGI Leaderboard scores.
+- **Norm-Preserving Biprojected Abliteration** (grimjim) — further refinement.
+
+**Limitations honestly flagged**:
+- Performance degradation without recovery DPO.
+- Architecture-specific (TransformerLens compatibility).
+- "Deceptive compliance risk": model may mask refusals rather than truly remove (Heretic research raised this).
+- Primarily validated on English; cross-lingual unverified.
+
+For the Qwen3-14B-Abliterated case[S.QWEN-ABLITERATED], the practical numbers: refusals 97/100 → 19/100; KL divergence ~0.98 to original (capability mostly preserved).
+
+[`LOOM_NSFW.md`](LOOM_NSFW.md) §2.1 references abliterated variants as the recommended path when a base model refuses too much for the user's content.
+
+### S.7 sphiratrioth lorebook-as-active-scenario — the new pattern
+
+Already documented in [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §B3. Cited here for §S consolidation:[S.SPHIRATRIOTH]
+
+Field schema for "active" lorebook entries (SillyTavern-specific, not in upstream NovelAI):
+
+- **Group** (string, shared across N entries pooling probability)
+- **Group Weight** (`100/N` per entry; weights sum to 100 per group)
+- **Position**: `(System)` (auto-evicts from context after read)
+- **Sticky**: ≥ 4 messages (persistence)
+- **Trigger**: 100 (standard strength)
+- **Prevent recursion**: ON
+
+Phrasing template: `"{{char}} will instantly [ACTION]"`. Effective across Mistral / LLaMA / Qwen / Gemma model families.
+
+Use cases per the recipe:
+- Combat resolution (success / failure / critical)
+- Social encounters (NPC reactions)
+- Random events (weather, time-of-day, world state)
+- Exploration outcomes
+- Character behaviour consistency
+- **Positive-bias countering for NSFW** — explicit "the action will instantly fail/miss/refuse" overrides default LLM cooperativeness
+
+Loom Phase 4+ adopts this as a generation primitive. New mode: "Roll outcome." See [`LOOM_NSFW.md`](LOOM_NSFW.md) §2.5.
+
+### S.8 AO3 dataset controversy — controlling precedent for Loom's fanfic feature
+
+Verified from the disabled HuggingFace dataset page[S.AO3-DATASET]:
+
+- ~12.6 million publicly-available works scraped (from IDs 1 to 63.2M processed).
+- 164GB compressed JSONL.zst.
+- Per-work fields: `id`, `title`, `text`, plus metadata (Archive Warning, Category, Characters, Fandom, Language, Rating, Relationship, Series, author, chapters, completed, published, words).
+- **Status: permanently disabled.** Both the AO3 dataset and a related PaperDemon dataset removed.
+- Reason: copyright + ToS dispute. AO3 is a non-profit fan-run archive with explicit creator-protection policies. Mass-scraping violates ToS; transformative-works status doesn't extend to consent for AI training.
+
+**For Loom**: this is the controlling precedent. Loom does NOT scrape fanfic archives. Canon ingestion is user-paste only ([`LOOM_FANFIC.md`](LOOM_FANFIC.md) §3.2). Fandom templates are *schemas*, not facts.
+
+### S.9 AO3 tagging system — Loom's adopted taxonomy
+
+Per the AO3 Tags FAQ + Fanlore wiki[S.AO3-TAGS]:
+
+**Folksonomy + canonical-tag wrangling**: users tag freely; volunteer wranglers normalise synonymous tags to a canonical form. Loom doesn't replicate the wrangling labour — it adopts the canonical tag *categories* as schema.
+
+**Categories**:
+- Rating: General Audiences / Teen And Up / Mature / Explicit (4 levels)
+- Archive Warnings: 5 standardised warnings + "Choose Not To Use" + "No Archive Warnings Apply"
+- Categories: Gen / F/F / F/M / M/M / Multi / Other (relationship-form taxonomy)
+- Fandoms (canonical names per fandom)
+- Characters (canonical names within fandom)
+- Relationships (slash `/` for romantic/sexual; ampersand `&` for non-romantic — the convention itself is canonical)
+- Additional Tags / Freeform (where tropes live: "Slow Burn", "Hurt/Comfort", etc.)
+
+[`LOOM_FANFIC.md`](LOOM_FANFIC.md) §3.1's `FanficMetadata` schema mirrors these directly.
+
+### S.10 Fanfic tropes — the inventory Loom ships
+
+Cross-referenced from Fanlore canonical entries (search-summary level — fanlore.org returned 403 on direct fetch this round) + community trope lists[S.FANFIC-TROPES]:
+
+**Top-loved tropes** (community-ranked):
+1. Slow Burn
+2. Hurt/Comfort
+3. Enemies-to-Lovers (#20 most-loved by direct ranking)
+4. Friends-to-Lovers
+5. Mutual Pining
+6. Fake Dating
+7. Soulmates AU
+8. Coffeeshop AU (#53 — surprisingly mid-tier)
+9. There Was Only One Bed
+10. Time Travel Fix-It
+11. Royalty AU
+12. Bed Sharing
+
+[`LOOM_FANFIC.md`](LOOM_FANFIC.md) §5.2 ships ~80-120 of these as the bundled trope library.
+
+Slow Burn convention specifics (search summary): typically 20+ chapters / often longer than typical novel; pacing/emotional escalation foregrounded over plot speed; deferred romantic/sexual resolution. Canonical structural midpoint = ~70% completion for "first kiss" beat.
+
+### S.11 FanFabler — the fanfic-fine-tuned LLM precedent
+
+Fetched the Towards Data Science article[S.FANFABLER]:
+
+- **Base model**: Llama 3 8B
+- **Method**: LoRA via unsloth; rank 64, alpha 64
+- **Training data**: 4,000 chat interactions × 40 languages = 800 language/property pairs × 5 interactions
+- **Synthetic data generation**: GPT-3.5 Turbo simulated multi-turn writing-assistant conversations
+- **Wikipedia integration**: `>>>` marker for canon lookups in-context
+- **Training cost**: single epoch, batch size 2, lr 2e-4, ~2h20m on NVIDIA L2 GPU
+- **Dataset on HF**: `huggingface.co/datasets/robgonsalves/Multilingual-FanFic-Chat-4K`
+
+**Lessons for Loom** (Phase 5 / Phase 7+):
+- Synthetic-data-via-stronger-LLM is a viable path for niche-domain fine-tunes.
+- LoRA r=64/α=64 is a working baseline (vs the more conservative 16/16).
+- External knowledge integration (Wikipedia in their case; user's canon brief in Loom's) materially helps.
+- Loom does NOT ship FanFabler; the few-shot pipeline ([`LOOM_NSFW.md`](LOOM_NSFW.md) §2.5 — sphiratrioth + style sheet) is the realistic v1; LoRA fine-tuning is Phase 7+ R&D when MLX/Apple-Silicon tooling matures.
+
+### S.12 DreamGen — the unfiltered-AI-fiction-tool comparison
+
+Verified from DreamGen's own comparison post[S.DREAMGEN]:
+
+The 10 tools tested by DreamGen (with their NSFW/fiction posture):
+
+1. **DreamGen** — fiction-shaped, "no rules, no restrictions."
+2. **DeepFiction AI** — erotic story focus.
+3. **Sudowrite** — long-form creative; ToS-bound.
+4. **NovelAI** — fiction-optimized, mostly uncensored.
+5. **AI Dungeon** — role-play; rating-tagged.
+6. **Pirr** — mobile platform.
+7. **Claude** — requires workarounds.
+8. **ErosWriter** — erotica-specific desktop.
+9. **RedQuill** — community remix.
+10. **My Spicy Vanilla** — couples / audio.
+
+DreamGen specs (from same source):
+- **Context windows**: 5k (Starter) / 15k (Advanced) / 30k (Pro)
+- **Pricing**: $6.26 – $33.81/month
+- **Modes**: Story Writing + Role-Play
+- **Features**: Story Bible, Story Steering, Scenario Generator
+- **Posture**: "We don't filter your stories, and we don't censor your creativity"
+
+DreamGen is the closest competitor for "explicitly unfiltered fiction tool." Loom's differentiator: local-only (no cloud retention concern), no per-token cost, no monthly subscription, no context-budget tier-gating.
+
+### S.13 Longform plugin (Obsidian) — verified scene-as-file architecture
+
+Fetched the plugin README[S.LONGFORM]:
+
+- **Project identification**: any note with `longform: true` in YAML frontmatter is a Longform project.
+- **Multi-scene project**: an "index file" (e.g., `My Novel/Index.md`) with `scenes:` list in frontmatter; scenes are individual .md files in the project directory.
+- **Single-scene project**: project frontmatter inline in the single scene file.
+- **Scene reorder**: drag UI updates the `scenes:` array; supports nesting (drag right = indent).
+- **Compile**: custom workflow chain with multiple steps; community extensions available.
+- **Hard guarantee**: plugin **never alters scene contents**; only the index file is rewritten.
+
+This is exactly the format Loom adopts ([`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §7) — scenes are markdown files with YAML frontmatter; project metadata lives in `project.json`; round-trip safe.
+
+### S.14 Open-source novel writers — feature comparison
+
+Search-level summaries[S.OSS-WRITERS]:
+
+- **Manuskript** — Snowflake-method-shaped; one-paragraph idea progressively expanded; Scrivener-like storyboard with chapter list + scene fields.
+- **bibisco** — character-lore focused via prompts and questions; self-contained Java; PDF/DOCX/TXT export.
+- **yWriter** — utilitarian; per-scene metadata (POV, conflict, outcome, time, location); word-count targets per scene/chapter.
+
+Loom inherits the **per-scene metadata** schema from yWriter (already in [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §2). yWriter's specifically-fictional fields (conflict, outcome) are the right primitives — Scrivener's free-form synopsis card is too unconstrained for AI generation context.
+
+### S.15 References (Round 4 sources)
+
+- [S.SUDOWRITE-FANDOM] Sudowrite — Fandom Helper — `https://sudowrite.com/fandom-helper`
+- [S.SUDOWRITE-MODELS] aitoolsdevpro — Sudowrite Guide (model routing claim) — `https://aitoolsdevpro.com/ai-tools/sudowrite-guide/`
+- [S.ERATO] Tapwave Zodiac — Erato System Prompt — `https://tapwavezodiac.github.io/novelaiUKB/Erato-System-Prompt.html`
+- [S.AID-STORY-CARDS] AI Dungeon Help — Story Cards — `https://help.aidungeon.com/faq/story-cards`
+- [S.AID-AUTHORS-NOTE] AI Dungeon Help — Author's Note — `https://help.aidungeon.com/faq/what-is-the-authors-note`
+- [S.NAI-LOREBOOK] NovelAI Documentation — Lorebook (re-verified) — `https://docs.novelai.net/en/text/lorebook/`
+- [S.NAI-AUTHORS-NOTE] Tapwave Zodiac NovelAI — Context — `https://tapwavezodiac.github.io/novelaiUKB/Context.html`
+- [S.MARINARA] Marinara's Spaghetti Recipe (raw JSON) — `https://raw.githubusercontent.com/SpicyMarinara/SillyTavern-Settings/main/Marinara's%20Essentials/Preset/Marinara's%20Spaghetti%20Recipe.json`; landing — `https://spicymarinara.github.io/`
+- [S.SUKINO] Sukino's SillyTavern-Settings-and-Presets — `https://huggingface.co/Sukino/SillyTavern-Settings-and-Presets`
+- [S.HUIHUI] Huihui-AI HuggingFace (abliterated model collection) — `https://huggingface.co/huihui-ai`
+- [S.QWEN-ABLITERATED] Qwen3-14B-Abliterated stats — `https://skywork.ai/blog/models/qwen3-14b-abliterated-free-chat-online-skywork-ai/`
+- [S.ABLITERATION] mlabonne — Uncensor any LLM with abliteration — `https://huggingface.co/blog/mlabonne/abliteration`
+- [S.HERETIC] p-e-w/heretic — `https://github.com/p-e-w/heretic`; PyPI `heretic-llm` 1.2.0 (Feb 2026)
+- [S.SPHIRATRIOTH] sphiratrioth666 — Lorebooks_as_ACTIVE_scenario_and_character_guidance_tool — `https://huggingface.co/sphiratrioth666/Lorebooks_as_ACTIVE_scenario_and_character_guidance_tool`
+- [S.SAMPLER-DEFAULTS] smcleod LLM Sampling Parameters Guide — `https://smcleod.net/2025/04/llm-sampling-parameters-guide/`
+- [S.ANTISLOP] AntiSlop ICLR 2026 — `https://openreview.net/pdf/6916f45661bf884811be66da937b7467b97a9114.pdf`
+- [S.AO3-DATASET] HuggingFace `nyuuzyou/archiveofourown` (DISABLED) — `https://huggingface.co/datasets/nyuuzyou/archiveofourown`
+- [S.AO3-TAGS] AO3 Tags FAQ — `https://archiveofourown.org/faq/tags`; Fanlore — `https://fanlore.org/wiki/AO3_Tagging_System`
+- [S.FANFIC-TROPES] Fansplaining "Five Tropes Fanfic Readers Love" — `https://www.fansplaining.com/articles/five-tropes-fanfic-readers-love-and-one-they-hate`; Fanlore Slow Burn — `https://fanlore.org/wiki/Slow_Burn_(trope)`; She's Got Plans — `https://shesgotplans.com/common-fanfiction-tropes/`
+- [S.FANFABLER] Towards Data Science — FanFabler — `https://towardsdatascience.com/fanfabler-fine-tuning-llama-3-to-be-a-multilingual-fanfic-writing-assistant-dfc664ed4a72/`; dataset — `https://huggingface.co/datasets/robgonsalves/Multilingual-FanFic-Chat-4K`
+- [S.DREAMGEN] DreamGen Blog — 10 Best NSFW AI Writers — `https://dreamgen.com/blog/articles/ai-story-writing-unfiltered`
+- [S.LONGFORM] kevboh/longform README — `https://github.com/kevboh/longform/blob/main/README.md`
+- [S.OSS-WRITERS] AlternativeTo bibisco — `https://alternativeto.net/software/bibisco/`; Linux Magazine — Open Source Novel Tools — `https://www.linux-magazine.com/Online/Features/Write-a-Novel-with-Open-Source-Tools`
+- [S.MODEL-LIST] swyxio gist — April 2026 model list (referenced from Round 3 §B5) — `https://gist.github.com/swyxio/324fc884061bf20e97a2ecbe59bae34a`
+- [S.INKFLUENCE] Inkfluence AI Fanfic Writer — `https://www.inkfluenceai.com/ai-fanfiction-writer`
+
+### S.16 What's still NOT verified after Round 4
+
+- **Sudowrite's actual wire-format prompt assembly.** Round 4 didn't try DevTools-capture (browser MCP available but the user is on the doc-writing track, not running Sudowrite in a tab). Phase 5 evaluation harness can attempt this — capture once, document, ignore future drift.
+- **Reddit thread depth.** Round 4 covered AI Dungeon, Sudowrite via aggregator pages but not direct r/AIDungeon / r/sudowrite / r/Novelcrafter / r/fanfiction megathreads. Useful if a specific community-wisdom claim needs validation.
+- **Fanlore canonical-trope full inventory.** Fanlore returned 403 on direct WebFetch this round; trope summary uses search-result excerpts. Phase 5.c implementation should re-fetch when bundling the trope library — direct from `fanlore.org` if accessible, or community-canonical lists otherwise.
+- **Heretic abliteration latency / VRAM cost** for novice users. README mentions "no expensive post-training" but exact compute budget isn't quoted. Phase 7+ R&D direction; not blocking.
+- **Whether Marinara's preset language causes refusal in some abliterated models** ("everything goes" sometimes triggers paradoxical-cooperation refusal). Empirical question; user-tunable.

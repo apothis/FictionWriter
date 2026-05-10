@@ -25,13 +25,15 @@ A **local-LLM-powered fiction-writing app for macOS**, built on the same kobold 
 
 | # | Loom item | Status | Phase | Pointer |
 |---|---|---|---|---|
-| L0 | Phase 0 — research + design docs | ✅ landing 2026-05-10 | 0 | this doc + [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) + [`LOOM_MEMORY.md`](LOOM_MEMORY.md) (memory deep-dive addendum) |
+| L0 | Phase 0 — research + design docs | ✅ landing 2026-05-10 | 0 | this doc + [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) + [`LOOM_MEMORY.md`](LOOM_MEMORY.md) (memory deep-dive) + [`LOOM_FANFIC.md`](LOOM_FANFIC.md) (fanfic-mode feature) + [`LOOM_NSFW.md`](LOOM_NSFW.md) (heavy-NSFW posture) |
 | L1 | Editor MVP (single-window, NSTextView, kobold wired, Continue + Expand, .md export) | ⏳ next | 1 | [`LOOM_PHASE1_EDITOR_MVP.md`](LOOM_PHASE1_EDITOR_MVP.md) |
 | L2 | Story Bible v1 (Characters + Settings + basic Timeline; injection into prompts) | pending | 2 | [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md), [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) |
 | L3 | Hierarchical structure + navigation (Project tree → Parts → Chapters → Scenes; Corkboard view; word counts) | pending | 3 | TBD |
 | L4 | Generation-mode expansion (Rewrite, Show-don't-tell, Brainstorm, Critique, Bridge); per-mode prompt templates; knowledge-state-per-character extraction | pending | 4 | [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md), [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) |
 | L5 | Style ingestion (RAG-for-style; chunk reference texts; embed via RPClient embeddings server; per-scene-type retrieval) | pending | 5 | TBD; cross-references [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §O.4 |
-| L6 | Polish + export (Markdown / RTF / .docx / ePub; search; autosave + version history) | pending | 6 | TBD |
+| L5b | Canon-brief storage on Bible entities; user-paste fandom canon ingestion (re-uses L5 pipeline) | pending | 5.b | [`LOOM_FANFIC.md`](LOOM_FANFIC.md) §3.2 |
+| L5c | Fanfic Mode — Project kind, ATTG header, Ship/AU/Trope schemas, bundled trope library, fandom templates, fanfic-specific generation modes | pending | 5.c | [`LOOM_FANFIC.md`](LOOM_FANFIC.md) §9 |
+| L6 | Polish + export (Markdown / RTF / .docx / ePub; search; autosave + version history; AO3-conformant frontmatter export) | pending | 6 | TBD |
 
 **Deferred indefinitely:** voice/TTS, multi-user collab, cloud sync, mobile companion.
 
