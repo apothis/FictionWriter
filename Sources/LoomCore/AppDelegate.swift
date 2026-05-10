@@ -17,6 +17,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         DebugLog.shared.write("[loom] launched")
+        // Force lazy-init of the app-state singleton so the registry is
+        // ready by the time the first generation request fires (1.i).
+        _ = AppState.shared
 
         buildMenu()
 

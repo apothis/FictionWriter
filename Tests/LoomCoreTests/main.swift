@@ -6,6 +6,10 @@ let suites: [TestSuite] = [
     phase1SceneFrontmatterTests(),
     phase1ProjectStorageTests(),
     phase1SchemaVersionTests(),
+    phase1ServerProbeParseTests(),
+    phase1KoboldClientRegistryTests(),
+    phase1AppSettingsCodableTests(),
+    phase1KoboldClientSmokeTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
