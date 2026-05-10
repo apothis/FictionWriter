@@ -18,6 +18,10 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var trayView: GenerationTrayView!
     private var coordinator: GenerationCoordinator!
     private var acceptanceMachine = AcceptanceMachine()
+    private var acceptanceAccessory: AcceptanceTitlebarAccessory!
+    /// Set after the accessory has been attached to the window's
+    /// titlebar so we don't double-attach on re-appearances.
+    private var acceptanceAccessoryAttached: Bool = false
     private var emptyStateView: EmptyProjectStateView!
     private var emptyStateClickedObserver: NSObjectProtocol?
     private var sessionDidChangeObserver: NSObjectProtocol?
@@ -134,15 +138,15 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         tray.onExpandClicked = { [weak self] in self?.handleExpand() }
         self.trayView = tray
 
-        // Acceptance buttons are now part of the tray itself (they
-        // swap in for Continue/Expand when the post-generation
-        // acceptance window opens). The previous floating overlay had
-        // hit-test pathologies that made clicks fall through even when
-        // the buttons rendered visibly. Putting them in the
-        // demonstrably-working tray slot guarantees clicks reach them.
-        tray.onAcceptClicked = { [weak self] in self?.applyAcceptanceTransition(.accept) }
-        tray.onRejectClicked = { [weak self] in self?.applyAcceptanceTransition(.reject) }
-        tray.onRedoClicked = { [weak self] in self?.applyAcceptanceTransition(.redo) }
+        // Acceptance bar — NSTitlebarAccessoryViewController attached
+        // to the window's titlebar (Phase 2 polish replacing the
+        // merged-tray fallback). Attach happens in viewDidAppear once
+        // `view.window` is available.
+        let accessory = AcceptanceTitlebarAccessory()
+        accessory.onAccept = { [weak self] in self?.applyAcceptanceTransition(.accept) }
+        accessory.onReject = { [weak self] in self?.applyAcceptanceTransition(.reject) }
+        accessory.onRedo = { [weak self] in self?.applyAcceptanceTransition(.redo) }
+        self.acceptanceAccessory = accessory
 
         // Empty-project placeholder per LOOM_DESIGN_LANGUAGE.md §14.7.
         // Overlaid on top of the scroll view; shown when
@@ -284,6 +288,20 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     public override func viewDidAppear() {
         super.viewDidAppear()
         view.window?.makeFirstResponder(textView)
+        attachAcceptanceAccessoryIfNeeded()
+    }
+
+    /// Attach the acceptance bar to the host window's titlebar once
+    /// the view is in a window. Idempotent — guarded so reappearances
+    /// don't stack duplicate accessories.
+    private func attachAcceptanceAccessoryIfNeeded() {
+        guard !acceptanceAccessoryAttached,
+              let window = view.window,
+              let accessory = acceptanceAccessory
+        else { return }
+        window.addTitlebarAccessoryViewController(accessory)
+        acceptanceAccessoryAttached = true
+        DebugLog.shared.write("[editor] acceptance bar: attached to window titlebar")
     }
 
     // MARK: - Session ↔ text-storage sync
@@ -330,7 +348,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
            case .awaiting = acceptanceMachine.state
         {
             _ = acceptanceMachine.handleImplicitAccept()
-            trayView.setTrayMode(.editing)
+            acceptanceAccessory.hide()
             clearAcceptanceTint()
             DebugLog.shared.write("[editor] acceptance: implicit (user typed)")
         }
@@ -444,7 +462,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         let mode = lastInvokedMode ?? .continueProse
         acceptanceMachine.handleGenerationFinished(insertedRange: insertedRange, mode: mode)
         applyAcceptanceTint(insertedRange)
-        trayView.setTrayMode(.acceptance)
+        acceptanceAccessory.show()
     }
 
     /// Tracks which mode the editor most recently invoked, so the
@@ -484,7 +502,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         case .reject: action = acceptanceMachine.handleReject()
         case .redo:   action = acceptanceMachine.handleRedo()
         }
-        trayView.setTrayMode(.editing)
+        acceptanceAccessory.hide()
         clearAcceptanceTint()
 
         switch action {
