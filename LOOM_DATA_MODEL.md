@@ -16,6 +16,9 @@ struct Project: Codable {
     var createdAt: Date
     var schemaVersion: Int       // start at 1; bump on non-additive changes
     var settings: ProjectSettings
+    var kind: ProjectKind        // .originalFiction default; .fanfic for fanfic-mode projects (Phase 5.c — see LOOM_FANFIC.md §3.1)
+    var writingDirection: WritingDirection?  // Phase 2 — see LOOM_NSFW.md §3.1 (literary / mainstream / romance / erotica / porn + register + explicitnessLevel + themes + pacing + FTBPolicy)
+    var fanficMetadata: FanficMetadata?      // Phase 5.c; only populated when kind == .fanfic
 
     // Manuscript root — Phase 1 has flat scenes; Phase 3+ adds Parts/Chapters.
     var manuscript: Manuscript

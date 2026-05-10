@@ -179,6 +179,12 @@ Loom ships a curated bundle of ~80-120 fanfic tropes drawn from the Fanlore cano
 | Royalty AU | AU | varies | Reframe characters in royal/noble setting; political intrigue layer |
 | Time Travel Fix-It | structural/AU | varies | One character travels back; tries to prevent a canon tragedy |
 | Bed Sharing | setup | scene | Forced proximity, smaller in scope than "Only One Bed" |
+| PWP (Porn Without Plot) | structural / kink | single scene / 2k-8k | Explicit-foreground; minimal plot scaffolding; see [`LOOM_NSFW.md`](LOOM_NSFW.md) §3.6 |
+| ABO / Omegaverse | AU / kink | varies | Alternate-biology dynamic; specific vocabulary register; world-rules apply across all scenes |
+| BDSM | kink / relationship | varies | Role / dynamic structure; trust + care patterns alongside intensity |
+| Kink Discovery | structural / character | 1-10 chapters | Curiosity → discovery → integration arc |
+| First Time | structural / character | scene | First explicit encounter; usually paired with another trope |
+| Hate Sex | relationship / kink | scene | Antagonistic-dynamic-without-romantic-resolution; voltage without softness |
 
 User can extend the library per-project. Tropes are *project-scoped* but exportable as bundle.
 
@@ -273,7 +279,7 @@ Phase 5 style ingestion already handles this. Fanfic mode adds a "match my favor
 
 ## 10. What this is NOT
 
-- **Not a content moderator.** Loom doesn't enforce any rating/warning policy. The user picks tags; the model writes accordingly. Heavy NSFW per [`LOOM_NSFW.md`](LOOM_NSFW.md).
+- **Not a content moderator.** Loom doesn't enforce any rating/warning policy. The user picks tags; the model writes accordingly. Heavy NSFW per [`LOOM_NSFW.md`](LOOM_NSFW.md). Fanfic-mode projects can be configured with `kind: .porn` writing direction ([`LOOM_NSFW.md`](LOOM_NSFW.md) §3) — the explicit-foreground configuration applies on top of fanfic-mode primitives. PWP fanfics are a first-class project shape.
 - **Not a canon scraper.** Loom doesn't auto-fetch fandom wikis or AO3. Canon is user-supplied (paste, drop, manual entry). The AO3 dataset disablement[S.AO3-DATASET] is the controlling lesson.
 - **Not a publishing tool.** Loom exports clean Markdown with AO3-conformant frontmatter; the user uploads to AO3/FFN/Wattpad themselves.
 - **Not a fanfic LoRA fine-tuner.** Phase 5 is few-shot style imitation. Local LoRA training is Phase 7+ R&D; respects the FanFabler[S.FANFABLER] approach as a model but doesn't ship the pipeline today.

@@ -110,7 +110,179 @@ Counter-actions the user takes themselves:
 
 Loom's role: surface the failure honestly, let the user decide.
 
-## 3. UI affordances — what's NOT there
+## 3. Erotica / porn as a first-class writing direction
+
+The user's stated requirement (2026-05-10): "It should be able to take porn as a specific writing direction, and focus on extreme explicit graphic descriptions along that writing style's theme."
+
+This isn't covered by §2's defaults alone. §2 ensures the model *can* write explicit content; §3 specifies that "explicit content is the foreground of this project" can be a *first-class project setting*, propagated into every generation, with vocabulary register and theme as configurable dimensions.
+
+Existing fiction tools handle this badly. Sudowrite and Novelcrafter treat explicit content as a tag at most; their default prose tendency is to fade-to-black or summarise. NovelAI Erato is more permissive but has no structured "this is erotica" mode. Marinara-grade SillyTavern presets work but are chat-shaped and require expert configuration[S.MARINARA]. DreamGen markets uncensored fiction[S.DREAMGEN] but is cloud-bound and lacks the per-project register granularity. **Nobody treats "porn" as a writing direction with structured schema support.** Loom does.
+
+### 3.1 The Writing Direction primitive
+
+A new field on `Project` per [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md):
+
+```swift
+struct WritingDirection: Codable {
+    var kind: DirectionKind
+    var register: VocabularyRegister
+    var explicitnessLevel: ExplicitnessLevel
+    var themes: [Theme]                  // user-configured per project
+    var pacing: PacingProfile
+    var fadeToBlackPolicy: FTBPolicy
+}
+
+enum DirectionKind: String, Codable {
+    case literary       // mainstream fiction; explicit content rare or absent
+    case mainstream     // commercial fiction; integrated explicit content
+    case romance        // romance-genre conventions; explicit scenes integrated
+    case erotica        // explicit content is co-equal with plot
+    case porn           // explicit content IS the focus; plot is scaffolding
+}
+
+enum VocabularyRegister: String, Codable {
+    case clinical       // medical / anatomical
+    case literary       // metaphor, indirection, sensory
+    case earthy         // direct physical language without slang
+    case crude          // explicit slang, taboo language
+    case mixed          // varies per character / scene; user-controlled
+}
+
+enum ExplicitnessLevel: String, Codable {
+    case fadeToBlack    // implied only; never depicted
+    case suggestive     // implied with some sensory detail
+    case onScreen       // depicted at standard prose density
+    case graphic        // depicted with sustained sensory + anatomical detail
+    case extreme        // depicted with extended graphic detail; no fade; no euphemism
+}
+
+struct Theme: Codable {
+    let id: UUID
+    var name: String            // user-supplied: "first time", "established dynamic", named kink
+    var description: String     // 2-3 sentence definition
+    var alwaysOn: Bool          // injected as constant lorebook entry, not just per-scene
+    var styleExemplarRefs: [UUID]  // ReferenceMeta references for retrieval (Phase 5)
+}
+
+enum PacingProfile: String, Codable {
+    case fastPlot              // sex is fast, plot dominates
+    case balanced              // standard novelistic pacing
+    case slowExplicit          // explicit scenes get extended description; plot accommodates
+    case explicitForeground    // explicit content IS the structure; plot serves it
+}
+
+enum FTBPolicy: String, Codable {
+    case never                 // model never fades to black; user wants depiction always
+    case userChoice            // model continues fully; user manually skips/edits
+    case modelDecides          // default for non-erotica projects; model uses scene context
+}
+```
+
+### 3.2 How `kind == .porn` changes generation
+
+When the project's writing direction is `.porn`, every generation is configured for explicit-foreground writing:
+
+- **System prompt foregrounds graphic sensory description.** A direction-specific addendum is appended to the Project Memory: *"This is an explicit fiction project. Graphic sensory and anatomical description is the substance of the scene. Do not fade, summarise, or substitute euphemism unless the chosen vocabulary register is `literary`. Continue the scene at the level of detail the manuscript establishes."*
+- **Author's Note injected at depth-2 (not depth-4).** Steering becomes dominant on the immediate generation.
+- **Continue mode default targets** lengthen: 800–1500 words when inside an explicit scene (vs ~500 default elsewhere).
+- **Pacing profile** defaults to `.explicitForeground`. Beat-level instructions (Phase 4 [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md)) suggest extending sensory beats rather than cutting to next plot moment.
+- **No automatic scene-break suggestion** at intimacy boundary. Mainstream tools sometimes prompt "is this a good place to fade?" — Loom's `.porn` direction never does.
+- **Style sheet retrieval (Phase 5)** preferentially pulls scene-type-tagged-as-explicit chunks from the user's reference texts when active scene type is explicit.
+- **Lorebook `alwaysOn` themes** are injected as constants, ensuring the project's theme stays consistent scene-to-scene.
+
+For `.erotica` (the step down from `.porn`), the same configuration applies but with weaker injection (depth-3, default 500-1000 word output, plot/explicit balance is `.slowExplicit`). For `.mainstream` and `.romance`, defaults stay as `.balanced` / `.modelDecides`.
+
+### 3.3 Vocabulary register — captured, not enforced
+
+Erotica spans wildly different vocabulary registers; users have strong preferences. Loom doesn't enforce a register — it captures the user's preference and reflects it in three places:
+
+1. **Author's Note**: `[ Author's Note: this manuscript uses {register} vocabulary; maintain register consistently ]`.
+2. **Style sheet lexicon** (Phase 5): preferred + avoided terms extracted from reference texts.
+3. **Few-shot exemplars** (Phase 5): retrieved chunks match the user's register, biasing the model's surface-form output.
+
+The five named registers:
+
+| Register | Character | When chosen |
+|---|---|---|
+| `clinical` | Medical / anatomical / distant | Literary erotica with accuracy bias; some sex-scene-as-information work |
+| `literary` | Metaphor, indirection, sensory imagery | Literary erotica; "tasteful" but explicit |
+| `earthy` | Direct physical language, no slang | Romance with on-screen sex; many mainstream-but-explicit projects |
+| `crude` | Explicit slang, taboo language, blunt | PWP, kink-foregrounded, much fanfic |
+| `mixed` | Varies per character / per scene | POV-shaped: each character has a register; user manages per scene |
+
+The user picks the project default; per-scene Author's Note can override.
+
+### 3.4 The theme dimension — user-configured
+
+Themes capture *what kind of explicit content this project explores*. Loom doesn't ship a curated taxonomy of themes — the user names what they're writing. Each theme is a free-form `name` + `description` that injects as a constant lorebook entry when `alwaysOn: true`.
+
+Examples (these are project-specific, not bundled):
+
+- "First-time scenes between established characters"
+- "Long-established-relationship intimate dailiness"  
+- "Power-dynamic exploration: [user-described dynamic]"
+- "Specific kink: [user-named with description]"
+- "Voice consistency: explicit prose stays in the established literary register even at peak intensity"
+
+Themes drive cross-scene consistency — a project exploring a specific theme stays in that theme's register across all scenes without per-scene re-authoring.
+
+### 3.5 The "extreme" dimension
+
+When `explicitnessLevel == .extreme`:
+
+- Project Memory adds: *"This work explores extreme explicit content. Do not soften, summarise, redirect, or fade. Do not insert moralising. Continue at the level of detail and intensity the user's prose and reference material establishes."*
+- The Settings → Resources panel preferentially recommends **abliterated** model variants ([Heretic toolkit][S.HERETIC], [Huihui's collection][S.HUIHUI], [mlabonne's article][S.ABLITERATION]) — base models often refuse extreme content even with a permissive system prompt; abliteration is the standard counter.
+- The History tab tags generations with an "extreme" category — not as a warning, as user-organising metadata.
+- Sphiratrioth positive-bias counter lorebook entries[S.SPHIRATRIOTH] are surfaced as starter-pack templates the user can drop in (e.g., explicit "WILL INSTANTLY [continue at this intensity]" entries countering the model's drift to fade).
+- Trope picker doesn't filter — extreme is the user's explicit choice.
+- No "are you sure" prompts. No "this might be intense" tooltips. Absence-of-friction is the design principle (per §4 below — "what's NOT there").
+
+### 3.6 Trope library — erotica and kink categories
+
+The bundled trope library ([`LOOM_FANFIC.md`](LOOM_FANFIC.md) §5.2) includes erotica/kink categories. When `kind` is `.erotica` or `.porn`, the trope picker (`⌘⇧T`) defaults its filter to `kink` + `relationship` categories.
+
+Examples that join the library (from Fanlore / community canonical tropes[S.FANFIC-TROPES]):
+
+| Trope | Category | Notes |
+|---|---|---|
+| PWP (Porn Without Plot) | structural | Single-scene, explicit-foreground, minimal scaffolding; typical 2k-8k words |
+| ABO / Omegaverse | AU / kink | Alternate-biology dynamic; specific vocabulary register; world-rules apply across all scenes |
+| BDSM | kink / relationship | Role / dynamic structure; trust + care patterns alongside intensity |
+| Kink Discovery | structural / character | Character explores new kink; arc shape: curiosity → discovery → integration |
+| Established Practice | relationship | Known dynamic; familiar territory; cosy + intimate |
+| First Time | structural / character | First-explicit-encounter beats; usually paired with another trope |
+| Hate Sex | relationship / kink | Antagonistic-dynamic-without-romantic-resolution; voltage without softness |
+| User-named | kink | Whatever the user is writing; project-scoped |
+
+Each trope's `generationHints` carries pacing notes appropriate to its genre conventions (PWP has different beats than slow-burn ABO).
+
+### 3.7 What this is NOT
+
+- **Not auto-erotica generation.** The user writes; Loom assists. Brainstorm on a blank canvas for an explicit scene requires the same user direction as any other generation.
+- **Not a content-quality benchmark.** Loom doesn't judge "is this good erotica" — that's the user's call. The AntiSlop sampler tuning[S.ANTISLOP] (already in §2.2) covers the one axis Loom defaults around (anti-cliché, anti-slop).
+- **Not a porn corpus.** Loom doesn't ship erotica reference texts (copyright + community conventions). The user provides their own reference texts at Phase 5; Loom's role is to retrieve from them, not supply them.
+- **Not a fine-tuner for explicit content.** Phase 7+ R&D direction (LoRA on user's reference corpus when MLX tooling matures); not in current scope.
+- **Not a category gate.** `.porn` direction doesn't unlock or lock anything; it's a metadata + configuration dimension. Users can write the same prose with `.mainstream` direction — it's just less conducive.
+
+### 3.8 Phase mapping
+
+| Phase | Erotica/porn-direction deliverable |
+|---|---|
+| Phase 1 | None directly. §2 defaults already support explicit content via system prompt + sampler defaults + bracketed Author's Note. |
+| Phase 2 | `WritingDirection` schema lands; editable in Project Settings inspector. Default-direction picker on new-project flow ("How explicit will this work be?" — five options + "skip / configure later"). Vocabulary register select; explicitness-level select. |
+| Phase 4 | `Theme` schema as constant lorebook entries; trope library erotica/kink categories surface; PWP/ABO/BDSM/Kink Discovery/etc. as canonical tropes in the bundle. Sphiratrioth positive-bias counters extended with starter pack for `.extreme` projects. Author's Note depth-2 override when `.porn` is active. |
+| Phase 5 | Style sheet captures vocabulary register from reference texts; per-scene-type retrieval prefers explicit-tagged chunks when active scene is explicit. Theme `styleExemplarRefs` wires explicit reference texts to retrieval. |
+| Phase 6 | Resources panel highlights abliteration tools when `.extreme` is the project setting. |
+| Phase 7+ | Optional: in-app abliteration helper (wrapping Heretic) for users who want to abliterate models without leaving Loom. |
+
+### 3.9 Why this matters
+
+Two reasons:
+
+1. **The user said so.** This was stated as a Loom direction explicitly. Building it as a first-class primitive — schema, configuration, generation behaviour, library extensions — rather than as a tagged-on toggle communicates that Loom takes the use case seriously.
+2. **Existing tools either can't or won't.** Cloud-bound services have ToS that constrain `.extreme`; local-but-chat-shaped tools (SillyTavern et al.) require expert config to do this well; nobody treats "this is a porn project, configure accordingly" as a structured project property. Loom does. This is a meaningful market gap that Loom's local-first + uncensored-by-design posture is uniquely able to fill.
+
+## 4. UI affordances — what's NOT there
 
 Equally load-bearing as what is there:
 
@@ -123,7 +295,7 @@ Equally load-bearing as what is there:
 - **No analytics on prose.** What the user writes is the user's.
 - **No dark patterns about "safer alternatives."** Models that refuse are signalled (yellow chip); models that don't are equally surfaced.
 
-## 4. UI affordances — what IS there
+## 5. UI affordances — what IS there
 
 What Loom *adds* to support heavy NSFW + extreme content well:
 
@@ -135,7 +307,7 @@ What Loom *adds* to support heavy NSFW + extreme content well:
 - **Fast model swap** (Phase 1 inherits from RPClient): one click in settings to change `defaultServerId`. No ceremony when a model refuses.
 - **"Continue from refusal" affordance** (Phase 4+): when a refusal is detected, a one-click action prepends a sentence-stub to the cursor that breaks the refusal pattern (e.g., the model wrote "I can't continue this scene because"; the user clicks "Push past"; Loom inserts "—" and asks the model to keep going). Common community technique; Loom surfaces it.
 
-## 5. Anti-patterns explicitly avoided
+## 6. Anti-patterns explicitly avoided
 
 Things that look reasonable until you remember the user is an adult writing fiction:
 
@@ -150,7 +322,7 @@ Things that look reasonable until you remember the user is an adult writing fict
 | Mandatory cloud backup | Privacy | n/a (Obsidian Longform pattern: scene-as-file, user owns) |
 | Educational popups about "responsible AI" | Patronising; user is the responsible party | n/a |
 
-## 6. Power-user resources Loom links to (Settings page, "Resources")
+## 7. Power-user resources Loom links to (Settings page, "Resources")
 
 To support users who want to push further than Loom's defaults — without Loom shipping the resources itself:
 
@@ -165,7 +337,7 @@ To support users who want to push further than Loom's defaults — without Loom 
 
 These are *links*, not embedded content. Settings → Resources opens a panel with clickable URLs. Loom doesn't host any of this.
 
-## 7. Phase mapping
+## 8. Phase mapping
 
 | Phase | Heavy NSFW deliverable |
 |---|---|
@@ -177,7 +349,7 @@ These are *links*, not embedded content. Settings → Resources opens a panel wi
 | Phase 6 | Resources panel in Settings linking to community resources; one-click sampler-preset-pack imports. |
 | Phase 7+ | Optional: in-app abliteration helper that wraps p-e-w/heretic for users who want to abliterate models without leaving Loom (heavy lift; may stay external). |
 
-## 8. References
+## 9. References
 
 **Internal:**
 - [`LOOM_PLAN.md`](LOOM_PLAN.md) — phasing.
