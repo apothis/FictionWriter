@@ -25,6 +25,11 @@ public struct Project: Codable, Equatable {
     /// reopening a project restores their context. Optional because
     /// fresh projects haven't had a tab selection yet.
     public var selectedInspectorTab: InspectorTab?
+    /// Phase 2 #2 — fanfic-mode metadata. Populated only when
+    /// `kind == .fanfic`; nil otherwise. The UI to edit this lands
+    /// Phase 5.b-c; the schema is here so the migration is one-time
+    /// (HANDOFF §9.1 #2).
+    public var fanficMetadata: FanficMetadata?
 
     public init(
         id: UUID = UUID(),
@@ -37,7 +42,8 @@ public struct Project: Codable, Equatable {
         manuscript: Manuscript = .empty,
         bible: Bible = .empty,
         notes: String = "",
-        selectedInspectorTab: InspectorTab? = nil
+        selectedInspectorTab: InspectorTab? = nil,
+        fanficMetadata: FanficMetadata? = nil
     ) {
         self.id = id
         self.title = title
@@ -52,6 +58,7 @@ public struct Project: Codable, Equatable {
         self.bible = bible
         self.notes = notes
         self.selectedInspectorTab = selectedInspectorTab
+        self.fanficMetadata = fanficMetadata
     }
 
     public static func empty(title: String, author: String? = nil) -> Project {
@@ -75,6 +82,7 @@ public struct Project: Codable, Equatable {
         self.bible = try c.decodeIfPresent(Bible.self, forKey: .bible) ?? .empty
         self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         self.selectedInspectorTab = try c.decodeIfPresent(InspectorTab.self, forKey: .selectedInspectorTab)
+        self.fanficMetadata = try c.decodeIfPresent(FanficMetadata.self, forKey: .fanficMetadata)
     }
 }
 
