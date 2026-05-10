@@ -15,8 +15,10 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     public let session: ProjectSession
     private var scrollView: NSScrollView!
     private var textView: NSTextView!
+    private var trayView: GenerationTrayView!
     private var selectionObserver: NSObjectProtocol?
     private var resizeObserver: NSObjectProtocol?
+    private var textSelectionObserver: NSObjectProtocol?
     /// Suppresses re-entrant text writes when we programmatically swap
     /// the text storage on selection change.
     private var suppressWriteback: Bool = false
@@ -35,6 +37,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     deinit {
         if let o = selectionObserver { NotificationCenter.default.removeObserver(o) }
         if let o = resizeObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = textSelectionObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     public override func loadView() {
@@ -96,12 +99,24 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         scroll.documentView = tv
         self.textView = tv
 
+        // Bottom-pinned generation tray (1.h plumbing; 1.i wires the
+        // click handlers to actual generation).
+        let tray = GenerationTrayView()
+        tray.translatesAutoresizingMaskIntoConstraints = false
+        tray.onContinueClicked = { [weak self] in self?.handleContinue() }
+        tray.onExpandClicked = { [weak self] in self?.handleExpand() }
+        self.trayView = tray
+
         container.addSubview(scroll)
+        container.addSubview(tray)
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: container.topAnchor),
             scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            scroll.bottomAnchor.constraint(equalTo: tray.topAnchor),
+            tray.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tray.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tray.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
 
         self.view = container
@@ -126,6 +141,16 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         }
         scroll.postsFrameChangedNotifications = true
 
+        // Push tray state on text-view selection change. Tracks both
+        // cursor moves (no-op visually) and selection grow/shrink.
+        textSelectionObserver = NotificationCenter.default.addObserver(
+            forName: NSTextView.didChangeSelectionNotification,
+            object: tv,
+            queue: .main
+        ) { [weak self] _ in
+            self?.pushTrayState()
+        }
+
         refreshFromSession()
         updateTextContainerInset()
     }
@@ -148,6 +173,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             textView.isEditable = false
         }
         postWordCount()
+        pushTrayState()
     }
 
     public func textDidChange(_ notification: Notification) {
@@ -156,6 +182,25 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         let prose = textView.string
         session.updateProse(id: id, prose: prose)
         postWordCount()
+        pushTrayState()
+    }
+
+    private func pushTrayState() {
+        let prose = textView.string
+        let hasProse = !prose.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasSelection = textView.selectedRanges.contains(where: { ($0 as? NSValue)?.rangeValue.length ?? 0 > 0 })
+        trayView.setState(EditorState(hasProse: hasProse, hasSelection: hasSelection))
+        // Phase 1.h placeholder: word count stands in for token estimate
+        // until 1.i wires real `/api/extra/tokencount` calls.
+        trayView.setTokenEstimate(WordCount.count(prose))
+    }
+
+    private func handleContinue() {
+        // 1.i wires through PromptBuilder + KoboldClient.
+    }
+
+    private func handleExpand() {
+        // 1.i wires through PromptBuilder + KoboldClient.
     }
 
     private func postWordCount() {
