@@ -134,9 +134,11 @@ public struct ProjectSettings: Codable, Equatable {
 
 public enum InstructTemplate: String, Codable, Equatable, CaseIterable {
     case auto
-    case chatml
-    case mistralV3
-    case mistralV7
+    case chatml         // Qwen 2.5 / 3.x family + many merges
+    case gemma3         // Gemma 1/2/3 family — <start_of_turn>; no native system role
+    case gemma4         // Gemma 4 — <|turn>...<turn|>; native system role
+    case mistralV3      // Mistral 7B / Nemo era — [INST] only, no [SYSTEM_PROMPT]
+    case mistralV7      // Mistral Large / Ministral 2407+ — [SYSTEM_PROMPT] + [INST]
     case llama3
     case alpaca
     case raw
