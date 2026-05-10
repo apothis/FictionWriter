@@ -104,6 +104,21 @@ For each tool: a list of named patterns, each with **what / where / why / verdic
 
 **B.2.15 — "Romance & NSFW Writing" as marketed genre guide.** **ADAPT.** Live capture: Novelcrafter explicitly markets "Romance & NSFW Writing" with phrases like "every heat level" — confirming that mainstream commercial tools openly target the explicit-fiction segment. **For Loom**: this validates [`LOOM_NSFW.md`](LOOM_NSFW.md) §1's framing — explicit fiction is mainstream, not fringe; tools that pretend otherwise are the outliers. Marketing isn't a Loom concern (no marketing site in v1) but the cultural confirmation is useful.
 
+**B.2.16 — Plan view: card-grid manuscript planner with rich scene metadata (UPDATED 2026-05-10 from user-supplied screenshot).** **STEAL — Phase 3.** Novelcrafter's "Plan" tab (one of four top-level tabs: Plan / Write / Chat / Review) renders the manuscript as nested cards: Acts → Chapters → Scenes. Each scene card shows: title · word count · drag-handle · summary text · status pill ("Draft", "Edited") · subplot tag · Codex tags (entities mentioned: characters, locations, factions) · label. Filter strip at top (search scenes); view-mode toggle (Grid / Matrix / Outline). Chapters render in a horizontal row when ≥3 in an Act; scenes stack vertically inside each chapter card.
+
+**Concrete properties of the layout** (from the screenshot):
+- **Card density**: scene cards are ~280pt wide; one column per chapter; chapters tile horizontally inside an Act group.
+- **Card chrome**: thin border, subtle background, 8pt corner radius; drag-handle dot-grid on the leading edge.
+- **Metadata vocabulary**: each card surfaces the canonical metadata (status, subplot, entity tags) as inline pills — same density posture as the Bible inspector's per-entity sub-tabs (B.2.2).
+- **View-mode toggle** at top: Grid (the screenshot's mode), Matrix (Plottr-shaped 2D timeline-style — see B.5.1), Outline (linear table of all scenes — see B.4.7).
+
+**For Loom**: this is the **Phase 3 Corkboard** ([`LOOM_PLAN.md`](LOOM_PLAN.md) L3). Specifics from this capture not in the existing spec:
+1. The Grid / Matrix / Outline toggle as a unified affordance (vs Loom's current implicit "Corkboard view as separate tab"). Three views, one toggle, one underlying data source. Borrow.
+2. The richness of per-card metadata pills — Loom's `Scene` schema ([`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §2) already has all these fields (status, conflict/outcome, summary, POV/location); the card layout is the projection.
+3. The "Plan" tab as a **distinct app mode** — Novelcrafter has Plan / Write / Chat / Review as **orthogonal modes**. Loom's three-pane workspace (sidebar + editor + inspector) is closer to a single-mode IDE. Loom's design-language §14.2 has the workspace; Phase 3 Corkboard adds a **second mode** the user toggles into. Decision deferred to Phase 3: tab vs separate window vs editor-pane-replace.
+
+Implementation note (AppKit): NSCollectionView with custom `NSCollectionViewItem` cells for scene cards; NSStackView (orientation: horizontal) for chapter rows inside Act groups; native drag-rearrange via NSCollectionView pasteboard support. Same pattern Scrivener uses for its Corkboard — Phase 3 will reuse the binder data source.
+
 ### B.3 NovelAI
 
 **Capture: prior-round WebFetch + general knowledge (MCP denied novelai.net).** Patterns from documentation read in Round 1-3.
