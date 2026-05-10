@@ -72,16 +72,33 @@ public final class MainWindowController: NSWindowController {
             defer: false
         )
         window.title = "Loom"
-        // Restore the previous frame when one is saved AND it lands on a
-        // currently-visible screen; otherwise centre. Order matters —
-        // setFrameUsingName loads the saved value; setFrameAutosaveName
-        // wires up auto-save going forward. (The previous order called
-        // center() after setFrameAutosaveName, which clobbered the
-        // restored frame on every launch.)
+        // Minimum size so the autosave never catches a degenerate
+        // frame (a previous version's autosave caught a 958×1 window
+        // because there was no minSize and a transient resize landed
+        // in the saved defaults). Anything smaller than this is
+        // unusable for fiction prose anyway.
+        window.minSize = NSSize(width: 720, height: 480)
+        // Restore the previous frame when one is saved AND it lands
+        // on a currently-visible screen with a reasonable size.
+        // Order matters — setFrameUsingName loads the saved value;
+        // setFrameAutosaveName wires up auto-save going forward.
+        // (Previous bug: center() was called after setFrameAutosaveName,
+        // which clobbered the restored frame on every launch.)
         let restored = window.setFrameUsingName("Loom.MainWindow")
         window.setFrameAutosaveName("Loom.MainWindow")
-        if !restored || !Self.isFrameOnVisibleScreen(window.frame) {
+        let restoredFrame = window.frame
+        let isUsable = restored
+            && Self.isFrameOnVisibleScreen(restoredFrame)
+            && restoredFrame.width >= 600
+            && restoredFrame.height >= 400
+        if !isUsable {
+            DebugLog.shared.write("[loom] window: restoring default frame (saved=\(restored ? "\(restoredFrame)" : "none"))")
+            // Reset to the default contentRect size, then centre. This
+            // also overwrites the bad saved frame on the next move.
+            window.setFrame(frame, display: false)
             window.center()
+        } else {
+            DebugLog.shared.write("[loom] window: restored frame \(restoredFrame)")
         }
 
         // Compose: splitVC.view above the status strip inside a single

@@ -18,7 +18,13 @@ public final class StatusStripView: NSView {
 
     public enum ServerStatus: Equatable {
         case unknown
-        case reachable(model: String?)
+        /// `model` is the raw `/api/v1/model` response; `maxContext` is
+        /// the value returned by `/api/extra/true_max_context_length`.
+        /// Both included in the strip so the user can see at a glance
+        /// that the probe round-tripped both endpoints — that's the
+        /// difference between "the network reached the host" and
+        /// "kobold is actually responding to the API."
+        case reachable(model: String?, maxContext: Int?)
         case unreachable
     }
 
@@ -84,6 +90,15 @@ public final class StatusStripView: NSView {
         serverLabel.font = DesignTokens.Typography.mono(.caption1)
         serverLabel.textColor = DesignTokens.Foreground.secondary
         serverLabel.translatesAutoresizingMaskIntoConstraints = false
+        // Truncate-middle if the model name is genuinely too long for
+        // the available width. Avoids dropping the ctx number (which
+        // sits at the end of the string) when the window is narrow.
+        serverLabel.lineBreakMode = .byTruncatingMiddle
+        serverLabel.usesSingleLineMode = true
+        // Allow the label to expand horizontally as needed; word-count
+        // (leading) is small and the centre scene-title is empty in
+        // Phase 1, so there's plenty of room.
+        serverLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         addSubview(wordCountLabel)
         addSubview(sceneLabel)
@@ -104,6 +119,13 @@ public final class StatusStripView: NSView {
 
             serverLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DesignTokens.Spacing.md),
             serverLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            // Don't overrun the word-count label on narrow windows.
+            // serverDot sits to the left of the serverLabel, so this
+            // covers the dot too.
+            serverLabel.leadingAnchor.constraint(
+                greaterThanOrEqualTo: wordCountLabel.trailingAnchor,
+                constant: DesignTokens.Spacing.md + 12   // +12 leaves room for the dot
+            ),
 
             serverDot.trailingAnchor.constraint(equalTo: serverLabel.leadingAnchor, constant: -DesignTokens.Spacing.xs),
             serverDot.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -128,9 +150,16 @@ public final class StatusStripView: NSView {
         case .unknown:
             serverDot.layer?.backgroundColor = DesignTokens.Foreground.secondary.cgColor
             serverLabel.stringValue = "no server"
-        case .reachable(let model):
+        case .reachable(let model, let maxContext):
             serverDot.layer?.backgroundColor = DesignTokens.Foreground.success.cgColor
-            serverLabel.stringValue = model.map { String($0.prefix(28)) } ?? "ok"
+            // Strip the redundant `koboldcpp/` runtime prefix that the
+            // server reports in the model name — leaves the actual
+            // model identifier (e.g. "Qwen3.6-27B-..." instead of
+            // "koboldcpp/Qwen3.6-27B-...").
+            let cleanedModel = (model ?? "").replacingOccurrences(of: "koboldcpp/", with: "")
+            let modelPart = cleanedModel.isEmpty ? "ok" : cleanedModel
+            let ctxPart = maxContext.map { "\($0) ctx" } ?? "?"
+            serverLabel.stringValue = "\(modelPart) · \(ctxPart)"
         case .unreachable:
             serverDot.layer?.backgroundColor = DesignTokens.Foreground.destructive.cgColor
             serverLabel.stringValue = "unreachable"

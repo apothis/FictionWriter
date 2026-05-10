@@ -49,7 +49,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
                 case .success(let caps):
                     AppState.shared.lastProbedModelName = caps.modelName
                     DebugLog.shared.write("[loom] server probe ok: model=\(caps.modelName ?? "?") ctx=\(caps.trueMaxContext.map(String.init) ?? "?")")
-                    status = .reachable(model: caps.modelName)
+                    status = .reachable(model: caps.modelName, maxContext: caps.trueMaxContext)
                 case .failure(let error):
                     AppState.shared.lastProbedModelName = nil
                     DebugLog.shared.write("[loom] server probe failed: \(error)")
