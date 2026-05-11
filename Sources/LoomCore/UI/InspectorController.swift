@@ -250,161 +250,431 @@ public final class InspectorController: NSViewController {
     }
 }
 
-// MARK: - Bible tab
+// MARK: - Bible tab (list-detail two-pane, Phase 2 #4)
 
-/// Phase 1 minimum: top "+ Character" button + vertical stack of
-/// character rows (name field + description text view + delete).
-/// Always-expanded (no per-row disclosure); fine for 1-3 characters
-/// per the Phase 1 scope. Replaced by the list-detail two-pane in
-/// Phase 2.
+/// Phase 2 #4 — list-detail two-pane Bible inspector. Top filter strip
+/// (All / Characters / Settings / Objects); left 40% list of sectioned
+/// entities with `+` add-buttons; right 60% detail pane for the
+/// selected entity.
+///
+/// Filter + selection state lives on `viewModel` (BibleInspectorViewModel
+/// — pure-data, tested in Phase2BibleViewModelTests). This controller
+/// is the rendering + event-routing layer; smoke tests for the public
+/// surface live in Phase2BibleInspectorMountTests.
+///
+/// Per-entity sub-tabs (Description / Knowledge ledger / Relationships /
+/// Mentions / Notes per LOOM_DESIGN_LANGUAGE.md §14.5.1) defer to a
+/// follow-on: most contain Phase 4+ data (knowledge ledger, mentions)
+/// or aren't materially different from the flat form. Phase 2 ships
+/// the structural list-detail layout the spec calls for.
 public final class BibleInspectorViewController: NSViewController, NSTextViewDelegate, NSTextFieldDelegate {
     public let session: ProjectSession
-    private var stack: NSStackView!
-    private var rows: [UUID: BibleCharacterRow] = [:]
+    public let viewModel = BibleInspectorViewModel()
     private let saveIndicator = SaveIndicator()
+    private var filterButtons: [BibleFilter: NSButton] = [:]
+    private var listStack: NSStackView!
+    private var detailContainer: NSView!
+    private var detailEditor: BibleDetailEditor?
+    private var sessionObserver: NSObjectProtocol?
 
     public init(session: ProjectSession) {
         self.session = session
         super.init(nibName: nil, bundle: nil)
     }
 
+    deinit {
+        if let obs = sessionObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+    }
+
     @available(*, unavailable) public required init?(coder: NSCoder) { nil }
 
     public override func loadView() {
         let container = NSView()
-        let scroll = NSScrollView()
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
-        scroll.borderType = .noBorder
+
+        // Top filter strip — 4 toggle buttons.
+        let filterStrip = NSStackView()
+        filterStrip.orientation = .horizontal
+        filterStrip.alignment = .centerY
+        filterStrip.spacing = DesignTokens.Spacing.xs
+        filterStrip.translatesAutoresizingMaskIntoConstraints = false
+        filterStrip.edgeInsets = NSEdgeInsets(
+            top: DesignTokens.Spacing.sm,
+            left: DesignTokens.Spacing.md,
+            bottom: DesignTokens.Spacing.sm,
+            right: DesignTokens.Spacing.md
+        )
+
+        let allBtn = makeFilterButton(title: "All", filter: .all)
+        filterStrip.addArrangedSubview(allBtn)
+        filterButtons[.all] = allBtn
+        for category in BibleCategory.allCases {
+            let btn = makeFilterButton(title: category.displayName, filter: .category(category))
+            filterStrip.addArrangedSubview(btn)
+            filterButtons[.category(category)] = btn
+        }
+        filterStrip.addArrangedSubview(NSView())   // trailing spacer
+        filterStrip.addArrangedSubview(saveIndicator)
+
+        // Left list pane — scrollable sectioned list.
+        let listScroll = NSScrollView()
+        listScroll.translatesAutoresizingMaskIntoConstraints = false
+        listScroll.hasVerticalScroller = true
+        listScroll.drawsBackground = false
+        listScroll.borderType = .noBorder
 
         let stack = FlippedStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = DesignTokens.Spacing.md
+        stack.spacing = DesignTokens.Spacing.sm
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.edgeInsets = NSEdgeInsets(
-            top: DesignTokens.Spacing.md,
-            left: DesignTokens.Spacing.md,
-            bottom: DesignTokens.Spacing.md,
-            right: DesignTokens.Spacing.md
+            top: DesignTokens.Spacing.sm,
+            left: DesignTokens.Spacing.sm,
+            bottom: DesignTokens.Spacing.sm,
+            right: DesignTokens.Spacing.sm
         )
+        listScroll.documentView = stack
+        self.listStack = stack
 
-        let header = NSStackView()
-        header.orientation = .horizontal
-        header.alignment = .centerY
-        header.spacing = DesignTokens.Spacing.sm
+        // Right detail pane — replaceable container.
+        let detail = NSView()
+        detail.translatesAutoresizingMaskIntoConstraints = false
+        self.detailContainer = detail
 
-        let title = NSTextField(labelWithString: "Characters")
-        title.font = DesignTokens.Typography.headline
-        title.textColor = DesignTokens.Foreground.primary
+        // Vertical divider between list + detail.
+        let divider = NSBox()
+        divider.boxType = .separator
+        divider.translatesAutoresizingMaskIntoConstraints = false
 
-        let addBtn = NSButton(title: "+ Character", target: self, action: #selector(addCharacter))
-        addBtn.bezelStyle = .inline
-        addBtn.controlSize = .small
-        addBtn.font = DesignTokens.Typography.subheadline
+        container.addSubview(filterStrip)
+        container.addSubview(listScroll)
+        container.addSubview(divider)
+        container.addSubview(detail)
 
-        header.addArrangedSubview(title)
-        header.addArrangedSubview(saveIndicator)
-        header.addArrangedSubview(NSView())   // spacer
-        header.addArrangedSubview(addBtn)
-
-        stack.addArrangedSubview(header)
-        if let headerView = stack.arrangedSubviews.first {
-            headerView.translatesAutoresizingMaskIntoConstraints = false
-            headerView.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * DesignTokens.Spacing.md).isActive = true
-        }
-
-        scroll.documentView = stack
-        container.addSubview(scroll)
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: container.topAnchor),
-            scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            stack.widthAnchor.constraint(equalTo: scroll.widthAnchor),
+            filterStrip.topAnchor.constraint(equalTo: container.topAnchor),
+            filterStrip.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            filterStrip.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+
+            listScroll.topAnchor.constraint(equalTo: filterStrip.bottomAnchor),
+            listScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            listScroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            // 40% width — Novelcrafter B.2.1 list-detail proportion
+            // (LOOM_DESIGN_LANGUAGE.md §14.5.1).
+            listScroll.widthAnchor.constraint(equalTo: container.widthAnchor, multiplier: 0.4),
+
+            divider.topAnchor.constraint(equalTo: listScroll.topAnchor),
+            divider.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            divider.leadingAnchor.constraint(equalTo: listScroll.trailingAnchor),
+            divider.widthAnchor.constraint(equalToConstant: 1),
+
+            detail.topAnchor.constraint(equalTo: listScroll.topAnchor),
+            detail.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
+            detail.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            detail.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+
+            // Stack's width must equal its scroll-clip's; without
+            // this, flipped stack content collapses to intrinsic
+            // width and rows clip on the right.
+            stack.widthAnchor.constraint(equalTo: listScroll.widthAnchor),
         ])
 
-        self.stack = stack
         self.view = container
+
+        // Auto-pick a sensible initial selection if entities exist.
+        viewModel.reconcileSelection(in: session.project)
+
+        // Re-render on any project mutation (this VC's edits, another
+        // tab's edits, undo).
+        sessionObserver = NotificationCenter.default.addObserver(
+            forName: ProjectSession.didChangeNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reload()
+        }
 
         reload()
     }
 
-    @objc private func addCharacter() {
-        let name = "Character \(session.project.bible.characters.count + 1)"
-        _ = session.addCharacter(name: name)
+    // MARK: Public surface (mount smoke tests + parent VC)
+
+    public func setFilter(_ filter: BibleFilter) {
+        viewModel.setFilter(filter, in: session.project)
+        viewModel.reconcileSelection(in: session.project)
+        reload()
+    }
+
+    public func selectEntity(_ ref: BibleEntityRef?) {
+        viewModel.setSelection(ref)
+        reload()
+    }
+
+    /// Creates a new entity in the given category and selects it.
+    @discardableResult
+    public func addEntity(in category: BibleCategory) -> BibleEntityRef {
+        let ref: BibleEntityRef
+        switch category {
+        case .characters:
+            let next = session.project.bible.characters.count + 1
+            let c = session.addCharacter(name: "Character \(next)")
+            ref = BibleEntityRef(category: .characters, id: c.id)
+        case .settings:
+            let next = session.project.bible.settings.count + 1
+            let s = session.addSetting(name: "Setting \(next)")
+            ref = BibleEntityRef(category: .settings, id: s.id)
+        case .objects:
+            let next = session.project.bible.objects.count + 1
+            let o = session.addObject(name: "Object \(next)")
+            ref = BibleEntityRef(category: .objects, id: o.id)
+        }
+        viewModel.setSelection(ref)
+        // The session-change observer would also re-render, but it
+        // posts async to the main queue; call reload synchronously so
+        // the test (and the user's "click + and the new entity is
+        // selected" expectation) holds immediately.
+        reload()
+        return ref
+    }
+
+    public func deleteSelected() {
+        guard let sel = viewModel.selection else { return }
+        switch sel.category {
+        case .characters: session.deleteCharacter(id: sel.id)
+        case .settings:   session.deleteSetting(id: sel.id)
+        case .objects:    session.deleteObject(id: sel.id)
+        }
+        viewModel.setSelection(nil)
         reload()
     }
 
     public func reload() {
-        guard let stack = stack else { return }
-        // Drop existing rows; rebuild from session.
-        for row in rows.values {
-            row.view.removeFromSuperview()
+        guard let stack = listStack else { return }
+        // A delete elsewhere may have invalidated our ref.
+        viewModel.reconcileSelection(in: session.project)
+        renderList(into: stack)
+        updateFilterButtonStates()
+        renderDetail()
+    }
+
+    // MARK: Rendering
+
+    private func makeFilterButton(title: String, filter: BibleFilter) -> NSButton {
+        let btn = NSButton(title: title, target: self, action: #selector(filterButtonClicked(_:)))
+        btn.bezelStyle = .recessed
+        btn.setButtonType(.pushOnPushOff)
+        btn.font = DesignTokens.Typography.subheadline
+        // Carry the filter on the identifier so the action doesn't
+        // need a per-filter selector.
+        btn.identifier = NSUserInterfaceItemIdentifier(filter.identifierString)
+        return btn
+    }
+
+    private func updateFilterButtonStates() {
+        for (filter, btn) in filterButtons {
+            btn.state = (filter == viewModel.filter) ? .on : .off
         }
-        rows.removeAll()
-        for character in session.project.bible.characters {
-            let row = BibleCharacterRow(character: character) { [weak self] updated in
-                self?.session.updateCharacter(updated)
-                self?.saveIndicator.flash()
-            } onDelete: { [weak self] id in
-                self?.session.deleteCharacter(id: id)
-                self?.reload()
+    }
+
+    private func renderList(into stack: NSStackView) {
+        for view in stack.arrangedSubviews {
+            view.removeFromSuperview()
+        }
+        let project = session.project
+        for section in viewModel.sections(for: project) {
+            let header = makeSectionHeader(section)
+            stack.addArrangedSubview(header)
+            header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * DesignTokens.Spacing.sm).isActive = true
+
+            for item in section.items {
+                let row = makeEntityRow(item)
+                stack.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * DesignTokens.Spacing.sm).isActive = true
             }
-            row.view.translatesAutoresizingMaskIntoConstraints = false
-            stack.addArrangedSubview(row.view)
-            row.view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * DesignTokens.Spacing.md).isActive = true
-            rows[character.id] = row
         }
+    }
+
+    private func makeSectionHeader(_ section: BibleSectionRow) -> NSView {
+        let row = NSStackView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = DesignTokens.Spacing.xs
+
+        let title = NSTextField(labelWithString: section.title)
+        title.font = DesignTokens.Typography.caption1
+        title.textColor = DesignTokens.Foreground.secondary
+
+        let count = NSTextField(labelWithString: "\(section.items.count)")
+        count.font = DesignTokens.Typography.caption1
+        count.textColor = DesignTokens.Foreground.tertiary
+
+        let addBtn = NSButton(title: "+", target: self, action: #selector(sectionAddButtonClicked(_:)))
+        addBtn.bezelStyle = .inline
+        addBtn.controlSize = .small
+        addBtn.font = DesignTokens.Typography.subheadline
+        addBtn.identifier = NSUserInterfaceItemIdentifier(section.category.rawValue)
+
+        row.addArrangedSubview(title)
+        row.addArrangedSubview(count)
+        row.addArrangedSubview(NSView())   // spacer
+        row.addArrangedSubview(addBtn)
+        return row
+    }
+
+    private func makeEntityRow(_ item: BibleEntityListItem) -> NSView {
+        let isSelected = (viewModel.selection == item.ref)
+        let btn = BibleEntityRowButton(ref: item.ref, target: self, action: #selector(entityRowClicked(_:)))
+        btn.title = item.name.isEmpty ? "Untitled" : item.name
+        btn.isSelectedRow = isSelected
+        return btn
+    }
+
+    private func renderDetail() {
+        for subview in detailContainer.subviews {
+            subview.removeFromSuperview()
+        }
+        detailEditor = nil
+
+        guard let sel = viewModel.selection else {
+            let empty = NSTextField(labelWithString: "Select an entity to view details.")
+            empty.font = DesignTokens.Typography.body
+            empty.textColor = DesignTokens.Foreground.tertiary
+            empty.translatesAutoresizingMaskIntoConstraints = false
+            detailContainer.addSubview(empty)
+            NSLayoutConstraint.activate([
+                empty.centerXAnchor.constraint(equalTo: detailContainer.centerXAnchor),
+                empty.centerYAnchor.constraint(equalTo: detailContainer.centerYAnchor),
+            ])
+            return
+        }
+        let editor = BibleDetailEditor(ref: sel, session: session) { [weak self] in
+            self?.saveIndicator.flash()
+        } onDelete: { [weak self] in
+            self?.deleteSelected()
+        }
+        editor.view.translatesAutoresizingMaskIntoConstraints = false
+        detailContainer.addSubview(editor.view)
+        NSLayoutConstraint.activate([
+            editor.view.topAnchor.constraint(equalTo: detailContainer.topAnchor),
+            editor.view.leadingAnchor.constraint(equalTo: detailContainer.leadingAnchor),
+            editor.view.trailingAnchor.constraint(equalTo: detailContainer.trailingAnchor),
+            editor.view.bottomAnchor.constraint(equalTo: detailContainer.bottomAnchor),
+        ])
+        self.detailEditor = editor
+    }
+
+    // MARK: Actions
+
+    @objc private func filterButtonClicked(_ sender: NSButton) {
+        guard let raw = sender.identifier?.rawValue,
+              let filter = BibleFilter(identifierString: raw)
+        else { return }
+        setFilter(filter)
+    }
+
+    @objc private func sectionAddButtonClicked(_ sender: NSButton) {
+        guard let raw = sender.identifier?.rawValue,
+              let category = BibleCategory(rawValue: raw)
+        else { return }
+        addEntity(in: category)
+    }
+
+    @objc private func entityRowClicked(_ sender: BibleEntityRowButton) {
+        selectEntity(sender.ref)
     }
 }
 
-/// One character entry in the Bible tab: name field + description text
-/// view + delete button. Stored as a class so we can hold a reference
-/// to wire the text-view delegate.
-final class BibleCharacterRow {
-    let character: Character
+// MARK: - List row button (carries a ref + a selection highlight)
+
+private final class BibleEntityRowButton: NSButton {
+    let ref: BibleEntityRef
+    var isSelectedRow: Bool = false {
+        didSet { needsDisplay = true }
+    }
+
+    init(ref: BibleEntityRef, target: AnyObject?, action: Selector) {
+        self.ref = ref
+        super.init(frame: .zero)
+        self.target = target
+        self.action = action
+        self.bezelStyle = .inline
+        self.isBordered = false
+        self.font = DesignTokens.Typography.body
+        self.contentTintColor = DesignTokens.Foreground.primary
+        self.alignment = .left
+        self.translatesAutoresizingMaskIntoConstraints = false
+        self.wantsLayer = true
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isSelectedRow {
+            DesignTokens.Background.selectedRow.setFill()
+            let path = NSBezierPath(
+                roundedRect: bounds,
+                xRadius: DesignTokens.Radius.control,
+                yRadius: DesignTokens.Radius.control
+            )
+            path.fill()
+        }
+        super.draw(dirtyRect)
+    }
+}
+
+// MARK: - Detail editor (right pane)
+
+/// Phase 2 minimum-viable detail form: name field + description text
+/// view + delete button. Wires straight through to ProjectSession's
+/// update*/delete* per the selected entity's category. Sub-tabs
+/// (Knowledge ledger, Relationships, Mentions) defer to follow-ons —
+/// most depend on Phase 4 data that doesn't exist yet.
+private final class BibleDetailEditor {
     let view: NSView
+    private let ref: BibleEntityRef
+    private let session: ProjectSession
     private let nameField: NSTextField
     private let descriptionView: NSTextView
-    private let onUpdate: (Character) -> Void
-    private let onDelete: (UUID) -> Void
+    private let onChanged: () -> Void
+    private let onDelete: () -> Void
+    private var bridge: BibleDetailBridge!
 
     init(
-        character: Character,
-        onUpdate: @escaping (Character) -> Void,
-        onDelete: @escaping (UUID) -> Void
+        ref: BibleEntityRef,
+        session: ProjectSession,
+        onChanged: @escaping () -> Void,
+        onDelete: @escaping () -> Void
     ) {
-        self.character = character
-        self.onUpdate = onUpdate
+        self.ref = ref
+        self.session = session
+        self.onChanged = onChanged
         self.onDelete = onDelete
 
-        let container = ThemedBackgroundView(backgroundColor: DesignTokens.Background.group)
-        container.layer?.cornerRadius = DesignTokens.Radius.section
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
 
-        let name = NSTextField(string: character.name)
-        name.font = DesignTokens.Typography.headline
+        let (initialName, initialDescription) = Self.snapshot(ref: ref, session: session)
+
+        let name = NSTextField(string: initialName)
+        name.font = DesignTokens.Typography.title2
         name.translatesAutoresizingMaskIntoConstraints = false
         name.placeholderString = "Name"
+        name.bezelStyle = .roundedBezel
         self.nameField = name
 
-        // Standard programmatic NSTextView-in-NSScrollView setup
-        // (matches EditorViewController's text view). Leaving
-        // translatesAutoresizingMaskIntoConstraints at the default
-        // (true) + setting autoresizingMask = .width lets the
-        // scroll view manage the document view's frame; without
-        // that, the text container stays at default size and clicks
-        // miss the glyph area, making the view appear unresponsive.
         let desc = NSTextView()
         desc.font = DesignTokens.Typography.body
-        desc.string = character.description
+        desc.string = initialDescription
         desc.isRichText = false
         desc.isEditable = true
         desc.allowsUndo = true
         desc.isAutomaticTextReplacementEnabled = false
         desc.isAutomaticQuoteSubstitutionEnabled = false
-        desc.drawsBackground = false
+        desc.drawsBackground = true
+        desc.backgroundColor = DesignTokens.Background.textInput
         desc.textContainerInset = NSSize(width: DesignTokens.Spacing.sm, height: DesignTokens.Spacing.sm)
         desc.minSize = NSSize(width: 0, height: 0)
         desc.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -431,58 +701,115 @@ final class BibleCharacterRow {
         container.addSubview(deleteBtn)
 
         NSLayoutConstraint.activate([
-            name.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.Spacing.sm),
-            name.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.sm),
+            name.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.Spacing.md),
+            name.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
             deleteBtn.centerYAnchor.constraint(equalTo: name.centerYAnchor),
-            deleteBtn.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.sm),
+            deleteBtn.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
             name.trailingAnchor.constraint(equalTo: deleteBtn.leadingAnchor, constant: -DesignTokens.Spacing.sm),
+
             descScroll.topAnchor.constraint(equalTo: name.bottomAnchor, constant: DesignTokens.Spacing.sm),
-            descScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.sm),
-            descScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.sm),
-            descScroll.heightAnchor.constraint(equalToConstant: 80),
-            descScroll.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -DesignTokens.Spacing.sm),
+            descScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
+            descScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
+            descScroll.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -DesignTokens.Spacing.md),
         ])
 
         self.view = container
 
-        // Wire after init so self-references resolve.
-        let bridge = BibleCharacterRowBridge(row: self)
-        objc_setAssociatedObject(container, &BibleCharacterRowBridge.key, bridge, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        let bridge = BibleDetailBridge(detail: self)
+        self.bridge = bridge
         name.target = bridge
-        name.action = #selector(BibleCharacterRowBridge.nameEdited(_:))
+        name.action = #selector(BibleDetailBridge.nameEdited(_:))
         desc.delegate = bridge
         deleteBtn.target = bridge
-        deleteBtn.action = #selector(BibleCharacterRowBridge.deletePressed(_:))
+        deleteBtn.action = #selector(BibleDetailBridge.deletePressed(_:))
     }
 
-    fileprivate func emitUpdate() {
-        var updated = character
-        updated.name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        updated.description = descriptionView.string
-        onUpdate(updated)
+    fileprivate func writeBack() {
+        let name = nameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = descriptionView.string
+        switch ref.category {
+        case .characters:
+            guard var c = session.project.bible.characters.first(where: { $0.id == ref.id }) else { return }
+            c.name = name
+            c.description = body
+            session.updateCharacter(c)
+        case .settings:
+            guard var s = session.project.bible.settings.first(where: { $0.id == ref.id }) else { return }
+            s.name = name
+            s.description = body
+            session.updateSetting(s)
+        case .objects:
+            guard var o = session.project.bible.objects.first(where: { $0.id == ref.id }) else { return }
+            o.name = name
+            o.description = body
+            session.updateObject(o)
+        }
+        onChanged()
     }
 
-    fileprivate func emitDelete() {
-        onDelete(character.id)
+    fileprivate func requestDelete() {
+        onDelete()
+    }
+
+    private static func snapshot(ref: BibleEntityRef, session: ProjectSession) -> (String, String) {
+        switch ref.category {
+        case .characters:
+            if let c = session.project.bible.characters.first(where: { $0.id == ref.id }) {
+                return (c.name, c.description)
+            }
+        case .settings:
+            if let s = session.project.bible.settings.first(where: { $0.id == ref.id }) {
+                return (s.name, s.description)
+            }
+        case .objects:
+            if let o = session.project.bible.objects.first(where: { $0.id == ref.id }) {
+                return (o.name, o.description)
+            }
+        }
+        return ("", "")
     }
 }
 
-/// Objective-C bridge to dispatch text-field action and text-view
-/// delegate callbacks back to the Swift `BibleCharacterRow`. Stored
-/// via objc_setAssociatedObject so the row's lifetime tracks the view's.
-private final class BibleCharacterRowBridge: NSObject, NSTextViewDelegate {
-    static var key: UInt8 = 0
-    weak var row: BibleCharacterRow?
-    init(row: BibleCharacterRow) { self.row = row }
+/// Bridge from AppKit selectors back into the Swift detail editor.
+private final class BibleDetailBridge: NSObject, NSTextViewDelegate {
+    weak var detail: BibleDetailEditor?
+    init(detail: BibleDetailEditor) { self.detail = detail }
 
-    @objc func nameEdited(_ sender: Any) {
-        row?.emitUpdate()
+    @objc func nameEdited(_ sender: Any) { detail?.writeBack() }
+    @objc func deletePressed(_ sender: Any) { detail?.requestDelete() }
+    func textDidChange(_ notification: Notification) { detail?.writeBack() }
+}
+
+// MARK: - Filter identifier marshalling
+
+private extension BibleFilter {
+    var identifierString: String {
+        switch self {
+        case .all: return "all"
+        case .category(let c): return "category:\(c.rawValue)"
+        }
     }
-    @objc func deletePressed(_ sender: Any) {
-        row?.emitDelete()
+
+    init?(identifierString: String) {
+        if identifierString == "all" {
+            self = .all
+            return
+        }
+        let prefix = "category:"
+        guard identifierString.hasPrefix(prefix) else { return nil }
+        let raw = String(identifierString.dropFirst(prefix.count))
+        guard let cat = BibleCategory(rawValue: raw) else { return nil }
+        self = .category(cat)
     }
-    func textDidChange(_ notification: Notification) {
-        row?.emitUpdate()
+}
+
+private extension BibleCategory {
+    var displayName: String {
+        switch self {
+        case .characters: return "Characters"
+        case .settings:   return "Settings"
+        case .objects:    return "Objects"
+        }
     }
 }
 

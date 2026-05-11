@@ -10,7 +10,7 @@ public enum BibleCategory: String, Codable, Equatable, CaseIterable {
 }
 
 /// Filter selection above the entity list.
-public enum BibleFilter: Equatable {
+public enum BibleFilter: Equatable, Hashable {
     case all
     case category(BibleCategory)
 }
