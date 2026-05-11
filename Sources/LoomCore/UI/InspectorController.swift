@@ -116,6 +116,7 @@ public final class InspectorController: NSViewController {
         tabRow.orientation = .horizontal
         tabRow.spacing = DesignTokens.Spacing.xs
         tabRow.distribution = .fillEqually
+        tabRow.alignment = .centerY
         tabRow.translatesAutoresizingMaskIntoConstraints = false
 
         let content = NSView()
@@ -139,6 +140,16 @@ public final class InspectorController: NSViewController {
             tabRowTop,
             tabRow.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.sm),
             tabRow.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.sm),
+            // Lock the tab row to its button-row height. Without this,
+            // the vertical-constraint chain (tabRow.top → content.top
+            // → content.bottom) has freedom to grow the row to fill
+            // the container — observed at 373pt in a 458pt-tall
+            // inspector pane, with the buttons centered inside the
+            // ballooned stack (visually at the inspector mid-point)
+            // and the Bible content squashed into a 41pt band at the
+            // bottom. Pinning the height to the recessed/small button
+            // metric is the surgical fix. (Phase4InspectorLayoutTests.)
+            tabRow.heightAnchor.constraint(equalToConstant: 24),
             content.topAnchor.constraint(equalTo: tabRow.bottomAnchor, constant: DesignTokens.Spacing.sm),
             content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
