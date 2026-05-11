@@ -1,7 +1,7 @@
 import AppKit
 
 /// The editor pane: an `NSTextView` inside an `NSScrollView`, content
-/// width-bounded to `Editor.editorMaxWidth` (720pt) and centred via
+/// width-bounded to `Editor.editorMaxWidth` (1080pt) and centred via
 /// dynamic `textContainerInset` adjustment on resize. Body font with
 /// 1.45× line height per LOOM_DESIGN_LANGUAGE.md §14.4. Find bar enabled
 /// for free Cmd-F find/replace.
@@ -29,6 +29,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var generationFinishObserver: NSObjectProtocol?
     private var generationStartObserver: NSObjectProtocol?
     private var insertAgainObserver: NSObjectProtocol?
+    private var keyEventMonitor: Any?
     /// Flipped from .thinking to .streaming on the first emitted token
     /// so the tray's busy indicator reflects "model has begun replying".
     private var firstTokenSeenThisGeneration: Bool = false
@@ -65,6 +66,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = emptyStateClickedObserver { NotificationCenter.default.removeObserver(o) }
         if let o = sessionDidChangeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = sessionDidReplaceObserver { NotificationCenter.default.removeObserver(o) }
+        if let m = keyEventMonitor { NSEvent.removeMonitor(m) }
     }
 
     public override func loadView() {
@@ -282,6 +284,83 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     public override func viewDidAppear() {
         super.viewDidAppear()
         view.window?.makeFirstResponder(textView)
+        installKeyShortcutMonitorIfNeeded()
+    }
+
+    /// Phase 2 follow-on (HANDOFF §9.2) — ⌘⇧R Keep & Redo. AppKit
+    /// dispatches Cmd-modified keystrokes via the responder chain
+    /// rather than the NSTextView's doCommandBy path, so a local
+    /// NSEvent monitor is the natural hook. Gated on acceptance state:
+    /// during `.awaiting` we swallow the event; otherwise we let it
+    /// pass through so the system's ⌘R bindings still work.
+    private func installKeyShortcutMonitorIfNeeded() {
+        guard keyEventMonitor == nil else { return }
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            // Only when our window is key — avoid swallowing keystrokes
+            // for other windows in the app.
+            guard self.view.window?.isKeyWindow == true else { return event }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let isCmdShift = mods.contains(.command) && mods.contains(.shift)
+            let isR = (event.charactersIgnoringModifiers?.lowercased() == "r")
+            if isCmdShift && isR, case .awaiting = self.acceptanceMachine.state {
+                self.triggerKeepAndRedoShortcut()
+                DebugLog.shared.write("[editor] shortcut: ⌘⇧R Keep & Redo")
+                return nil   // swallow
+            }
+            // Esc or ⌘. while generating → cancel mid-stream
+            // (HANDOFF §9.2). Esc has keyCode 53; ⌘. is Cmd +
+            // period. Either swallows the event so it doesn't reach
+            // any default handler (Esc in NSTextView would otherwise
+            // trigger system completion).
+            let isEsc = (event.keyCode == 53)
+            let isCmdPeriod = mods.contains(.command) && event.charactersIgnoringModifiers == "."
+            if (isEsc || isCmdPeriod), self.coordinator.isGenerating {
+                self.triggerCancelShortcut()
+                return nil
+            }
+            return event
+        }
+    }
+
+    // MARK: - Phase 2 follow-on — ⌘⇧R Keep & Redo shortcut (HANDOFF §9.2)
+
+    /// Public read-only view onto the acceptance state machine —
+    /// smoke tests use this to assert the shortcut transitioned the
+    /// state correctly.
+    public var acceptanceState: AcceptanceMachine.State { acceptanceMachine.state }
+
+    /// Fires the Keep & Redo action when the editor is currently
+    /// awaiting acceptance; no-op otherwise. Routed from the NSEvent
+    /// local monitor in `viewDidAppear` on ⌘⇧R, and from this
+    /// public surface for smoke tests.
+    public func triggerKeepAndRedoShortcut() {
+        guard case .awaiting = acceptanceMachine.state else { return }
+        applyAcceptanceTransition(.redo)
+    }
+
+    /// Test-only — primes the acceptance machine into `.awaiting`
+    /// without driving the full generation pipeline. The smoke test
+    /// uses this to set up the state the shortcut should transition
+    /// out of.
+    public func primeAcceptanceForTesting(range: NSRange, mode: GenerationMode) {
+        acceptanceMachine.handleGenerationFinished(insertedRange: range, mode: mode)
+    }
+
+    // MARK: - Phase 2 follow-on — Esc / ⌘. mid-stream cancel (HANDOFF §9.2)
+
+    /// Public read-only view onto the coordinator's `isGenerating`
+    /// — smoke tests use this to confirm the cancel shortcut routes
+    /// without crashing while idle.
+    public var isGeneratingForTesting: Bool { coordinator.isGenerating }
+
+    /// Cancels any in-flight generation. No-op when idle. The
+    /// coordinator already exposes `cancel()`; this is the editor-
+    /// level wrapper the NSEvent local monitor calls on Esc / ⌘.
+    public func triggerCancelShortcut() {
+        guard coordinator.isGenerating else { return }
+        coordinator.cancel()
+        DebugLog.shared.write("[editor] shortcut: cancel mid-stream")
     }
 
     // MARK: - Phase 2 #10 — @-mention autocomplete

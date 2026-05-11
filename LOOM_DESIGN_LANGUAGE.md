@@ -340,7 +340,7 @@ Single-window-per-project. Three vertical zones (top to bottom): **Toolbar · Wo
 **Width budgets:**
 
 - Sidebar: 220–360pt (resizable, persisted per project). Min 180pt.
-- Editor pane content: max 720pt (matches RPClient transcript max-width §4.3 — same readable-line target). Below 720pt window width, fills 100% with `lg` (24pt) horizontal padding.
+- Editor pane content: max 1080pt (matches RPClient transcript max-width §4.3 — same readable-line target). Below 1080pt window width, fills 100% with `lg` (24pt) horizontal padding.
 - Inspector: 280–420pt (resizable, persisted). Min 240pt.
 
 Below ~1100pt window width, the inspector collapses to a `ⓘ` toggle in the toolbar (RPClient §4.0.f pattern), reopens as an overlay.
@@ -368,7 +368,7 @@ The single most important surface in Loom.
 
 **Text view.** `NSTextView` inside `NSScrollView`, `usesFindBar = true`, `isAutomaticTextReplacementEnabled = false` (off by default; users may enable in Settings — fiction prose suffers from "smart" replacement). Line height 1.45× body font (research-grade readable density; matches Ulysses).
 
-**Width.** Content max 720pt centred (§14.2). Below that, fills width with `lg` margins.
+**Width.** Content max 1080pt centred (§14.2). Below that, fills width with `lg` margins.
 
 **Typography.** Body font is `body` (13pt regular per §2). Italics `secondaryLabelColor` only when the user toggles "italic for narration" preference — **default is `labelColor` italic**, since fiction italics are first-class prose, not metadata. (Distinct from RPClient §4.7 italic-tint, which was RP-action-marker convention.)
 
@@ -557,7 +557,7 @@ When active:
 - Sidebar collapses (animation 220ms `easeInOut`).
 - Inspector collapses (same).
 - Toolbar fades to a thin auto-hiding strip (revealed on cursor-near-top hover, 100ms `linear`).
-- Editor expands to fill available width (still capped at 720pt content max).
+- Editor expands to fill available width (still capped at 1080pt content max).
 - Optional preference: **current-paragraph emphasis** — paragraphs other than the one containing the cursor dim to `tertiaryLabelColor`. iA Writer pattern; off by default.
 
 Re-toggle restores layout. Status strip remains visible at the bottom (word count is too useful to hide).

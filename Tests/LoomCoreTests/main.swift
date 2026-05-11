@@ -60,6 +60,9 @@ let suites: [TestSuite] = [
     phase2EditorMentionTests(),
     phase2MentionIndexTests(),
     phase2MentionDisplayTests(),
+    phase2KeepAndRedoShortcutTests(),
+    phase2CancelShortcutTests(),
+    phase2AutoProbeTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

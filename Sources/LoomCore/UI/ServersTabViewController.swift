@@ -103,6 +103,34 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         try appState.updateSettings(settings)
         tableView?.reloadData()
         refreshButtons()
+        // Phase 2 follow-on (HANDOFF §9.2) — kick off an auto-probe so
+        // capabilities + lastProbed populate without waiting for the
+        // user's first generation. Async; failure is silent (the user
+        // can re-probe by hitting Test).
+        autoProbeAsync(profileId: profile.id, baseURL: baseURL)
+    }
+
+    private func autoProbeAsync(profileId: UUID, baseURL: URL) {
+        DebugLog.shared.write("[servers] auto-probe starting: \(baseURL.absoluteString)")
+        ServerProbe.probe(baseURL: baseURL) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                switch result {
+                case .success(let caps):
+                    let updated = AutoProbe.applyResult(
+                        caps,
+                        lastProbed: Date(),
+                        to: profileId,
+                        in: self.appState.settings
+                    )
+                    try? self.appState.updateSettings(updated)
+                    self.tableView?.reloadData()
+                    DebugLog.shared.write("[servers] auto-probe ok: \(caps.modelName ?? "?")")
+                case .failure(let err):
+                    DebugLog.shared.write("[servers] auto-probe failed: \(err)")
+                }
+            }
+        }
     }
 
     /// Remove a server by id, persist, refresh.

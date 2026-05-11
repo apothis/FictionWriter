@@ -1,6 +1,6 @@
 # Loom — Handoff
 
-> **Date:** 2026-05-11. **Status: Phase 1 + Phase 1.5 complete.** 228 tests passing. Branch `main` is 27 commits ahead of origin (already pushed). Editor MVP shipped (Continue/Expand/Rewrite, acceptance window, History inspector, Markdown export); Phase 1.5 layered on Rewrite, per-call instruction box, Author's Note depth-N injection, and a Cmd-, Settings window. Next phase: **Phase 2 — Story Bible v1**. See **§9 (Phase 2 plan)** and **§10 (Phase 2 entry checklist)** for the kickoff.
+> **Date:** 2026-05-11 (updated PM). **Status: Phase 1 + Phase 1.5 + Phase 2 complete.** 403 tests passing. Branch `main` ahead of origin (Phase 2 + §9.2 gaps pushed). Editor MVP shipped (Continue/Expand/Rewrite, acceptance window, History inspector, Markdown export); Phase 1.5 layered on Rewrite, per-call instruction box, Author's Note depth-N injection, Cmd-, Settings window. **Phase 2 ships Story Bible v1 — see §11 below for the ship state.** Next: **Phase 3 — Manuscript hierarchy + Plan view**. See **§9 (Phase 2 ship state)** below.
 >
 > **Repo**: `/Volumes/SSD1/Code/FictionWriter` · pushed to [github.com/apothis/FictionWriter](https://github.com/apothis/FictionWriter) · branch `main`. RPClient (the source of inherited plumbing) at `/Volumes/SSD1/Code/RPClient`.
 >
@@ -215,6 +215,54 @@ These live in RPClient's memory; Loom's first context should re-state them as ne
 - `/Volumes/SSD1/Code/RPClient/V2_UI_OVERHAUL.md` §4.11 — sub-step format precedent.
 - `/Volumes/SSD1/Code/RPClient/Sources/RPClientCore/` — direct-reuse files (KoboldClient, ServerProbe, KoboldClientRegistry, DebugLog, Storage).
 - `/Volumes/SSD1/Code/RPClient/build.sh`, `/Volumes/SSD1/Code/RPClient/run.sh` — sed-and-adapt scripts.
+
+---
+
+## 11. Phase 2 ship state (added 2026-05-11 PM)
+
+All 11 Phase 2 work items + 4 of 5 §9.2 gaps shipped TDD-first.
+Tests: 228 → 403 (175 new). All commits pushed to origin/main.
+
+### 11.1 What landed
+
+| # | Item | Commit |
+|---|------|--------|
+| 1 | `WritingDirection` schema on `ProjectSettings` | `e3890bb` |
+| 2 | `FanficMetadata` schema on `Project` | `c4e1a3f` |
+| 3 | `Character.canonBrief` + `customFields` | `b84eba5` |
+| 5 | `Setting` + `BibleObject` entities | `ea2c40a` |
+| 4 (data) | `BibleInspectorViewModel` + Setting/Object CRUD | `a26d137` |
+| 4 (UI) | List-detail two-pane Bible inspector | `982bffd` |
+| 6 | Project Settings narrative-style pill-pickers | `af68061` |
+| 7 | Bible-Keyed injection + per-entity Constant/Keyed pill | `9d043b0` |
+| 8 | Lorebook entries (constant + keyed; group/weight/sticky) | `2bb4286` |
+| 9 | Snapshots before AI rewrite | `4fc50d7` |
+| 10 | @-mention autocomplete data + editor integration | `7e86939` |
+| 11 | Mention index + per-entity mention caption | `8ae8a58` |
+| §9.2 | editorMaxWidth doc drift fix | `<followon>` |
+| §9.2 | ⌘⇧R Keep & Redo binding | `<followon>` |
+| §9.2 | Esc / ⌘. cancel-mid-stream | `<followon>` |
+| §9.2 | Auto-probe on server add | `<followon>` |
+
+### 11.2 §9.4 risk #1 contract (forward-load) — met
+
+Every schema migration includes a hand-rolled JSON test that simulates a Phase-1 bundle on disk and asserts the new field decodes to its default. The lazy-versioning posture is enforced at the suite level, not by inspection.
+
+### 11.3 Deferred to Phase 2.5 / Phase 3 polish (called out in commit messages)
+
+- **Bible inspector per-entity sub-tabs** (Knowledge ledger / Relationships / Mentions / Notes per §14.5.1). Most need Phase 4 data; Notes maps to Description today.
+- **Lorebook editing UI** — Phase 4 Sphiratrioth surface; schema + plumbing shipped.
+- **@-mention popover view** (NSPanel + NSTableView). `currentMentionContext()` / `applyMention(_:)` are wired; popover shell is the build-on-top.
+- **Hover-preview popover** for resolved entity links in prose — §14.5.1 polish.
+- **Mention sparkline bar with marker dots** — `perSceneByEntityId` data shipped; minimum-viable is the "N mentions" caption.
+- **Inline floating selection toolbar** (§9.2) — heavy AppKit, deferred. No Phase-2 contract relies on it.
+- **Live-app eyeball verification** on the new Bible inspector layout. Mount smoke is green; §9.4 fragility risk means a manual pass is still warranted.
+
+### 11.4 What surfaced during Phase 2 — carried into Phase 3 planning
+
+- The viewmodel split (`BibleInspectorViewModel` is pure-data; `BibleInspectorViewController` is the rendering + event-routing layer) is the right shape for the Plan-view + Corkboard Phase 3 surfaces.
+- The §9.4 "list-detail Bible inspector is structurally similar to the existing inspector pane (a known-fragile area)" risk landed mostly clean — the structural change required one re-application of the class-declaration line during the rewrite, but no NSSegmentedControl-tier surprises. Verdict: the AppKit reassess can wait until Plan view (Corkboard) lands, when NSCollectionView's quirks are the live concern.
+- `WholeWordMatcher` is the shared regex-word-boundary matcher for #7 + #8. Reusing it for Phase 4's knowledge-ledger extraction is the natural next call.
 
 ---
 
