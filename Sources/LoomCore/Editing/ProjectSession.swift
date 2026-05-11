@@ -305,6 +305,20 @@ public final class ProjectSession {
         markDirty()
     }
 
+    /// Phase 4 #7 adjacent — assigns the scene's POV character (or
+    /// clears it when `pov == nil`). The `[KNOWLEDGE-LEDGER]` prompt
+    /// layer (sub-task 7) gates on `Scene.pov` being a non-nil bible
+    /// character id, so without this setter the layer never fires in
+    /// production. Stale scene id is a no-op, matching the sibling
+    /// scene-metadata setters above.
+    public func setScenePOV(id: UUID, to pov: UUID?) {
+        guard var scene = scenes[id] else { return }
+        scene.pov = pov
+        scenes[id] = scene
+        markDirty()
+        DebugLog.shared.write("[scene] pov id=\(id) → \(pov?.uuidString ?? "nil")")
+    }
+
     // MARK: - Manuscript hierarchy mutations (Phase 3 §B)
 
     @discardableResult

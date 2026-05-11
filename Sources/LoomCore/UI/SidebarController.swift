@@ -6,7 +6,7 @@ import AppKit
 /// Phase 1 ships a flat scene list (no Parts/Chapters); Phase 3+ adds the
 /// hierarchical structure under Manuscript. Drag-rearrange is supported
 /// within the Manuscript group.
-public final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate {
+public final class SidebarController: NSViewController, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
     public let session: ProjectSession
     private var outlineView: NSOutlineView!
     private var observer: NSObjectProtocol?
@@ -14,6 +14,19 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
     /// Internal pasteboard type for drag-rearrange. Carries the source
     /// scene id as a UUID string.
     private static let scenePasteboardType = NSPasteboard.PasteboardType("com.local.loom.scene-id")
+
+    /// Tag on the "Set POV" parent menu item so `menuNeedsUpdate` can
+    /// find it without string matching the title.
+    private static let setPOVMenuTag = 9_001
+
+    /// Payload stashed on each POV submenu item's `representedObject`,
+    /// so the action handler can resolve the target scene + character
+    /// without re-reading `clickedRow` (which can be -1 by the time
+    /// the action fires depending on AppKit's menu lifecycle).
+    private struct POVMenuClick {
+        let sceneId: UUID
+        let characterId: UUID?
+    }
 
     public init(session: ProjectSession) {
         self.session = session
@@ -97,8 +110,14 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
         menu.addItem(NSMenuItem(title: "New Part", action: #selector(addPartClicked), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Add Chapter to Part", action: #selector(addChapterToSelectedPart), keyEquivalent: ""))
         menu.addItem(.separator())
+        let povItem = NSMenuItem(title: "Set POV", action: nil, keyEquivalent: "")
+        povItem.tag = Self.setPOVMenuTag
+        povItem.submenu = NSMenu(title: "Set POV")
+        menu.addItem(povItem)
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Rename", action: #selector(renameSelected), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Delete", action: #selector(deleteSelected), keyEquivalent: ""))
+        menu.delegate = self
         outline.menu = menu
 
         self.view = container
@@ -179,6 +198,51 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
         guard let item = outlineView.item(atRow: row) as? SidebarItem,
               case .scene(let id) = item else { return }
         session.deleteScene(id: id)
+    }
+
+    // MARK: - NSMenuDelegate (Set POV submenu rebuild)
+
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === outlineView.menu else { return }
+        guard let povItem = menu.item(withTag: Self.setPOVMenuTag) else { return }
+
+        // Show "Set POV" only when the right-clicked row is a scene.
+        let row = outlineView.clickedRow
+        guard row >= 0,
+              let sidebarItem = outlineView.item(atRow: row) as? SidebarItem,
+              case .scene(let sceneId) = sidebarItem,
+              let scene = session.scenes[sceneId]
+        else {
+            povItem.isHidden = true
+            return
+        }
+        povItem.isHidden = false
+
+        let descriptors = ScenePOVMenuBuilder.menuItems(
+            characters: session.project.bible.characters,
+            currentPOV: scene.pov
+        )
+        let submenu = NSMenu(title: "Set POV")
+        for descriptor in descriptors {
+            let item = NSMenuItem(
+                title: descriptor.title,
+                action: #selector(povItemClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.state = descriptor.isCurrent ? .on : .off
+            item.representedObject = POVMenuClick(
+                sceneId: sceneId,
+                characterId: descriptor.characterId
+            )
+            submenu.addItem(item)
+        }
+        povItem.submenu = submenu
+    }
+
+    @objc private func povItemClicked(_ sender: NSMenuItem) {
+        guard let payload = sender.representedObject as? POVMenuClick else { return }
+        session.setScenePOV(id: payload.sceneId, to: payload.characterId)
     }
 
     private func expandManuscriptGroup() {
