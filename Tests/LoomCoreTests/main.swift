@@ -105,6 +105,10 @@ let suites: [TestSuite] = [
     phase4OllamaRetryTests(),
     phase4OllamaExtractorLifetimeTests(),
     phase4ScenePOVTests(),
+    phase4LedgerFiltersTests(),
+    phase4LedgerFilterPipelineTests(),
+    phase4SentenceSplitterTests(),
+    phase4LedgerFiltersWiringTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

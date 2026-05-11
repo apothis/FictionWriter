@@ -94,6 +94,15 @@ public enum LedgerExtraction {
 
     // MARK: - Prompt builder (LOOM_STORY_BIBLE §3.3 verbatim)
 
+    /// Constant instruction body the prompt builder splices ahead of
+    /// the character JSON + scene prose. Exposed as a top-level
+    /// constant so the AppState orchestrator can embed it once at
+    /// boot and pass the vector into `LedgerFilters.filterPromptLeakage`
+    /// for sub-task 8 (the §10.5 prompt-leakage filter catches facts
+    /// that echo this instruction back into the extractor's output).
+    public static let extractionPromptInstruction =
+        "Extract factual claims about the listed characters from the scene below. List one entry per fact the character DID or LEARNED in this scene. Be thorough — capture every clear action and observation."
+
     public static func buildExtractionPrompt(
         characters: [CharacterRef],
         scenePose: String
@@ -116,7 +125,7 @@ public enum LedgerExtraction {
         // forcing valid JSON. Keep the prompt short, give it the
         // bible + scene + a clear "extract facts" framing.
         return """
-        Extract factual claims about the listed characters from the scene below. List one entry per fact the character DID or LEARNED in this scene. Be thorough — capture every clear action and observation.
+        \(Self.extractionPromptInstruction)
 
         Characters (names + aliases):
         \(characterListJSON)

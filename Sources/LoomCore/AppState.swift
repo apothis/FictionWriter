@@ -45,8 +45,26 @@ public final class AppState {
 
     private var wordCountObserver: NSObjectProtocol?
 
+    /// Phase 4 #7 sub-task 8 — resolver for the embedding endpoint
+    /// the `LedgerFilterPipeline` calls. Production wiring uses the
+    /// default writer server's `KoboldClient` (it hosts the
+    /// nomic-embed-text endpoint alongside generation). Tests inject
+    /// a deferred-completion stub so the §10.5 filter chain can be
+    /// exercised end-to-end without hitting the network.
+    ///
+    /// Returning `nil` skips the filter pipeline entirely and ships
+    /// the post-diff suggestions unfiltered. The default closure
+    /// returns `nil` when there's no `defaultServerId` configured —
+    /// covers both the first-launch case (no servers added yet) and
+    /// the existing wiring tests that construct an `AppState` against
+    /// an empty settings store.
+    public var embedderProvider: () -> KoboldEmbedding?
+
     /// Test-only init. Production code uses `.shared`.
-    public init(settingsStore: AppSettingsStore = AppSettingsStore()) {
+    public init(
+        settingsStore: AppSettingsStore = AppSettingsStore(),
+        embedderProvider: (() -> KoboldEmbedding?)? = nil
+    ) {
         self.settingsStore = settingsStore
         self.settings = settingsStore.load()
         self.registry = KoboldClientRegistry(
@@ -83,10 +101,27 @@ public final class AppState {
         self.ledgerCoordinator = coordinator
         self.ledgerSuggestionsQueue = LedgerSuggestionsQueue()
 
+        // Default embedder: hand out the writer-server client if one
+        // is configured; otherwise nil (skip filtering). Set
+        // pre-self-reference; rebound below to capture `self`.
+        self.embedderProvider = { nil }
+
         // Now that all stored properties are initialized, rebind the
         // closures to reach `self` for live settings + session.
         settingsSnapshot = { [weak self] in self?.settings ?? AppSettings() }
         sessionRef = { [weak self] in self?.currentSession ?? session }
+
+        if let provided = embedderProvider {
+            self.embedderProvider = provided
+        } else {
+            self.embedderProvider = { [weak self] () -> KoboldEmbedding? in
+                guard let self = self,
+                      let defaultId = self.settings.defaultServerId,
+                      self.settings.servers.contains(where: { $0.id == defaultId })
+                else { return nil }
+                return self.registry.clientForDefault()
+            }
+        }
 
         // Phase 4 #7 sub-task 3 — feed successful extractions into the
         // suggestions queue via the LedgerDiff pure-data pass.
@@ -185,28 +220,99 @@ public final class AppState {
                 DebugLog.shared.write("[ledger] diff produced 0 new suggestions for scene=\(sceneId) (extracted=\(extracted.count))")
                 return
             }
-            ledgerSuggestionsQueue.add(suggestions)
-            // Per-character breakdown so we can disambiguate "the
-            // model only emits Mia-facts" from "Anders-facts exist
-            // but the user didn't click his row to see them".
-            let perCharacterBreakdown: String = {
-                var counts: [UUID: Int] = [:]
-                for s in suggestions { counts[s.characterId, default: 0] += 1 }
-                let parts = counts.compactMap { (id, n) -> String? in
-                    let name = currentSession.project.bible.characters.first(where: { $0.id == id })?.name ?? id.uuidString.prefix(8).description
-                    return "\(name)=\(n)"
-                }
-                return parts.joined(separator: " ")
-            }()
-            // Also report how many were extracted but DROPPED by the
-            // diff (unresolved character_id or verbatim dupe).
-            let dropped = extracted.count - suggestions.count
-            DebugLog.shared.write("[ledger] queued \(suggestions.count) suggestions for scene=\(sceneId) breakdown={\(perCharacterBreakdown)} dropped=\(dropped)/\(extracted.count)")
-            NotificationCenter.default.post(
-                name: Self.ledgerSuggestionsDidChangeNotification,
-                object: self
+            let droppedByDiff = extracted.count - suggestions.count
+
+            // Sub-task 8 — gate the suggestions through the §10.5
+            // filter pipeline when an embedder is available. The
+            // pipeline is fail-soft on embed errors (returns the
+            // input list unchanged), so even a flaky writer server
+            // never costs the user a candidate.
+            guard let embedder = embedderProvider() else {
+                commitSuggestions(
+                    suggestions,
+                    sceneId: sceneId,
+                    extractedCount: extracted.count,
+                    droppedByDiff: droppedByDiff,
+                    droppedByFilters: 0
+                )
+                return
+            }
+            let scene = currentSession.scenes[sceneId]
+            let sceneSentences = scene.map { SentenceSplitter.split($0.prose) } ?? []
+            let existingFactsByCharacter = existingFactsByCharacter(
+                for: suggestions,
+                bible: bible
             )
+            LedgerFilterPipeline.apply(
+                embedder: embedder,
+                suggestions: suggestions,
+                existingFactsByCharacter: existingFactsByCharacter,
+                sceneSentences: sceneSentences
+            ) { [weak self] filtered in
+                // The pipeline may invoke this on the URLSession queue;
+                // hop to main before touching the suggestions queue +
+                // posting the notification.
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    let droppedByFilters = suggestions.count - filtered.count
+                    self.commitSuggestions(
+                        filtered,
+                        sceneId: sceneId,
+                        extractedCount: extracted.count,
+                        droppedByDiff: droppedByDiff,
+                        droppedByFilters: droppedByFilters
+                    )
+                }
+            }
         }
+    }
+
+    /// Build the `[characterId: [factText]]` table the §10.5 dedup
+    /// filter compares against. Scoped to characters that appear in
+    /// the current batch of suggestions — no point embedding
+    /// existing facts for characters whose ledger isn't in play.
+    private func existingFactsByCharacter(
+        for suggestions: [LedgerSuggestion],
+        bible: Bible
+    ) -> [UUID: [String]] {
+        let activeCharacterIds = Set(suggestions.map(\.characterId))
+        var out: [UUID: [String]] = [:]
+        for character in bible.characters where activeCharacterIds.contains(character.id) {
+            var texts: [String] = []
+            for facts in character.knownFactsBySceneId.values {
+                for fact in facts { texts.append(fact.fact) }
+            }
+            if !texts.isEmpty { out[character.id] = texts }
+        }
+        return out
+    }
+
+    private func commitSuggestions(
+        _ suggestions: [LedgerSuggestion],
+        sceneId: UUID,
+        extractedCount: Int,
+        droppedByDiff: Int,
+        droppedByFilters: Int
+    ) {
+        guard !suggestions.isEmpty else {
+            DebugLog.shared.write("[ledger] all candidates filtered out for scene=\(sceneId) extracted=\(extractedCount) diff-dropped=\(droppedByDiff) filter-dropped=\(droppedByFilters)")
+            return
+        }
+        ledgerSuggestionsQueue.add(suggestions)
+        let perCharacterBreakdown: String = {
+            var counts: [UUID: Int] = [:]
+            for s in suggestions { counts[s.characterId, default: 0] += 1 }
+            let parts = counts.compactMap { (id, n) -> String? in
+                let name = currentSession.project.bible.characters.first(where: { $0.id == id })?.name ?? id.uuidString.prefix(8).description
+                return "\(name)=\(n)"
+            }
+            return parts.joined(separator: " ")
+        }()
+        DebugLog.shared.write("[ledger] queued \(suggestions.count) suggestions for scene=\(sceneId) breakdown={\(perCharacterBreakdown)} diff-dropped=\(droppedByDiff) filter-dropped=\(droppedByFilters)/\(extractedCount)")
+        NotificationCenter.default.post(
+            name: Self.ledgerSuggestionsDidChangeNotification,
+            object: self
+        )
     }
 
     private func handleWordCountChange(_ note: Notification) {
