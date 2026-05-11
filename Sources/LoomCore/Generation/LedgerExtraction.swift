@@ -144,8 +144,37 @@ public enum LedgerExtraction {
     /// §3.3 schema can pass all four. Order in the array determines
     /// the order in the grammar alternation — has no semantic effect
     /// but may bias sampling slightly toward earlier-listed values.
-    public static func gbnfGrammar(certainties: [Certainty] = Certainty.allCases) -> String {
+    /// Optional `characters` parameter restricts the grammar's
+    /// `character_id` field to an alternation of the known character
+    /// names + aliases — empirically observed (LOOM_LEDGER_SPIKE §10):
+    /// without this restriction, the model occasionally emits garbage
+    /// in `character_id` ("hallway", "kitchen", or sentence fragments
+    /// like "To bed early."). Restricting the field to a string
+    /// literal alternation forces the model to pick one of the bible
+    /// names, eliminating that failure mode at the grammar level.
+    public static func gbnfGrammar(
+        certainties: [Certainty] = Certainty.allCases,
+        characters: [CharacterRef] = []
+    ) -> String {
         let certAlternation = certainties.map { "\"\\\"\($0.rawValue)\\\"\"" }.joined(separator: " | ")
+
+        // Build the character_id rule. If callers supply the bible
+        // characters, restrict to those names + aliases as a string
+        // alternation. Otherwise fall back to a free string (back-compat
+        // for the existing tests).
+        let characterIdRule: String
+        if characters.isEmpty {
+            characterIdRule = "string"
+        } else {
+            var allNames: [String] = []
+            for c in characters {
+                allNames.append(c.name)
+                allNames.append(contentsOf: c.aliases)
+            }
+            characterIdRule = allNames
+                .map { "\"\\\"\($0)\\\"\"" }
+                .joined(separator: " | ")
+        }
         // GBNF for KoboldCpp / llama.cpp.
         //
         // Two empirical guards baked in:
@@ -165,7 +194,7 @@ public enum LedgerExtraction {
         // (`([^"\\] | "\\" .)*`); the model is unlikely to emit
         // invalid escapes when generating English prose facts.
         return "root ::= \"[\" ws (fact (ws \",\" ws fact)*)? ws \"]\"\n"
-            + "fact ::= \"{\" ws \"\\\"character_id\\\":\" ws string ws \",\" ws \"\\\"fact\\\":\" ws string ws \",\" ws \"\\\"certainty\\\":\" ws (\(certAlternation)) ws \",\" ws \"\\\"evidence_quote\\\":\" ws string ws \"}\"\n"
+            + "fact ::= \"{\" ws \"\\\"character_id\\\":\" ws (\(characterIdRule)) ws \",\" ws \"\\\"fact\\\":\" ws string ws \",\" ws \"\\\"certainty\\\":\" ws (\(certAlternation)) ws \",\" ws \"\\\"evidence_quote\\\":\" ws string ws \"}\"\n"
             + "string ::= \"\\\"\" ([^\"\\\\] | \"\\\\\" .)* \"\\\"\"\n"
             + "ws ::= \" \"?"
     }
@@ -258,7 +287,73 @@ public enum LedgerExtraction {
         return collected
     }
 
-    // MARK: - Scorer
+    // MARK: - Embedding scorer (LOOM_LEDGER_SPIKE §10)
+
+    /// Cosine similarity between two equal-length vectors. Returns 0
+    /// for empty inputs, zero-norm vectors, or length mismatch — never
+    /// throws. Production callers should pre-validate dimensionality
+    /// (the embedding model's vector dim is stable per server).
+    public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Double {
+        guard !a.isEmpty, a.count == b.count else { return 0 }
+        var dot: Double = 0, na: Double = 0, nb: Double = 0
+        for i in 0..<a.count {
+            let x = Double(a[i]), y = Double(b[i])
+            dot += x * y; na += x * x; nb += y * y
+        }
+        guard na > 0, nb > 0 else { return 0 }
+        return dot / (na.squareRoot() * nb.squareRoot())
+    }
+
+    /// Score extracted facts against gold using cosine similarity over
+    /// pre-computed embeddings instead of Jaccard wordform similarity.
+    /// Match predicate: alias-resolved `character_id` matches, certainty
+    /// matches, and `cosineSimilarity(embedding(extracted.fact),
+    /// embedding(gold.fact)) >= threshold`.
+    ///
+    /// `embedding` is a closure that returns the vector for a fact's
+    /// text. The spike's runner caches embeddings up-front so each
+    /// fact is embedded once; this signature keeps the scorer pure-data
+    /// and testable (a synthetic embedding map suffices).
+    ///
+    /// Threshold default 0.65 is the conservative starting point per
+    /// SillyTavern's verified default for chat-vectorisation (LOOM_MEMORY
+    /// §B2): 0.55 floor for bge-small, with diminishing returns above
+    /// 0.7. 0.65 sits in the productive middle.
+    public static func scoreByEmbedding(
+        extracted: [ExtractedFact],
+        gold: [ExtractedFact],
+        embedding: (String) -> [Float],
+        threshold: Double = 0.65,
+        aliases: [String: String] = [:]
+    ) -> ScoreReport {
+        func canonical(_ id: String) -> String { aliases[id] ?? id }
+        var unmatchedGold = gold.indices.map { (gold[$0], false) }
+        var tp = 0, fp = 0
+        for ex in extracted {
+            let exCanon = canonical(ex.characterId)
+            let exVec = embedding(ex.fact)
+            var matchIdx: Int? = nil
+            for i in unmatchedGold.indices where !unmatchedGold[i].1 {
+                let g = unmatchedGold[i].0
+                if canonical(g.characterId) == exCanon
+                    && g.certainty == ex.certainty
+                    && cosineSimilarity(exVec, embedding(g.fact)) >= threshold
+                {
+                    matchIdx = i; break
+                }
+            }
+            if let i = matchIdx {
+                unmatchedGold[i].1 = true
+                tp += 1
+            } else {
+                fp += 1
+            }
+        }
+        let fn = unmatchedGold.filter { !$0.1 }.count
+        return ScoreReport(truePositives: tp, falsePositives: fp, falseNegatives: fn)
+    }
+
+    // MARK: - Scorer (Jaccard wordform — kept as a fast fallback)
 
     public static func score(
         extracted: [ExtractedFact],

@@ -53,9 +53,11 @@ public enum KoboldError: Error, Equatable {
 /// non-streaming completion against `/api/extra/generate/stream` and
 /// `/api/v1/generate`; metadata via `/api/v1/model`,
 /// `/api/extra/version`, `/api/extra/true_max_context_length`,
-/// `/api/extra/tokencount`. Direct port from RPClient with embed and
-/// chatCompletions paths removed (Phase 1 doesn't use either).
-public final class KoboldClient: NSObject, URLSessionDataDelegate, KoboldGenerating {
+/// `/api/extra/tokencount`. Direct port from RPClient with the
+/// chatCompletions path removed (Phase 1 doesn't use it). Embed path
+/// re-added in Phase 4 #7 for ledger-fact similarity scoring +
+/// deduplication (LOOM_LEDGER_SPIKE §10).
+public final class KoboldClient: NSObject, URLSessionDataDelegate, KoboldGenerating, KoboldEmbedding {
     public private(set) var baseURL: URL
     private lazy var session: URLSession = {
         let cfg = URLSessionConfiguration.default
@@ -231,6 +233,57 @@ public final class KoboldClient: NSObject, URLSessionDataDelegate, KoboldGenerat
         }
         activeSideCallTask = task
         task.resume()
+    }
+
+    // MARK: - Embeddings (KoboldEmbedding)
+
+    /// Batched text → vector embeddings via KoboldCpp's `/v1/embeddings`.
+    /// Server must be launched with `--embeddingsmodel <gguf>` (verified
+    /// against production: bge-small-en-v1.5, 384-d). Ported from
+    /// RPClient's `KoboldClient.embed`; same wire format, same shape.
+    public func embed(
+        texts: [String],
+        completion: @escaping (Result<[[Float]], Error>) -> Void
+    ) {
+        guard !texts.isEmpty else { completion(.success([])); return }
+        guard let url = URL(string: "/v1/embeddings", relativeTo: baseURL)?.absoluteURL else {
+            completion(.failure(KoboldError.badURL)); return
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "input": texts,
+            "model": "embedding",
+        ])
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 120
+        let s = URLSession(configuration: cfg)
+        s.dataTask(with: req) { data, resp, err in
+            if let err = err { completion(.failure(err)); return }
+            guard let data = data else {
+                completion(.failure(KoboldError.noBody)); return
+            }
+            if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
+                let msg = String(data: data, encoding: .utf8) ?? ""
+                completion(.failure(KoboldError.http(http.statusCode, msg)))
+                return
+            }
+            do {
+                guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let dataArr = obj["data"] as? [[String: Any]]
+                else {
+                    completion(.failure(KoboldError.unexpectedShape)); return
+                }
+                let vecs: [[Float]] = dataArr.compactMap { entry in
+                    guard let raw = entry["embedding"] as? [Any] else { return nil }
+                    return raw.compactMap { ($0 as? NSNumber)?.floatValue }
+                }
+                completion(.success(vecs))
+            } catch {
+                completion(.failure(error))
+            }
+        }.resume()
     }
 
     // MARK: - Misc endpoints

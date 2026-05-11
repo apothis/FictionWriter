@@ -248,11 +248,122 @@ func phase4LedgerExtractionTests() -> TestSuite {
         try expectTrue(g.contains("asserted"), "certainty `asserted` missing from grammar")
     }
 
+    // MARK: - Embedding scorer (LOOM_LEDGER_SPIKE §10)
+
+    s.test("cosineSimilarity returns 1.0 for identical vectors and 0 for orthogonal") {
+        let a: [Float] = [1, 0, 0]
+        let b: [Float] = [1, 0, 0]
+        let c: [Float] = [0, 1, 0]
+        try expectTrue(LedgerExtraction.cosineSimilarity(a, b) > 0.999, "identical → 1.0")
+        try expectTrue(abs(LedgerExtraction.cosineSimilarity(a, c)) < 0.001, "orthogonal → 0")
+    }
+
+    s.test("cosineSimilarity returns 0 for empty inputs (degenerate case)") {
+        try expectEqual(LedgerExtraction.cosineSimilarity([], []), 0.0)
+        try expectEqual(LedgerExtraction.cosineSimilarity([1, 0], [0, 0]), 0.0)
+    }
+
+    s.test("embedding-scorer matches extracted facts to gold by cosine threshold (alias-resolved character + certainty + cosine≥threshold)") {
+        // Build a synthetic embedding-by-text map. Two facts with similar
+        // wording but different character names should NOT match (char
+        // mismatch trumps cosine); two facts about the same character with
+        // similar embeddings DO match.
+        let goldEmb: [Float]      = [1, 0, 0, 0]
+        let exNear: [Float]       = [0.9, 0.1, 0, 0]  // cosine ≈ 0.99
+        let exFar: [Float]        = [0, 1, 0, 0]      // cosine = 0
+        let embeddingFor: (String) -> [Float] = { txt in
+            switch txt {
+            case "Mia drank wine.": return goldEmb
+            case "Mia was drinking wine.": return exNear
+            case "Mia walked to the door.": return exFar
+            default: return [0, 0, 0, 0]
+            }
+        }
+        let gold = [
+            LedgerExtraction.ExtractedFact(
+                characterId: "Mia", fact: "Mia drank wine.",
+                certainty: .asserted, evidenceQuote: "q"
+            ),
+        ]
+        let extracted = [
+            LedgerExtraction.ExtractedFact(
+                characterId: "Mia", fact: "Mia was drinking wine.",
+                certainty: .asserted, evidenceQuote: "q"
+            ),
+            LedgerExtraction.ExtractedFact(
+                characterId: "Mia", fact: "Mia walked to the door.",
+                certainty: .asserted, evidenceQuote: "q"
+            ),
+        ]
+        let report = LedgerExtraction.scoreByEmbedding(
+            extracted: extracted, gold: gold,
+            embedding: embeddingFor, threshold: 0.7
+        )
+        try expectEqual(report.truePositives, 1, "near-cosine match → TP")
+        try expectEqual(report.falsePositives, 1, "far-cosine non-match → FP")
+        try expectEqual(report.falseNegatives, 0)
+    }
+
+    s.test("embedding-scorer respects alias resolution for character_id") {
+        let goldEmb: [Float] = [1, 0]
+        let exEmb: [Float]   = [1, 0]  // identical
+        let embed: (String) -> [Float] = { _ in goldEmb }
+        let gold = [LedgerExtraction.ExtractedFact(
+            characterId: "Mia", fact: "is in flat.", certainty: .asserted, evidenceQuote: "q"
+        )]
+        let ex = [LedgerExtraction.ExtractedFact(
+            characterId: "Miss Vance", fact: "is in flat.", certainty: .asserted, evidenceQuote: "q"
+        )]
+        // No alias → char mismatch → no TP
+        let withoutAlias = LedgerExtraction.scoreByEmbedding(
+            extracted: ex, gold: gold, embedding: { _ in goldEmb }, threshold: 0.7
+        )
+        try expectEqual(withoutAlias.truePositives, 0)
+        // With alias → TP
+        let withAlias = LedgerExtraction.scoreByEmbedding(
+            extracted: ex, gold: gold,
+            embedding: { _ in goldEmb }, threshold: 0.7,
+            aliases: ["Miss Vance": "Mia"]
+        )
+        try expectEqual(withAlias.truePositives, 1)
+        _ = exEmb; _ = embed
+    }
+
     s.test("grammar can restrict certainty to a subset (asserted-only for Phase 4 #7)") {
         let g = LedgerExtraction.gbnfGrammar(certainties: [.asserted])
         try expectTrue(g.contains("asserted"), "asserted must be in restricted grammar")
         try expectFalse(g.contains("suspected"), "suspected must NOT appear in asserted-only grammar")
         try expectFalse(g.contains("mistaken"), "mistaken must NOT appear in asserted-only grammar")
+    }
+
+    s.test("grammar can restrict character_id to named bible characters + aliases") {
+        let chars = [
+            LedgerExtraction.CharacterRef(name: "Mia", aliases: ["Miss Vance"]),
+            LedgerExtraction.CharacterRef(name: "Anders", aliases: []),
+        ]
+        let g = LedgerExtraction.gbnfGrammar(characters: chars)
+        // The character_id rule is an alternation of GBNF-quoted
+        // string literals: `"\"Mia\"" | "\"Miss Vance\"" | "\"Anders\""`.
+        // In Swift-source: `"\\\"Mia\\\""`. Check by name presence
+        // and alternation operator.
+        try expectTrue(g.contains("Mia"), "Mia must appear in character_id alternation")
+        try expectTrue(g.contains("Miss Vance"), "Miss Vance alias must appear")
+        try expectTrue(g.contains("Anders"), "Anders must appear")
+        try expectTrue(g.contains(" | "), "alternation operator must appear")
+        // The GBNF-escaped form: `"\"Mia\""` written in Swift source as
+        // `"\\\"Mia\\\""` — pin it to be sure the names are properly
+        // wrapped as GBNF string literals.
+        try expectTrue(g.contains("\\\"Mia\\\""), "Mia should be wrapped as GBNF string literal")
+    }
+
+    s.test("grammar without characters falls back to free string for character_id (back-compat)") {
+        let g = LedgerExtraction.gbnfGrammar()
+        try expectTrue(
+            g.contains("character_id"),
+            "character_id field must exist"
+        )
+        // Without characters, the rule should reference `string`.
+        try expectTrue(g.contains("string"), "fallback should use the string rule")
     }
 
     return s

@@ -352,6 +352,130 @@ narrow output shape.
 - The `unknown` / `mistaken` certainty values in the extractor grammar (the production grammar passes `[.asserted]`).
 - Detailed schema documentation in the prompt body → simplified to a two-line "extract facts about these characters" framing.
 
+## 10. Round-3 — embedding scorer + character-id grammar restriction
+
+After §9's honest "structural fix works; content quality is messy"
+verdict, two more wins landed by putting the **same KoboldCpp server's
+embedding endpoint** to work alongside the generation endpoint. The
+server is launched with `--embeddingsmodel` against nomic-embed-text
+(768-d, verified live), so the embedding side-call is free and local —
+the same cache-warm, NSFW-tolerant connection the writer uses.
+
+### 10.1 Embedding scorer (replaces the misleading Jaccard metrics)
+
+`LedgerExtraction.scoreByEmbedding(extracted:gold:embedding:threshold:aliases:)`
+matches facts by **cosine similarity over embeddings** instead of
+wordform Jaccard. Default threshold 0.65 (LOOM_MEMORY §B2's verified
+SillyTavern Chat Vectorisation floor of 0.55 with diminishing returns
+above 0.7). The runner batch-embeds every unique gold + extracted fact
+text in a single `/v1/embeddings` round-trip after extraction
+completes, then re-scores from the cached vectors — no per-fact
+embed cost beyond the one batch.
+
+Both Jaccard and Embedding scorers now run on every spike pass and
+report side-by-side in the aggregate table. The honest §3.c
+"misleading metrics" disclaimer is no longer needed — the embedding
+column IS the measure of extraction quality.
+
+### 10.2 Grammar-level `character_id` enum (kills a content failure mode)
+
+§9.2 noted the model occasionally emits garbage in `character_id`:
+`"hallway"`, `"kitchen"`, sentence fragments like `"To bed early."`.
+Root cause: the GBNF had `character_id ::= string`, allowing any
+JSON string. Fix:
+`LedgerExtraction.gbnfGrammar(characters:)` builds the rule as an
+alternation of the bible's known names + aliases — e.g.
+`character_id ::= "\"Mia\"" | "\"Miss Vance\"" | "\"the librarian\"" | "\"Anders\"" | ...`.
+The model **literally cannot** emit anything but a registered name.
+Eliminates the garbage-character_id failure mode by construction. The
+spike's runner now passes the fixture's character list into the
+grammar generator; production callers pass `bible.characters`.
+
+### 10.3 Empirical numbers (live Qwen3.6-27B + character-restricted GBNF + embedding scorer)
+
+| Scene | Tag | Extracted | Gold | Embedding TP/FP/FN | Recall |
+|-------|-----|-----------|------|--------------------|--------|
+| 01_door         | SFW  | 10 | 6 | 3/7/3 | 0.50 |
+| 02_coffee       | SFW  |  0 | 4 | 0/0/4 | 0.00 |
+| 03_first_night  | NSFW |  7 | 3 | 2/5/1 | 0.67 |
+| 04_revelation   | SFW  |  0 | 4 | 0/0/4 | 0.00 |
+| 05_confession   | NSFW |  8 | 3 | 3/5/0 | **1.00** |
+
+Aggregate (embedding scorer, 5 scenes, 20 gold facts): TP 8 / FP 17 /
+FN 12; precision 0.32, recall 0.40, F1 0.36.
+
+**For scenes the model engages with (1, 3, 5):** 8 of 12 gold facts
+recovered = **67% recall**. This confirms §3.d's hand-review estimate
+with a real metric. Scene 5 hits 100% recall.
+
+The "FP" column is still partly artefactual — many "false positives"
+are valid extra prose observations the model captured (Mia walked
+barefoot, Anders had careful posture, etc.) that weren't in the
+selective hand-graded gold. For the production Suggestions UI flow,
+those go to the user for accept/reject; they're not extraction errors.
+
+### 10.4 The remaining failure mode: scenes 2 + 4 emit `[]`
+
+Two of the five SFW scenes (`02_coffee`, `04_revelation`) routinely
+return an empty array. Both feature all three bible characters and
+have plenty of clear factual content. The model evaluates `[]` as a
+valid grammar production from the opening `[` and exits immediately —
+likely a sampler / prompt interaction where the EOS-equivalent
+"empty array" token has higher probability than `{`.
+
+Possible fixes for Phase 4 #7 (NOT for this commit):
+
+1. **Require at least one fact in the grammar**: change
+   `root ::= "[" ws (fact (ws "," ws fact)*)? ws "]"` to
+   `root ::= "[" ws fact (ws "," ws fact)* ws "]"`. Forces the model
+   to emit at least one fact. Risk: the model loops trying to invent
+   content if there's nothing to extract.
+2. **Higher temperature + lower min_p** so the empty-array
+   short-circuit is sampled less often.
+3. **Switch the extractor model** per §8.4 — Mistral-Small-3-24B
+   was specifically released as non-thinking, structured-output
+   strong; this kind of degenerate behaviour is much less common.
+
+The §9.4 recommendation (smaller extraction-tuned model on the
+role-routed summariser server) still stands as the principal Phase 4
+#7 prerequisite. The empty-array problem is one more data point in
+favour of that swap.
+
+### 10.5 What else the embedding endpoint enables (Phase 4 #7 design)
+
+Beyond the spike's scorer, the embedding endpoint unlocks three
+production features the design docs assumed but didn't yet wire:
+
+1. **Fact deduplication.** When the extractor emits 10 facts and many
+   are paraphrases ("Mia drank wine" / "Mia was drinking wine"),
+   embed them and cluster by cosine ≥ 0.85; merge clusters into
+   single ledger entries.
+2. **Evidence-quote validation** (CHIRON-lite, see §8.4). After
+   extraction, embed each fact's `evidence_quote` and the scene's
+   sentences; drop facts whose evidence has no high-cosine sentence
+   match (hallucinated evidence quotes — the model invented a quote
+   that isn't actually in the prose).
+3. **Prompt-leakage filter.** §9.2 noted facts where the extractor
+   leaked our own prompt text into strings. Embed the prompt text
+   ahead of time; drop facts whose content cosine-matches the prompt
+   above some threshold. Cheap defence against the model echoing
+   instructions back.
+
+All three are pure-data follow-ons that reuse the existing
+`KoboldClient.embed(...)` path (now in LoomCore alongside `generate`).
+
+### 10.6 What graduated in Round-3
+
+- `KoboldEmbedding` protocol + `KoboldClient.embed(texts:completion:)`
+  ported from RPClient ([`Sources/LoomCore/Networking/KoboldClient.swift`](Sources/LoomCore/Networking/KoboldClient.swift)).
+- `LedgerExtraction.cosineSimilarity(_:_:)` +
+  `LedgerExtraction.scoreByEmbedding(...)` ([`Sources/LoomCore/Generation/LedgerExtraction.swift`](Sources/LoomCore/Generation/LedgerExtraction.swift)).
+- `LedgerExtraction.gbnfGrammar(certainties:characters:)` builds the
+  `character_id` enum from a bible character list.
+- `LedgerSpike` runs both scorers side-by-side; report shows both
+  metrics in the aggregate table.
+- Six new TDD tests pinning behaviour.
+
 ## 7. References
 
 - [LOOM_STORY_BIBLE.md §3](LOOM_STORY_BIBLE.md) — extraction pipeline spec.

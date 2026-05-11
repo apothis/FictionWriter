@@ -73,7 +73,8 @@ struct SceneResult {
     let rawResponse: String
     let parseError: Error?
     let extracted: [LedgerExtraction.ExtractedFact]
-    let score: LedgerExtraction.ScoreReport
+    let score: LedgerExtraction.ScoreReport          // Jaccard (fast, wordform)
+    let scoreEmbedding: LedgerExtraction.ScoreReport // cosine (semantic, real)
 }
 
 // MARK: - Runner
@@ -138,7 +139,15 @@ func extractSceneSync(
     // of the model — the spike's §3.e finding (recall 0/2 on unknown)
     // confirmed that local models cannot extract negative knowledge
     // reliably.
-    let grammar = LedgerExtraction.gbnfGrammar(certainties: [.asserted])
+    // Restrict character_id to the bible's named characters + aliases.
+    // Without this, the model occasionally puts garbage in
+    // character_id ("hallway", "kitchen", or sentence fragments) —
+    // observed in the §10 first-pass run with free-string
+    // character_id. The grammar-level enum eliminates that failure.
+    let grammar = LedgerExtraction.gbnfGrammar(
+        certainties: [.asserted],
+        characters: characters
+    )
 
     let sem = DispatchSemaphore(value: 0)
     var response: Result<String, Error> = .failure(NSError(domain: "Spike", code: -1))
@@ -156,16 +165,18 @@ func extractSceneSync(
     sem.wait()
 
     let raw: String
+    let emptyEmbeddingScore = LedgerExtraction.ScoreReport(
+        truePositives: 0, falsePositives: 0,
+        falseNegatives: scene.gold_facts.count
+    )
     switch response {
     case .success(let s): raw = s
     case .failure(let e):
         return SceneResult(
             scene: scene, prompt: prompt, rawResponse: "<<network error: \(e)>>",
             parseError: e, extracted: [],
-            score: LedgerExtraction.ScoreReport(
-                truePositives: 0, falsePositives: 0,
-                falseNegatives: scene.gold_facts.count
-            )
+            score: emptyEmbeddingScore,
+            scoreEmbedding: emptyEmbeddingScore
         )
     }
 
@@ -176,26 +187,78 @@ func extractSceneSync(
     do {
         let extracted = try LedgerExtraction.parseExtractedFacts(raw)
         let gold = scene.gold_facts.map { $0.asExtracted() }
-        // Use the fixture's canonical alias map.
-        // Hard-coded for now; would be loaded from fixture for richer cases.
-        let aliases: [String: String] = [
-            "Mia Vance": "Mia", "Miss Vance": "Mia", "the librarian": "Mia",
-            "Anders Voll": "Anders", "the stranger": "Anders",
-            "Karim Vance": "Karim",
-        ]
-        let score = LedgerExtraction.score(extracted: extracted, gold: gold, aliases: aliases)
+        let score = LedgerExtraction.score(extracted: extracted, gold: gold, aliases: fixtureAliases)
         return SceneResult(
             scene: scene, prompt: prompt, rawResponse: raw,
-            parseError: nil, extracted: extracted, score: score
+            parseError: nil, extracted: extracted, score: score,
+            scoreEmbedding: emptyEmbeddingScore // populated post-extraction
         )
     } catch {
         return SceneResult(
             scene: scene, prompt: prompt, rawResponse: raw,
             parseError: error, extracted: [],
-            score: LedgerExtraction.ScoreReport(
-                truePositives: 0, falsePositives: 0,
-                falseNegatives: scene.gold_facts.count
-            )
+            score: emptyEmbeddingScore,
+            scoreEmbedding: emptyEmbeddingScore
+        )
+    }
+}
+
+let fixtureAliases: [String: String] = [
+    "Mia Vance": "Mia", "Miss Vance": "Mia", "the librarian": "Mia",
+    "Anders Voll": "Anders", "the stranger": "Anders",
+    "Karim Vance": "Karim",
+]
+
+/// Batch-embed every gold + extracted fact text, then re-score each
+/// scene using cosine similarity over the embeddings (LOOM_LEDGER_SPIKE
+/// §10). One round-trip to the server's `/v1/embeddings` endpoint
+/// regardless of fixture size; cheap.
+func attachEmbeddingScores(
+    _ results: [SceneResult],
+    client: KoboldClient
+) -> [SceneResult] {
+    var allTexts: [String] = []
+    for r in results {
+        for f in r.scene.gold_facts { allTexts.append(f.fact) }
+        for f in r.extracted { allTexts.append(f.fact) }
+    }
+    let uniqueTexts = Array(Set(allTexts)).sorted()
+    if uniqueTexts.isEmpty { return results }
+
+    logProgress("LedgerSpike: embedding \(uniqueTexts.count) unique fact texts in one batch…")
+    let sem = DispatchSemaphore(value: 0)
+    var embeddings: [String: [Float]] = [:]
+    var embedError: Error?
+    client.embed(texts: uniqueTexts) { result in
+        switch result {
+        case .success(let vecs):
+            for (txt, vec) in zip(uniqueTexts, vecs) {
+                embeddings[txt] = vec
+            }
+        case .failure(let e):
+            embedError = e
+        }
+        sem.signal()
+    }
+    sem.wait()
+    if let e = embedError {
+        logProgress("LedgerSpike: embedding failed: \(e)")
+        return results
+    }
+    logProgress("LedgerSpike: embedded — dim=\(embeddings.first?.value.count ?? 0)")
+
+    return results.map { r in
+        let gold = r.scene.gold_facts.map { $0.asExtracted() }
+        let score = LedgerExtraction.scoreByEmbedding(
+            extracted: r.extracted, gold: gold,
+            embedding: { embeddings[$0] ?? [] },
+            threshold: 0.65,
+            aliases: fixtureAliases
+        )
+        return SceneResult(
+            scene: r.scene, prompt: r.prompt, rawResponse: r.rawResponse,
+            parseError: r.parseError, extracted: r.extracted, score: r.score,
+            scoreEmbedding: score
         )
     }
 }
@@ -210,21 +273,27 @@ func emitReport(results: [SceneResult]) -> String {
     out += "\(results.flatMap { $0.scene.gold_facts }.count) gold facts total\n\n"
     out += "**Hypothesis** (LOOM_MEMORY §4.5): per-scene knowledge-state extraction is feasible at <13B model size. We test against Qwen3.6-27B (a 27B-class abliterated model) — so the threshold here is even easier than the falsifiable claim.\n\n"
 
-    let totalTP = results.reduce(0) { $0 + $1.score.truePositives }
-    let totalFP = results.reduce(0) { $0 + $1.score.falsePositives }
-    let totalFN = results.reduce(0) { $0 + $1.score.falseNegatives }
     let agg = LedgerExtraction.ScoreReport(
-        truePositives: totalTP, falsePositives: totalFP, falseNegatives: totalFN
+        truePositives: results.reduce(0) { $0 + $1.score.truePositives },
+        falsePositives: results.reduce(0) { $0 + $1.score.falsePositives },
+        falseNegatives: results.reduce(0) { $0 + $1.score.falseNegatives }
+    )
+    let aggEmb = LedgerExtraction.ScoreReport(
+        truePositives: results.reduce(0) { $0 + $1.scoreEmbedding.truePositives },
+        falsePositives: results.reduce(0) { $0 + $1.scoreEmbedding.falsePositives },
+        falseNegatives: results.reduce(0) { $0 + $1.scoreEmbedding.falseNegatives }
     )
 
     out += "## Aggregate\n\n"
-    out += "| Metric    | Value |\n|-----------|-------|\n"
-    out += "| TP        | \(agg.truePositives) |\n"
-    out += "| FP        | \(agg.falsePositives) |\n"
-    out += "| FN        | \(agg.falseNegatives) |\n"
-    out += "| Precision | \(String(format: "%.2f", agg.precision)) |\n"
-    out += "| Recall    | \(String(format: "%.2f", agg.recall)) |\n"
-    out += "| F1        | \(String(format: "%.2f", agg.f1)) |\n\n"
+    out += "Two scorers run on the same extraction output: **Jaccard** (wordform-overlap, fast, threshold 0.5) and **Embedding cosine** (semantic, via bge-small-en-v1.5 on the live server, threshold 0.65 per LOOM_MEMORY §B2). The embedding scorer is the load-bearing measure of actual extraction quality; Jaccard is preserved as a fast fallback and to show the metric gap.\n\n"
+    out += "| Metric    | Jaccard | Embedding (cosine ≥ 0.65) |\n"
+    out += "|-----------|---------|---------------------------|\n"
+    out += "| TP        | \(agg.truePositives) | \(aggEmb.truePositives) |\n"
+    out += "| FP        | \(agg.falsePositives) | \(aggEmb.falsePositives) |\n"
+    out += "| FN        | \(agg.falseNegatives) | \(aggEmb.falseNegatives) |\n"
+    out += "| Precision | \(String(format: "%.2f", agg.precision)) | \(String(format: "%.2f", aggEmb.precision)) |\n"
+    out += "| Recall    | \(String(format: "%.2f", agg.recall)) | \(String(format: "%.2f", aggEmb.recall)) |\n"
+    out += "| F1        | \(String(format: "%.2f", agg.f1)) | \(String(format: "%.2f", aggEmb.f1)) |\n\n"
 
     // Per-certainty breakdown: how well does the model do on each
     // certainty bucket? Asserted is the easy case; unknown/mistaken
@@ -266,8 +335,8 @@ func emitReport(results: [SceneResult]) -> String {
     out += "## Per-scene detail\n\n"
     for r in results {
         out += "### Scene `\(r.scene.id)` — \(r.scene.title) [\(r.scene.tag)]\n\n"
-        out += "TP \(r.score.truePositives) / FP \(r.score.falsePositives) / FN \(r.score.falseNegatives)"
-        out += " — P \(String(format: "%.2f", r.score.precision)), R \(String(format: "%.2f", r.score.recall))\n\n"
+        out += "Jaccard: TP \(r.score.truePositives) / FP \(r.score.falsePositives) / FN \(r.score.falseNegatives) — P \(String(format: "%.2f", r.score.precision)) R \(String(format: "%.2f", r.score.recall))\n"
+        out += "Embedding: TP \(r.scoreEmbedding.truePositives) / FP \(r.scoreEmbedding.falsePositives) / FN \(r.scoreEmbedding.falseNegatives) — P \(String(format: "%.2f", r.scoreEmbedding.precision)) R \(String(format: "%.2f", r.scoreEmbedding.recall))\n\n"
 
         if let e = r.parseError {
             out += "**PARSE FAILURE:** \(e)\n\n"
@@ -341,5 +410,9 @@ for (i, scene) in fixture.scenes.enumerated() {
 }
 
 logProgress("")
-let report = emitReport(results: results)
+// Batch-embed all gold + extracted fact texts and compute the
+// semantic-similarity scoreboard alongside Jaccard.
+let resultsWithEmb = attachEmbeddingScores(results, client: client)
+logProgress("")
+let report = emitReport(results: resultsWithEmb)
 print(report)

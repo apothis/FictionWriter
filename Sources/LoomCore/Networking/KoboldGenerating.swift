@@ -13,3 +13,16 @@ public protocol KoboldGenerating: AnyObject {
         completion: @escaping (Result<String, Error>) -> Void
     )
 }
+
+/// Batched text → vector embeddings via KoboldCpp's `/v1/embeddings`
+/// endpoint. Requires the server to be launched with
+/// `--embeddingsmodel <gguf>` (bge-small-en-v1.5 / nomic-embed-text /
+/// similar). Used by the Phase 4 #7 ledger pipeline for fact
+/// similarity scoring + deduplication + evidence-quote validation
+/// (LOOM_LEDGER_SPIKE §10).
+public protocol KoboldEmbedding: AnyObject {
+    func embed(
+        texts: [String],
+        completion: @escaping (Result<[[Float]], Error>) -> Void
+    )
+}
