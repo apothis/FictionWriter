@@ -284,6 +284,54 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         view.window?.makeFirstResponder(textView)
     }
 
+    // MARK: - Phase 2 #10 — @-mention autocomplete
+
+    /// Wraps the public detection + match query so callers (the
+    /// completion popover, the smoke test) don't need to repeat the
+    /// "read textView state → call EntityMentionContext → query
+    /// EntityAutocomplete" pattern.
+    public func currentMentionContext() -> (context: EntityMentionContext, matches: [EntityAutocompleteMatch])? {
+        let prose = textView.string
+        let cursor = textView.selectedRange().location
+        guard let ctx = EntityMentionContext.detect(in: prose, cursorOffset: cursor) else { return nil }
+        let matches = EntityAutocomplete.matches(for: ctx.partialQuery, in: session.project)
+        return (ctx, matches)
+    }
+
+    /// Commits a chosen autocomplete match: replaces the `@xxx`
+    /// substring under the cursor with the canonical entity markdown
+    /// link, writes the new prose through the session, and parks the
+    /// cursor at the end of the inserted markdown.
+    public func applyMention(_ match: EntityAutocompleteMatch) {
+        let prose = textView.string
+        let cursor = textView.selectedRange().location
+        guard let ctx = EntityMentionContext.detect(in: prose, cursorOffset: cursor) else { return }
+        let result = ctx.applyReplacement(in: prose, with: match)
+        suppressWriteback = true
+        textView.string = result.prose
+        suppressWriteback = false
+        textView.setSelectedRange(NSRange(location: result.cursorOffset, length: 0))
+        if let id = session.currentSceneId {
+            session.updateProse(id: id, prose: result.prose)
+            postWordCount()
+        }
+    }
+
+    /// Test-only — primes the editor with prose + cursor without
+    /// going through the full session-mutation path. The smoke test
+    /// suite uses this to set up the cursor-in-@-context state
+    /// without driving keystrokes.
+    public func setCursorOffsetForTesting(_ offset: Int) {
+        textView.string = session.scenes[session.currentSceneId ?? UUID()]?.prose ?? textView.string
+        textView.setSelectedRange(NSRange(location: offset, length: 0))
+    }
+
+    /// Test-only — public alias for `refreshFromSession()` so smoke
+    /// tests can re-pull state after mutating the session.
+    public func reloadFromSession() {
+        refreshFromSession()
+    }
+
     // MARK: - Session ↔ text-storage sync
 
     private func refreshFromSession() {

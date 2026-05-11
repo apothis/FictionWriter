@@ -54,6 +54,10 @@ let suites: [TestSuite] = [
     phase2LorebookIntegrationTests(),
     phase2SnapshotsTests(),
     phase2SnapshotOnRewriteTests(),
+    phase2EntityAutocompleteTests(),
+    phase2EntityReferenceTests(),
+    phase2MentionContextTests(),
+    phase2EditorMentionTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
