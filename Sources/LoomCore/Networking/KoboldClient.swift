@@ -7,19 +7,28 @@ public struct GenerateRequest {
     public var maxContextLength: Int
     /// Per-request override for the reply token cap. nil = use params.maxLength.
     public var maxLengthOverride: Int?
+    /// Optional GBNF grammar string that constrains token sampling to
+    /// grammar-conformant tokens. KoboldCpp's `grammar` parameter on
+    /// `/api/v1/generate` (verified against the production server
+    /// 2026-05-11). Phase 4 #7 (knowledge-ledger extraction) uses this
+    /// to guarantee well-formed JSON output without prompt tricks; see
+    /// LedgerExtraction.gbnfGrammar() + LOOM_LEDGER_SPIKE §8.1.
+    public var grammar: String?
 
     public init(
         prompt: String,
         stopSequences: [String] = [],
         params: SamplerParams,
         maxContextLength: Int,
-        maxLengthOverride: Int? = nil
+        maxLengthOverride: Int? = nil,
+        grammar: String? = nil
     ) {
         self.prompt = prompt
         self.stopSequences = stopSequences
         self.params = params
         self.maxContextLength = maxContextLength
         self.maxLengthOverride = maxLengthOverride
+        self.grammar = grammar
     }
 }
 
@@ -175,18 +184,31 @@ public final class KoboldClient: NSObject, URLSessionDataDelegate, KoboldGenerat
         maxContextLength: Int,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
+        generate(
+            request: GenerateRequest(
+                prompt: prompt,
+                stopSequences: stopSequences,
+                params: params,
+                maxContextLength: maxContextLength
+            ),
+            completion: completion
+        )
+    }
+
+    /// Non-streaming generation taking a full `GenerateRequest`. Use
+    /// this overload when you need to pass fields beyond the basic
+    /// prompt/sampler set — specifically `grammar` for GBNF-constrained
+    /// extraction calls (LedgerSpike / Phase 4 #7).
+    public func generate(
+        request: GenerateRequest,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
         guard let url = URL(string: "/api/v1/generate", relativeTo: baseURL)?.absoluteURL else {
             completion(.failure(KoboldError.badURL)); return
         }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let request = GenerateRequest(
-            prompt: prompt,
-            stopSequences: stopSequences,
-            params: params,
-            maxContextLength: maxContextLength
-        )
         req.httpBody = try? JSONSerialization.data(withJSONObject: nonStreamBody(for: request))
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 600
@@ -290,7 +312,7 @@ public final class KoboldClient: NSObject, URLSessionDataDelegate, KoboldGenerat
 
     private func baseBody(for r: GenerateRequest) -> [String: Any] {
         let p = r.params
-        return [
+        var body: [String: Any] = [
             "prompt": r.prompt,
             "max_length": r.maxLengthOverride ?? p.maxLength,
             "max_context_length": r.maxContextLength,
@@ -309,5 +331,9 @@ public final class KoboldClient: NSObject, URLSessionDataDelegate, KoboldGenerat
             "xtc_threshold": p.xtcThreshold,
             "xtc_probability": p.xtcProbability,
         ]
+        if let grammar = r.grammar, !grammar.isEmpty {
+            body["grammar"] = grammar
+        }
+        return body
     }
 }

@@ -41,7 +41,7 @@ public enum LedgerExtraction {
         }
     }
 
-    public enum Certainty: String, Codable, Equatable {
+    public enum Certainty: String, Codable, Equatable, CaseIterable {
         case asserted
         case suspected
         case unknown
@@ -108,38 +108,66 @@ public enum LedgerExtraction {
             return String(data: data, encoding: .utf8) ?? "[]"
         }()
 
-        // Two load-bearing tail elements:
-        //
-        // 1. `JSON output:\n[` force-prefill — without the `[`, Qwen-
-        //    class base models reading the §3.3 prompt verbatim treat
-        //    the scene prose as document-complete and emit EOS
-        //    immediately (observed: completion_tokens=1, empty text).
-        //    Starting the prompt inside a JSON array forces the model
-        //    to continue the structure.
-        //
-        // 2. The downstream parser already handles preamble/postamble
-        //    and anchors on the outermost `[`/`]`, so the synthesized
-        //    leading `[` doesn't need to be stripped here.
+        // The GBNF grammar (`LedgerExtraction.gbnfGrammar`) enforces
+        // the JSON shape and the certainty enum — the prompt body
+        // doesn't need to repeat schema instructions. Empirically,
+        // long schema-explanation prompts bias the model toward
+        // emitting `[]` ("nothing to extract") even with the grammar
+        // forcing valid JSON. Keep the prompt short, give it the
+        // bible + scene + a clear "extract facts" framing.
         return """
-        Read the scene below. Extract factual claims about characters present in or referenced by the scene. For each fact, output a JSON object with:
-        - character_id: which character this fact is about (use NAME or ALIAS).
-        - fact: natural-language assertion (one sentence, third-person).
-        - certainty: "asserted" if shown clearly, "suspected" if hinted, "unknown" if explicitly NOT known by this character, "mistaken" if the character holds a wrong belief.
-        - evidence_quote: short quote from the scene supporting the assertion.
+        Extract factual claims about the listed characters from the scene below. List one entry per fact the character DID or LEARNED in this scene. Be thorough — capture every clear action and observation.
 
-        Distinguish what the character DID or LEARNED in this scene from what was already true.
-        Do not infer beyond the text. Do not invent.
-        Output a JSON array. Empty array if no claims extractable.
-
-        Bible characters (names + aliases):
+        Characters (names + aliases):
         \(characterListJSON)
 
         Scene:
         \(scenePose)
 
-        JSON output:
-        [
+        Facts (JSON array):
         """
+    }
+
+    // MARK: - GBNF grammar (LOOM_LEDGER_SPIKE §8.1)
+
+    /// GBNF grammar string for the §3.3 JSON-array schema. Passed to
+    /// KoboldCpp's `grammar` parameter (verified working against the
+    /// production server 2026-05-11) — gives the model a structural
+    /// guarantee of well-formed JSON output, sidestepping the brittle
+    /// prompt-engineering workarounds documented in LOOM_LEDGER_SPIKE
+    /// §5 (force-prefilled `[`, malformed-JSON recovery parser, etc).
+    ///
+    /// `certainties` controls the certainty-value enum the grammar
+    /// allows the model to emit. The production extractor passes
+    /// `[.asserted]` (negative knowledge is derived from scene-exposure
+    /// rather than extracted, per §8.3); callers that want the full
+    /// §3.3 schema can pass all four. Order in the array determines
+    /// the order in the grammar alternation — has no semantic effect
+    /// but may bias sampling slightly toward earlier-listed values.
+    public static func gbnfGrammar(certainties: [Certainty] = Certainty.allCases) -> String {
+        let certAlternation = certainties.map { "\"\\\"\($0.rawValue)\\\"\"" }.joined(separator: " | ")
+        // GBNF for KoboldCpp / llama.cpp.
+        //
+        // Two empirical guards baked in:
+        //
+        // 1. Multi-line rule definitions failed grammar compilation
+        //    on KoboldCpp v1.111 (returned `completion_tokens: 1`
+        //    with empty text). The fact rule is kept on one line.
+        //
+        // 2. `ws ::= " "?` instead of `ws ::= [ \t\n\r]*`. The latter
+        //    let the model emit unbounded whitespace between fields
+        //    and stall in a degenerate state (observed: 2148 chars of
+        //    `\n` between `"certainty":` and the value, eating the
+        //    max_length budget). A single optional space is plenty —
+        //    the parser doesn't need pretty-printing.
+        //
+        // String rule uses simpler-than-RFC-8259 escape handling
+        // (`([^"\\] | "\\" .)*`); the model is unlikely to emit
+        // invalid escapes when generating English prose facts.
+        return "root ::= \"[\" ws (fact (ws \",\" ws fact)*)? ws \"]\"\n"
+            + "fact ::= \"{\" ws \"\\\"character_id\\\":\" ws string ws \",\" ws \"\\\"fact\\\":\" ws string ws \",\" ws \"\\\"certainty\\\":\" ws (\(certAlternation)) ws \",\" ws \"\\\"evidence_quote\\\":\" ws string ws \"}\"\n"
+            + "string ::= \"\\\"\" ([^\"\\\\] | \"\\\\\" .)* \"\\\"\"\n"
+            + "ws ::= \" \"?"
     }
 
     // MARK: - Response parser

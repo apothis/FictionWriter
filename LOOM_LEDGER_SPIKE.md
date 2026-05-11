@@ -132,6 +132,226 @@ The pieces from this spike that graduate into production:
 - The fixture — keep, extend as Phase 4 hits real manuscripts.
 - The `LedgerSpike` executable — keep as a one-off runner for future eval re-runs against new models / new prompts.
 
+## 8. Research follow-on (2026-05-11 evening) — four structural wins
+
+After §6's PROCEED-with-caveats verdict landed, a research pass against
+Qwen3 / KoboldCpp / structured-extraction prior art surfaced four
+structural improvements that supersede the brittle prompt-engineering
+recommendations in §5. **These are the new Phase 4 #7 plan.**
+
+### 8.1 GBNF grammar-constrained decoding (the headline win)
+
+KoboldCpp's `/api/v1/generate` and `/v1/chat/completions` both accept a
+`grammar` parameter — a GBNF (llama.cpp grammar format) string that
+constrains token sampling to grammar-conformant tokens. This is a
+**structural guarantee**, not a prompt hope:
+
+- 100% well-formed JSON by construction (the parser fallback in §5.3
+  becomes dead code).
+- The model literally cannot emit `<think>` tags if the grammar root is
+  a JSON array (§5.1's max_length-eating problem vanishes).
+- The model literally cannot emit EOS at the start if the grammar
+  forces `[` as the first token (§5.4's force-prefill becomes
+  unnecessary — the grammar IS the prefill).
+
+**Verified against the live server (2026-05-11):** a 4-line GBNF
+returning `[{"character": "Mia", "fact": "drank wine"}]` with
+`completion_tokens: 29` and `finish_reason: "stop"`, no preamble, no
+malformed output, no thinking-mode leakage. The §5 workarounds become
+obsolete in one move.
+
+References:
+- [KoboldCpp Wiki — `grammar` parameter](https://github.com/LostRuins/koboldcpp/wiki)
+- [llama.cpp grammars README](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md)
+- [llama.cpp `json.gbnf` reference](https://github.com/ggml-org/llama.cpp/blob/master/grammars/json.gbnf)
+- [Aidan Cooper — Constrained decoding survey](https://www.aidancooper.co.uk/constrained-decoding/) (industry numbers: "prompted JSON ~70-80% syntactic compliance; grammar-constrained ~100%; even phi-3-mini becomes perfectly reliable under grammar constraints")
+
+### 8.2 `enable_thinking=false` for Qwen3 (belt-and-braces with §8.1)
+
+KoboldCpp v1.90+ accepts `chat_template_kwargs.enable_thinking=false`
+on `/v1/chat/completions`, or `--reasoning-budget 0` at server launch.
+Per-request body example:
+
+```json
+{
+  "messages": [...],
+  "chat_template_kwargs": {"enable_thinking": false}
+}
+```
+
+For `/api/v1/generate` (the path Loom uses today), the documented
+fallback is appending `/no_think` to the user message text (per the
+Qwen3 model card). Grammar (§8.1) already prevents `<think>` emission;
+this is redundant but cheap insurance for non-grammar contexts.
+
+References:
+- [KoboldCpp issue #1997 — `chat_template_kwargs` support](https://github.com/LostRuins/koboldcpp/issues/1997)
+- [Qwen3 docs — `enable_thinking`](https://qwen.readthedocs.io/en/latest/getting_started/quickstart.html)
+- [Qwen3 `/no_think` placement](https://github.com/QwenLM/Qwen3/discussions/1329) (note: user message, not system)
+
+### 8.3 `unknown` as scene-exposure derivation, not LLM extraction
+
+The spike's most useful negative finding (§3.e — `unknown` recall 0/2)
+matches the design-doc warning at LOOM_STORY_BIBLE §3.5, but the prior
+art surfaces a cleaner solution than "manual authoring only":
+
+**SymbolicToM (Sclar et al. ACL 2023 Outstanding Paper)** maintains
+explicit per-character belief graphs *external* to the LLM. The LLM is
+never asked "what does X not know?" — instead, an exposure set is
+maintained from scene metadata (which scenes the character was POV /
+present-for), and `unknown` is computed as set-difference at query
+time. The LLM only ever does the easy direction (extract positive
+facts from prose it sees).
+
+For Loom's data model this is a natural fit because scene metadata
+already carries POV (`Scene.pov`) and (via the manuscript walk + bible
+keyed-injection plumbing from Phase 2) per-scene character presence.
+The implementation is:
+
+1. The extractor emits only `asserted` facts (positive observations from
+   the prose). Drop the `unknown` / `mistaken` certainty levels from the
+   extractor's grammar — they're not extracted.
+2. Each `KnownFact` is stamped with the `sourceSceneId` it was extracted
+   from (already in the schema, [LOOM_DATA_MODEL.md §3.1](LOOM_DATA_MODEL.md)).
+3. A new pure-data query: `Character.knows(fact:asOfSceneId:in:)` walks
+   scenes chronologically ≤ the query scene, checks `Scene.pov ==
+   character.id || presence-set contains character.id`, and returns
+   true iff the fact appears in an extracted ledger from an exposing
+   scene.
+4. `mistaken` stays as a manual-authoring path in the Bible inspector
+   (rare; user surfaces it explicitly when prose contradicts a
+   character's belief).
+
+This sidesteps the local-model-can't-do-negative-knowledge problem
+entirely, AND it's empirically defensible — the spike already shows
+positive-fact extraction at ~70% recall.
+
+References:
+- [SymbolicToM arxiv 2306.00924](https://arxiv.org/abs/2306.00924) / [code](https://github.com/msclar/symbolictom)
+- [Lookbacks for belief tracking arxiv 2505.14685](https://arxiv.org/html/2505.14685) (confirms LLMs implement belief-tracking as pointer-dereference, not first-class belief representation — no native operation for "facts X has not been exposed to")
+
+### 8.4 Optional follow-ons (Phase 4.5+, not Phase 4)
+
+Surfaced by the research, NOT load-bearing for Phase 4 #7:
+
+- **CHIRON two-stage extract-then-NLI-validate** ([arxiv 2406.10190](https://arxiv.org/abs/2406.10190)) — if grammar-constrained extraction shows accuracy problems, add a small NLI validator that filters non-entailed facts before they reach the Suggestions UI. Defer until measured.
+- **Smaller, non-thinking extractor model** — Mistral-Small-3-24B or Phi-4-14B (abliterated for NSFW) at the role-routed summariser server. 3-5× faster than the 27B writer; equivalent JSON quality under grammar constraint. Defer until latency is the bottleneck.
+- **Per-character isolation** as a fallback ladder — if one-shot whole-scene under-extracts, loop per-character with the same grammar. Cheap to bolt on once §8.1 is wired.
+
+### 8.5 Revised recommendation (supersedes §6)
+
+The four §8 wins are **server-config + schema changes only** — no
+fragile new prompts, no model swap, no UX rework. They turn the
+spike's "PROCEED with caveats" into "PROCEED with structural
+guarantees." Specifically:
+
+1. Build GBNF for the §3.3 fact schema and pass it as `grammar` on
+   every extraction call.
+2. Drop the force-prefill `[` from the prompt builder; the grammar IS
+   the prefill.
+3. Drop the malformed-JSON fallback parser; grammar-constrained output
+   is well-formed by construction. Keep the per-object recovery code
+   path as a safety net (cheap), but expect it to be dead code.
+4. Append `/no_think` to the user message as belt-and-braces; consider
+   the `chat_template_kwargs` path once we migrate to ChatML.
+5. Reframe the extractor's job as "emit positive `asserted` facts
+   only." Drop `unknown` / `mistaken` from the grammar. Compute
+   `unknown` from the per-character scene-exposure graph at query time.
+6. Defer CHIRON-validate and extractor-model-swap to Phase 4.5+.
+
+The spike's pure-data plumbing (prompt builder, parser, scorer,
+fixture) stays — the grammar is bolted on as an additional parameter,
+the rest of the contract is unchanged.
+
+## 9. Post-research empirical findings (grammar-constrained Qwen3.6-27B)
+
+The §8 research surfaced four structural improvements. The headline
+one — GBNF grammar-constrained decoding — landed in the codebase
+(`LedgerExtraction.gbnfGrammar()`, threaded through
+`GenerateRequest.grammar`, wired into `LedgerSpike`). Re-ran the eval
+against the production server with the new shape: short prompt,
+grammar-constrained output, `asserted`-only certainty, `rep_pen=1.1`
+(needed to break degenerate-loop output), `max_length=1024` (now
+sufficient because grammar prevents `<think>` emission).
+
+### 9.1 Structural wins, confirmed
+
+- **JSON is always well-formed.** No malformed-JSON failures across
+  any scene. The fallback per-object recovery parser is dead code as
+  predicted in §8.5.
+- **No `<think>` leakage.** Grammar root being a JSON array literally
+  prevents `<` emission. The `ThinkBlockStripper` is no longer in the
+  extraction code path.
+- **No force-prefill required.** Grammar forces `[` as the first token.
+
+### 9.2 Content-quality bottleneck, NOT solved by grammar
+
+Grammar fixes the SHAPE; the model's CONTENT under grammar constraint
+on this fixture is still rough on Qwen3.6-27B:
+
+- **Prompt-text leakage into strings.** Multiple scenes produced facts
+  with `evidence_quote` containing chunks of the spike's own prompt
+  text (e.g. *"List one entry per fact the character DID or LEARNED in
+  this scene…"* embedded inside an `evidence_quote`). The grammar
+  doesn't constrain string CONTENT, only string shape.
+- **Mid-generation degeneration.** Scenes 1 and 4 routinely produce
+  empty arrays (`[]`) under conservative sampling; bumping `rep_pen`
+  to break repetition loops on scenes 1+3 caused scenes 1+4 to give
+  up entirely. There's a narrow sampler window where extraction
+  works; outside it, the model degenerates.
+- **Random capitalisation in string content.** *"DECIDED"*, *"KNOWN"*,
+  *"BEEN"* in fact text. The model is in a near-degenerate state under
+  grammar constraint and emits random-cased tokens.
+
+### 9.3 Honest interpretation
+
+Grammar-constrained decoding is the right structural fix and graduates
+into production unchanged. But Qwen3.6-27B-abliterated is empirically
+**not a good extraction model** even with the grammar shape locked
+down — the model was tuned for creative writing, and the grammar
+makes its content-quality issues more obvious by forcing it into a
+narrow output shape.
+
+### 9.4 Revised recommendation (replaces §8.5)
+
+1. **Ship the grammar plumbing now** as a structural improvement.
+   `GenerateRequest.grammar`, `LedgerExtraction.gbnfGrammar`,
+   simplified extraction prompt — all already wired and tested.
+2. **The extractor model must NOT be the primary writing model.**
+   This is the single most actionable conclusion from this iteration.
+   Run the extractor side-call against a smaller, extraction-tuned
+   model on the role-routed summariser server (RPClient's pattern,
+   already supported). Research §5 candidates: **Mistral-Small-3-24B**
+   (non-thinking, fast, JSON-strong), **Phi-4-14B** (non-thinking,
+   strongest small-model JSON compliance under grammar — note: needs
+   abliterated variant for NSFW), or **Qwen2.5-7B-Instruct-Uncensored**
+   (NSFW-tolerant, ~3-5× faster than Qwen3-27B, comparable JSON
+   quality under grammar).
+3. **Re-run the spike against the new extractor model.** Same
+   fixture, same grammar, same scorer — apples-to-apples comparison.
+   If the new model produces clean content under grammar (no prompt
+   leakage, no degenerate loops, no random caps), Phase 4 #7 ships.
+   If it has the same problems, the recommendation flips to "manual
+   ledger authoring only; defer auto-extraction to Phase 5+".
+4. **Compute `unknown` knowledge from scene-exposure regardless.**
+   Per §8.3, this is the right design independent of which model
+   handles the extractor side-call.
+
+### 9.5 What graduated into production from this spike
+
+- [`LedgerExtraction.swift`](Sources/LoomCore/Generation/LedgerExtraction.swift) — prompt builder (simplified), parser (with per-object fallback as safety net), scorer, GBNF grammar generator. 15 tests pinning behaviour.
+- [`KoboldClient.generate(request:completion:)`](Sources/LoomCore/Networking/KoboldClient.swift) overload — accepts a full `GenerateRequest`, supports the `grammar` field.
+- [`Tools/LedgerSpike/main.swift`](Tools/LedgerSpike/main.swift) — eval runner. Keep for re-running against alternative extractor models (the §9.4 next step).
+- [`Tests/LoomCoreTests/Fixtures/LedgerSpike/fixture.json`](Tests/LoomCoreTests/Fixtures/LedgerSpike/fixture.json) — 5 scenes, 20 hand-graded gold facts, mixed SFW/NSFW.
+
+### 9.6 What did NOT graduate
+
+- The force-prefilled `[` in the prompt → grammar handles it.
+- The `ThinkBlockStripper` in the extraction parse path → grammar prevents `<think>`.
+- The `max_length ≥ 2048` requirement → grammar's no-think output fits in 1024.
+- The `unknown` / `mistaken` certainty values in the extractor grammar (the production grammar passes `[.asserted]`).
+- Detailed schema documentation in the prompt body → simplified to a two-line "extract facts about these characters" framing.
+
 ## 7. References
 
 - [LOOM_STORY_BIBLE.md §3](LOOM_STORY_BIBLE.md) — extraction pipeline spec.

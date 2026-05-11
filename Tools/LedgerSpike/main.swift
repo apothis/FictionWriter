@@ -103,18 +103,27 @@ func extractSceneSync(
 
     // Tight sampler — extraction wants deterministic JSON, not creative
     // prose. Temperature 0.3, no XTC (which actively pushes the model
-    // away from common-token JSON syntax). maxLength bumped to 4096
-    // because Qwen-class models emit `<think>...</think>` blocks that
-    // can consume hundreds of tokens before the JSON; we strip the
-    // think block downstream via ThinkBlockStripper.
+    // away from common-token JSON syntax). max_length 1024 is now
+    // sufficient because the GBNF grammar (below) prevents `<think>`
+    // emission by construction (LOOM_LEDGER_SPIKE §8.1) — the budget
+    // that used to be consumed by thinking is freed for the actual
+    // extraction.
     let params = SamplerParams(
-        temperature: 0.3,
+        temperature: 0.2,
         topP: 0.95,
         topK: 0,
         minP: 0.05,
-        repPen: 1.0,
-        repPenRange: 256,
-        maxLength: 2048,
+        // rep_pen is load-bearing for extraction. Empirically observed
+        // (LOOM_LEDGER_SPIKE iteration): rep_pen=1.0 lets the model
+        // get stuck in a degenerate loop emitting the same fact
+        // object repeatedly, often with the prompt itself leaking into
+        // evidence_quote strings. rep_pen=1.1 with a 512-token window
+        // breaks the loop without affecting JSON syntax (the grammar
+        // enforces syntax; rep_pen only penalises content-token
+        // repeats).
+        repPen: 1.1,
+        repPenRange: 512,
+        maxLength: 1024,
         dryMultiplier: 0.0,
         dryBase: 1.75,
         dryAllowedLength: 2,
@@ -122,14 +131,25 @@ func extractSceneSync(
         xtcProbability: 0.0
     )
 
+    // Phase 4 #7 production posture (LOOM_LEDGER_SPIKE §8.3):
+    // the extractor's grammar emits ONLY `asserted` facts. Negative
+    // knowledge (`unknown` / `mistaken`) is derived from a per-
+    // character scene-exposure graph at query time rather than asked
+    // of the model — the spike's §3.e finding (recall 0/2 on unknown)
+    // confirmed that local models cannot extract negative knowledge
+    // reliably.
+    let grammar = LedgerExtraction.gbnfGrammar(certainties: [.asserted])
+
     let sem = DispatchSemaphore(value: 0)
     var response: Result<String, Error> = .failure(NSError(domain: "Spike", code: -1))
-    client.generate(
+    let req = GenerateRequest(
         prompt: prompt,
         stopSequences: [],
         params: params,
-        maxContextLength: maxContextLength
-    ) { result in
+        maxContextLength: maxContextLength,
+        grammar: grammar
+    )
+    client.generate(request: req) { result in
         response = result
         sem.signal()
     }
@@ -149,23 +169,12 @@ func extractSceneSync(
         )
     }
 
-    // Strip `<think>...</think>` thinking-mode preambles before
-    // parsing — Qwen3-family models emit these by default. Without
-    // stripping, the parser's outermost-bracket heuristic can fall
-    // through to whatever brackets live INSIDE the think block.
-    //
-    // Also synthesize a leading `[` if the model's response doesn't
-    // contain one: the prompt force-prefills the array opening to
-    // bypass Qwen's empty-completion bug, so the response starts
-    // inside the array. The parser anchors on outermost `[`/`]`, so
-    // we prepend `[` here if missing.
-    var stripped = ThinkBlockStripper.strip(raw)
-    if stripped.firstIndex(of: "[") == nil {
-        stripped = "[" + stripped
-    }
-
+    // With grammar-constrained decoding the model emits a well-formed
+    // JSON array directly — no `<think>` blocks (the grammar root
+    // doesn't permit `<`), no preamble, no force-prefill. Pass raw
+    // straight to the parser.
     do {
-        let extracted = try LedgerExtraction.parseExtractedFacts(stripped)
+        let extracted = try LedgerExtraction.parseExtractedFacts(raw)
         let gold = scene.gold_facts.map { $0.asExtracted() }
         // Use the fixture's canonical alias map.
         // Hard-coded for now; would be loaded from fixture for richer cases.

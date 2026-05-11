@@ -23,7 +23,7 @@ func phase4LedgerExtractionTests() -> TestSuite {
 
     // MARK: - Prompt builder (LOOM_STORY_BIBLE §3.3)
 
-    s.test("prompt embeds the JSON character list verbatim under the Bible characters header") {
+    s.test("prompt embeds the JSON character list with names + aliases") {
         let chars = [
             LedgerExtraction.CharacterRef(name: "Mia", aliases: ["Miss Vance", "the librarian"]),
             LedgerExtraction.CharacterRef(name: "Anders", aliases: []),
@@ -33,8 +33,8 @@ func phase4LedgerExtractionTests() -> TestSuite {
             scenePose: "The wind picked up."
         )
         try expectTrue(
-            prompt.contains("Bible characters (names + aliases):"),
-            "prompt missing the bible-characters header"
+            prompt.lowercased().contains("character"),
+            "prompt should mention characters"
         )
         try expectTrue(
             prompt.contains("\"name\":\"Mia\""),
@@ -61,26 +61,26 @@ func phase4LedgerExtractionTests() -> TestSuite {
         try expectTrue(prompt.contains(prose), "scene prose not embedded verbatim")
     }
 
-    s.test("prompt asks the model to emit a JSON array with the §3.3 schema") {
+    s.test("prompt asks for a JSON array of facts and frames the task as extraction") {
         let prompt = LedgerExtraction.buildExtractionPrompt(
             characters: [LedgerExtraction.CharacterRef(name: "X", aliases: [])],
             scenePose: ""
         )
-        // Pin the §3.3 schema fields and the "JSON array" expectation —
-        // these are the parts the response parser depends on. If the
-        // model ignores them the extractor's downstream parsing fails;
-        // the failure is then a model-quality signal, not a prompt bug.
-        try expectTrue(prompt.contains("character_id"), "schema field character_id missing")
-        try expectTrue(prompt.contains("fact"), "schema field fact missing")
-        try expectTrue(prompt.contains("certainty"), "schema field certainty missing")
-        try expectTrue(prompt.contains("evidence_quote"), "schema field evidence_quote missing")
-        try expectTrue(prompt.contains("asserted"), "certainty value 'asserted' missing")
-        try expectTrue(prompt.contains("suspected"), "certainty value 'suspected' missing")
-        try expectTrue(prompt.contains("unknown"), "certainty value 'unknown' missing")
-        try expectTrue(prompt.contains("mistaken"), "certainty value 'mistaken' missing")
+        // The grammar (gbnfGrammar) is the load-bearing source of truth
+        // for the schema — the prompt no longer needs to repeat schema
+        // field names or the certainty enum. What the prompt MUST do:
+        // (a) frame the task as fact-extraction, (b) include "JSON
+        // array" so the model has a clear output shape in mind, (c)
+        // include "fact" / "facts" to anchor what we want.
+        // (LOOM_LEDGER_SPIKE §8.1: prompt-engineering minimised; grammar
+        // does the structural enforcement.)
+        try expectTrue(
+            prompt.lowercased().contains("fact"),
+            "prompt should frame the task around facts"
+        )
         try expectTrue(
             prompt.contains("JSON array"),
-            "prompt should request a JSON array — the parser depends on it"
+            "prompt should request a JSON array — sets the model's frame"
         )
     }
 
@@ -224,6 +224,35 @@ func phase4LedgerExtractionTests() -> TestSuite {
         let aliases: [String: String] = ["Miss Vance": "Mia", "the librarian": "Mia"]
         let score = LedgerExtraction.score(extracted: extracted, gold: gold, aliases: aliases)
         try expectEqual(score.truePositives, 1, "alias-resolved match should count as true positive")
+    }
+
+    // MARK: - GBNF grammar (LOOM_LEDGER_SPIKE §8.1)
+
+    s.test("grammar describes a JSON array of ledger-fact objects") {
+        let g = LedgerExtraction.gbnfGrammar()
+        // Root must produce a JSON array.
+        try expectTrue(g.contains("root"), "grammar must have a root production")
+        try expectTrue(g.contains("\"[\""), "grammar must open with literal `[`")
+        try expectTrue(g.contains("\"]\""), "grammar must close with literal `]`")
+        // The fact object must constrain the four schema fields by name.
+        try expectTrue(g.contains("character_id"), "schema field character_id missing from grammar")
+        try expectTrue(g.contains("fact"), "schema field fact missing from grammar")
+        try expectTrue(g.contains("certainty"), "schema field certainty missing from grammar")
+        try expectTrue(g.contains("evidence_quote"), "schema field evidence_quote missing from grammar")
+        // Certainty values must be restricted to the §3.3 enum. Per §8.3
+        // the production extractor's grammar emits ONLY `asserted` —
+        // `unknown` / `mistaken` are derived from scene-exposure rather
+        // than extracted — but we keep the full enum here so the helper
+        // is reusable when callers want it. The runtime grammar used by
+        // LedgerSpike is built via `gbnfGrammar(certainties:)`.
+        try expectTrue(g.contains("asserted"), "certainty `asserted` missing from grammar")
+    }
+
+    s.test("grammar can restrict certainty to a subset (asserted-only for Phase 4 #7)") {
+        let g = LedgerExtraction.gbnfGrammar(certainties: [.asserted])
+        try expectTrue(g.contains("asserted"), "asserted must be in restricted grammar")
+        try expectFalse(g.contains("suspected"), "suspected must NOT appear in asserted-only grammar")
+        try expectFalse(g.contains("mistaken"), "mistaken must NOT appear in asserted-only grammar")
     }
 
     return s
