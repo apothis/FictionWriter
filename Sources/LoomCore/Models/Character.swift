@@ -29,6 +29,11 @@ public struct Character: Codable, Equatable {
     /// Phase 2 #3 — fandom-specific extension slots (HP `house`,
     /// MCU `team`, etc.). HANDOFF §9.4 risk #2: minimal shape.
     public var customFields: [CharacterCustomField]
+    /// Phase 2 #7 — prompt-assembler activation mode for this
+    /// entity. Defaults to `.constant` (existing always-on
+    /// behaviour); user opts into `.keyed` to trigger injection
+    /// only when the entity name/alias appears in recent prose.
+    public var injectionMode: InjectionMode
 
     public init(
         id: UUID = UUID(),
@@ -45,7 +50,8 @@ public struct Character: Codable, Equatable {
         avatarPath: String? = nil,
         knownFactsBySceneId: [UUID: [KnownFact]] = [:],
         canonBrief: String? = nil,
-        customFields: [CharacterCustomField] = []
+        customFields: [CharacterCustomField] = [],
+        injectionMode: InjectionMode = .constant
     ) {
         self.id = id
         self.name = name
@@ -62,6 +68,7 @@ public struct Character: Codable, Equatable {
         self.knownFactsBySceneId = knownFactsBySceneId
         self.canonBrief = canonBrief
         self.customFields = customFields
+        self.injectionMode = injectionMode
     }
 
     public init(from decoder: Decoder) throws {
@@ -81,6 +88,7 @@ public struct Character: Codable, Equatable {
         self.knownFactsBySceneId = try c.decodeIfPresent([UUID: [KnownFact]].self, forKey: .knownFactsBySceneId) ?? [:]
         self.canonBrief = try c.decodeIfPresent(String.self, forKey: .canonBrief)
         self.customFields = try c.decodeIfPresent([CharacterCustomField].self, forKey: .customFields) ?? []
+        self.injectionMode = try c.decodeIfPresent(InjectionMode.self, forKey: .injectionMode) ?? .constant
     }
 
     public static func empty(name: String) -> Character {

@@ -450,6 +450,17 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
         reload()
     }
 
+    /// Phase 2 #7 — sets the injection mode on the currently-selected
+    /// entity. Routed from the detail editor's mode pill.
+    public func setInjectionMode(_ mode: InjectionMode) {
+        guard let sel = viewModel.selection else { return }
+        session.setInjectionMode(mode, for: sel)
+        // The session-change observer reloads, but call sync so the
+        // detail editor's mode pill reflects the new value
+        // immediately.
+        reload()
+    }
+
     public func reload() {
         guard let stack = listStack else { return }
         // A delete elsewhere may have invalidated our ref.
@@ -550,11 +561,13 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
             ])
             return
         }
-        let editor = BibleDetailEditor(ref: sel, session: session) { [weak self] in
-            self?.saveIndicator.flash()
-        } onDelete: { [weak self] in
-            self?.deleteSelected()
-        }
+        let editor = BibleDetailEditor(
+            ref: sel,
+            session: session,
+            onChanged: { [weak self] in self?.saveIndicator.flash() },
+            onDelete: { [weak self] in self?.deleteSelected() },
+            onInjectionModeChanged: { [weak self] mode in self?.setInjectionMode(mode) }
+        )
         editor.view.translatesAutoresizingMaskIntoConstraints = false
         detailContainer.addSubview(editor.view)
         NSLayoutConstraint.activate([
@@ -638,25 +651,29 @@ private final class BibleDetailEditor {
     private let session: ProjectSession
     private let nameField: NSTextField
     private let descriptionView: NSTextView
+    private let injectionPicker: NSPopUpButton
     private let onChanged: () -> Void
     private let onDelete: () -> Void
+    private let onInjectionModeChanged: (InjectionMode) -> Void
     private var bridge: BibleDetailBridge!
 
     init(
         ref: BibleEntityRef,
         session: ProjectSession,
         onChanged: @escaping () -> Void,
-        onDelete: @escaping () -> Void
+        onDelete: @escaping () -> Void,
+        onInjectionModeChanged: @escaping (InjectionMode) -> Void
     ) {
         self.ref = ref
         self.session = session
         self.onChanged = onChanged
         self.onDelete = onDelete
+        self.onInjectionModeChanged = onInjectionModeChanged
 
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        let (initialName, initialDescription) = Self.snapshot(ref: ref, session: session)
+        let (initialName, initialDescription, initialMode) = Self.snapshot(ref: ref, session: session)
 
         let name = NSTextField(string: initialName)
         name.font = DesignTokens.Typography.title2
@@ -664,6 +681,18 @@ private final class BibleDetailEditor {
         name.placeholderString = "Name"
         name.bezelStyle = .roundedBezel
         self.nameField = name
+
+        // Phase 2 #7 — injection mode pill (Constant | Keyed).
+        let modePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        modePopup.bezelStyle = .rounded
+        modePopup.controlSize = .small
+        modePopup.font = DesignTokens.Typography.subheadline
+        modePopup.translatesAutoresizingMaskIntoConstraints = false
+        modePopup.addItem(withTitle: "Constant")
+        modePopup.addItem(withTitle: "Keyed")
+        modePopup.toolTip = "Constant: always injected. Keyed: injected when the name/alias appears in recent prose."
+        modePopup.selectItem(at: initialMode == .keyed ? 1 : 0)
+        self.injectionPicker = modePopup
 
         let desc = NSTextView()
         desc.font = DesignTokens.Typography.body
@@ -696,7 +725,23 @@ private final class BibleDetailEditor {
         deleteBtn.controlSize = .small
         deleteBtn.translatesAutoresizingMaskIntoConstraints = false
 
+        // Inject-mode row sits between the name field and the
+        // description: "Inject: [Constant | Keyed]". The pill is the
+        // user-facing affordance for Phase 2 #7.
+        let modeRow = NSStackView()
+        modeRow.translatesAutoresizingMaskIntoConstraints = false
+        modeRow.orientation = .horizontal
+        modeRow.alignment = .centerY
+        modeRow.spacing = DesignTokens.Spacing.sm
+        let modeLabel = NSTextField(labelWithString: "Inject:")
+        modeLabel.font = DesignTokens.Typography.subheadline
+        modeLabel.textColor = DesignTokens.Foreground.secondary
+        modeRow.addArrangedSubview(modeLabel)
+        modeRow.addArrangedSubview(modePopup)
+        modeRow.addArrangedSubview(NSView())   // trailing spacer
+
         container.addSubview(name)
+        container.addSubview(modeRow)
         container.addSubview(descScroll)
         container.addSubview(deleteBtn)
 
@@ -707,7 +752,11 @@ private final class BibleDetailEditor {
             deleteBtn.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
             name.trailingAnchor.constraint(equalTo: deleteBtn.leadingAnchor, constant: -DesignTokens.Spacing.sm),
 
-            descScroll.topAnchor.constraint(equalTo: name.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            modeRow.topAnchor.constraint(equalTo: name.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            modeRow.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
+            modeRow.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
+
+            descScroll.topAnchor.constraint(equalTo: modeRow.bottomAnchor, constant: DesignTokens.Spacing.sm),
             descScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
             descScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
             descScroll.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -DesignTokens.Spacing.md),
@@ -722,6 +771,8 @@ private final class BibleDetailEditor {
         desc.delegate = bridge
         deleteBtn.target = bridge
         deleteBtn.action = #selector(BibleDetailBridge.deletePressed(_:))
+        modePopup.target = bridge
+        modePopup.action = #selector(BibleDetailBridge.injectionModeChanged(_:))
     }
 
     fileprivate func writeBack() {
@@ -751,22 +802,26 @@ private final class BibleDetailEditor {
         onDelete()
     }
 
-    private static func snapshot(ref: BibleEntityRef, session: ProjectSession) -> (String, String) {
+    fileprivate func injectionModeSelected(_ mode: InjectionMode) {
+        onInjectionModeChanged(mode)
+    }
+
+    private static func snapshot(ref: BibleEntityRef, session: ProjectSession) -> (String, String, InjectionMode) {
         switch ref.category {
         case .characters:
             if let c = session.project.bible.characters.first(where: { $0.id == ref.id }) {
-                return (c.name, c.description)
+                return (c.name, c.description, c.injectionMode)
             }
         case .settings:
             if let s = session.project.bible.settings.first(where: { $0.id == ref.id }) {
-                return (s.name, s.description)
+                return (s.name, s.description, s.injectionMode)
             }
         case .objects:
             if let o = session.project.bible.objects.first(where: { $0.id == ref.id }) {
-                return (o.name, o.description)
+                return (o.name, o.description, o.injectionMode)
             }
         }
-        return ("", "")
+        return ("", "", .constant)
     }
 }
 
@@ -777,6 +832,10 @@ private final class BibleDetailBridge: NSObject, NSTextViewDelegate {
 
     @objc func nameEdited(_ sender: Any) { detail?.writeBack() }
     @objc func deletePressed(_ sender: Any) { detail?.requestDelete() }
+    @objc func injectionModeChanged(_ sender: NSPopUpButton) {
+        let mode: InjectionMode = (sender.indexOfSelectedItem == 1) ? .keyed : .constant
+        detail?.injectionModeSelected(mode)
+    }
     func textDidChange(_ notification: Notification) { detail?.writeBack() }
 }
 

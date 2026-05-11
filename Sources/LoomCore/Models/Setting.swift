@@ -12,6 +12,9 @@ public struct Setting: Codable, Equatable {
     public var sensoryNotes: String
     public var significantObjectIds: [UUID]
     public var notes: String
+    /// Phase 2 #7 — prompt-assembler activation mode. See
+    /// `InjectionMode` docstring.
+    public var injectionMode: InjectionMode
 
     public init(
         id: UUID = UUID(),
@@ -20,7 +23,8 @@ public struct Setting: Codable, Equatable {
         description: String = "",
         sensoryNotes: String = "",
         significantObjectIds: [UUID] = [],
-        notes: String = ""
+        notes: String = "",
+        injectionMode: InjectionMode = .constant
     ) {
         self.id = id
         self.name = name
@@ -29,6 +33,7 @@ public struct Setting: Codable, Equatable {
         self.sensoryNotes = sensoryNotes
         self.significantObjectIds = significantObjectIds
         self.notes = notes
+        self.injectionMode = injectionMode
     }
 
     public init(from decoder: Decoder) throws {
@@ -40,6 +45,7 @@ public struct Setting: Codable, Equatable {
         self.sensoryNotes = try c.decodeIfPresent(String.self, forKey: .sensoryNotes) ?? ""
         self.significantObjectIds = try c.decodeIfPresent([UUID].self, forKey: .significantObjectIds) ?? []
         self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        self.injectionMode = try c.decodeIfPresent(InjectionMode.self, forKey: .injectionMode) ?? .constant
     }
 }
 
@@ -54,6 +60,9 @@ public struct BibleObject: Codable, Equatable {
     public var description: String
     public var significance: String
     public var notes: String
+    /// Phase 2 #7 — prompt-assembler activation mode. See
+    /// `InjectionMode` docstring.
+    public var injectionMode: InjectionMode
 
     public init(
         id: UUID = UUID(),
@@ -61,7 +70,8 @@ public struct BibleObject: Codable, Equatable {
         aliases: [String] = [],
         description: String = "",
         significance: String = "",
-        notes: String = ""
+        notes: String = "",
+        injectionMode: InjectionMode = .constant
     ) {
         self.id = id
         self.name = name
@@ -69,6 +79,7 @@ public struct BibleObject: Codable, Equatable {
         self.description = description
         self.significance = significance
         self.notes = notes
+        self.injectionMode = injectionMode
     }
 
     public init(from decoder: Decoder) throws {
@@ -79,5 +90,6 @@ public struct BibleObject: Codable, Equatable {
         self.description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         self.significance = try c.decodeIfPresent(String.self, forKey: .significance) ?? ""
         self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        self.injectionMode = try c.decodeIfPresent(InjectionMode.self, forKey: .injectionMode) ?? .constant
     }
 }

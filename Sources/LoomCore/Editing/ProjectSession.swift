@@ -220,6 +220,25 @@ public final class ProjectSession {
         DebugLog.shared.write("[bible] deleteObject id=\(id)")
     }
 
+    /// Phase 2 #7 — sets the prompt-injection mode for a Bible
+    /// entity, irrespective of category. No-op if the ref is stale.
+    public func setInjectionMode(_ mode: InjectionMode, for ref: BibleEntityRef) {
+        switch ref.category {
+        case .characters:
+            guard var c = project.bible.characters.first(where: { $0.id == ref.id }) else { return }
+            c.injectionMode = mode
+            updateCharacter(c)
+        case .settings:
+            guard var s = project.bible.settings.first(where: { $0.id == ref.id }) else { return }
+            s.injectionMode = mode
+            updateSetting(s)
+        case .objects:
+            guard var o = project.bible.objects.first(where: { $0.id == ref.id }) else { return }
+            o.injectionMode = mode
+            updateObject(o)
+        }
+    }
+
     // MARK: - Notes + inspector tab
 
     public func updateNotes(_ notes: String) {

@@ -249,13 +249,24 @@ public enum PromptBuilder {
 
         // Style guide — Phase 5; not wired yet.
 
-        let bibleConstant = formatBibleConstant(context.project.bible)
-        if !bibleConstant.isEmpty {
+        // Phase 2 #7 — split Bible into Constant (above-cache, always-on)
+        // and Keyed (below-cache, activates only when the entity's
+        // name/alias appears in the recent-prose window). The keyed
+        // layer is built later, after we know what the recent-prose
+        // window is; constant uses the static project state and lands
+        // above the cache.
+        let constantBibleText = formatBibleEntries(
+            characters: context.project.bible.characters.filter { $0.injectionMode == .constant },
+            settings: context.project.bible.settings.filter { $0.injectionMode == .constant },
+            objects: context.project.bible.objects.filter { $0.injectionMode == .constant }
+        )
+        if !constantBibleText.isEmpty {
+            let constantCount = context.project.bible.characters.filter { $0.injectionMode == .constant }.count
             layers.append(Layer(
                 kind: .bibleConstant,
-                label: "Cast (\(context.project.bible.characters.count))",
-                content: bibleConstant,
-                tokens: TokenEstimator.estimate(bibleConstant),
+                label: "Cast (\(constantCount))",
+                content: constantBibleText,
+                tokens: TokenEstimator.estimate(constantBibleText),
                 aboveCache: true,
                 sourceId: nil,
                 evictionPriority: 100
@@ -276,6 +287,39 @@ public enum PromptBuilder {
         let an = context.project.settings.authorsNote
         let depthLines = context.project.settings.authorsNoteDepthLines
         var recentProse = buildRecentProseLayer(context)
+
+        // Phase 2 #7 — Bible-Keyed layer. The keyed entities activate
+        // against the recent-prose window the model is about to see;
+        // use the same extracted text so user expectations and the
+        // matcher agree. Placed just above the (still-empty) recent-
+        // prose layer slot — it sits below the cache boundary but
+        // above the prose so it reads as "context the model needs to
+        // know before reading the most-recent text."
+        let matchProse = recentProse?.content ?? ""
+        let activated = BibleInjector.activated(in: context.project, recentProse: matchProse)
+        let keyedCharacters = activated.characters.filter { $0.injectionMode == .keyed }
+        let keyedSettings = activated.settings.filter { $0.injectionMode == .keyed }
+        let keyedObjects = activated.objects.filter { $0.injectionMode == .keyed }
+        let keyedText = formatBibleEntries(
+            characters: keyedCharacters,
+            settings: keyedSettings,
+            objects: keyedObjects
+        )
+        if !keyedText.isEmpty {
+            let total = keyedCharacters.count + keyedSettings.count + keyedObjects.count
+            layers.append(Layer(
+                kind: .bibleKeyed,
+                label: "Keyed entries (\(total))",
+                content: keyedText,
+                tokens: TokenEstimator.estimate(keyedText),
+                aboveCache: false,
+                sourceId: nil,
+                // Lowish below-cache priority — keyed entries are
+                // valuable but evicting them is preferable to losing
+                // the recent prose itself.
+                evictionPriority: 50
+            ))
+        }
         let trimmedAN = an.trimmingCharacters(in: .whitespacesAndNewlines)
         let willInjectAN = !trimmedAN.isEmpty && recentProse != nil && depthLines > 0
         if willInjectAN, var proseLayer = recentProse {
@@ -535,22 +579,59 @@ public enum PromptBuilder {
         return nsProse.substring(with: safeRange)
     }
 
-    private static func formatBibleConstant(_ bible: Bible) -> String {
-        guard !bible.characters.isEmpty else { return "" }
-        var out = "Cast:"
-        for character in bible.characters {
-            out += "\n\n— \(character.name)"
-            if !character.role.rawValue.isEmpty {
-                out += " (\(character.role.rawValue))"
+    /// Phase 2 #7 — formats the Bible slice (already filtered to either
+    /// constant or activated-keyed entities) into a prose blob the
+    /// model can read. Empty input → empty string (caller decides
+    /// whether to emit a layer at all).
+    private static func formatBibleEntries(
+        characters: [Character],
+        settings: [Setting],
+        objects: [BibleObject]
+    ) -> String {
+        var blocks: [String] = []
+        if !characters.isEmpty {
+            var out = "Cast:"
+            for character in characters {
+                out += "\n\n— \(character.name)"
+                if !character.role.rawValue.isEmpty {
+                    out += " (\(character.role.rawValue))"
+                }
+                if !character.oneLine.isEmpty {
+                    out += ": \(character.oneLine)"
+                }
+                if !character.description.isEmpty {
+                    out += "\n\(character.description)"
+                }
             }
-            if !character.oneLine.isEmpty {
-                out += ": \(character.oneLine)"
-            }
-            if !character.description.isEmpty {
-                out += "\n\(character.description)"
-            }
+            blocks.append(out)
         }
-        return out
+        if !settings.isEmpty {
+            var out = "Places:"
+            for setting in settings {
+                out += "\n\n— \(setting.name)"
+                if !setting.description.isEmpty {
+                    out += "\n\(setting.description)"
+                }
+                if !setting.sensoryNotes.isEmpty {
+                    out += "\n(\(setting.sensoryNotes))"
+                }
+            }
+            blocks.append(out)
+        }
+        if !objects.isEmpty {
+            var out = "Objects:"
+            for object in objects {
+                out += "\n\n— \(object.name)"
+                if !object.description.isEmpty {
+                    out += "\n\(object.description)"
+                }
+                if !object.significance.isEmpty {
+                    out += "\n(significance: \(object.significance))"
+                }
+            }
+            blocks.append(out)
+        }
+        return blocks.joined(separator: "\n\n")
     }
 
     // MARK: - Template resolution + prefill
