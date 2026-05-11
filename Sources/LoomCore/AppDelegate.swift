@@ -182,7 +182,41 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         viewMenu.addItem(planView)
         viewMenuItem.submenu = viewMenu
 
+        // Bible menu — Phase 4 home for project-content actions
+        // (sphiratrioth install today; knowledge-ledger import,
+        // lorebook tools as they land).
+        let bibleMenuItem = NSMenuItem()
+        main.addItem(bibleMenuItem)
+        let bibleMenu = NSMenu(title: "Bible")
+        let installSph = NSMenuItem(
+            title: "Install Sphiratrioth Lorebook Pack",
+            action: #selector(installSphiratriothClicked),
+            keyEquivalent: "")
+        installSph.target = self
+        installSph.toolTip = "Adds the curated anti-positive-bias + sticky-scenario + weighted-outcome lorebook entries (LOOM_NSFW §2.5). Safe to re-run."
+        bibleMenu.addItem(installSph)
+        bibleMenuItem.submenu = bibleMenu
+
         NSApp.mainMenu = main
+    }
+
+    // MARK: - Bible menu actions (Phase 4)
+
+    @objc private func installSphiratriothClicked() {
+        let session = AppState.shared.currentSession
+        let added = session.installSphiratriothStarterPack()
+        DebugLog.shared.write("[bible] menu: installSphiratriothStarterPack added=\(added)")
+        let alert = NSAlert()
+        if added == 0 {
+            alert.messageText = "Already installed"
+            alert.informativeText = "All Sphiratrioth starter-pack entries are already present in this project's lorebook."
+        } else {
+            alert.messageText = "Installed \(added) Sphiratrioth entr\(added == 1 ? "y" : "ies")"
+            alert.informativeText = "Open the lorebook section of the Bible inspector to review or customise the new entries."
+        }
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     // MARK: - Plan window (Phase 3 §E)

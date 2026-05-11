@@ -470,6 +470,48 @@ public final class ProjectSession {
         DebugLog.shared.write("[bible] deleteLorebookEntry id=\(id)")
     }
 
+    /// Phase 4 §14.1 #8 / LOOM_NSFW §2.5 — install (or top up) the
+    /// Sphiratrioth starter pack. Additive by entry name: any pack
+    /// entry whose `name` is NOT already present in the project's
+    /// lorebook gets appended. Returns the number of entries added.
+    /// Re-running is safe; user-deleted entries DO come back on the
+    /// next install (no tombstones — install is "fill what's missing,"
+    /// not "honour past deletions").
+    @discardableResult
+    public func installSphiratriothStarterPack() -> Int {
+        let existingNames = Set(project.bible.lorebook.map { $0.name })
+        var added = 0
+        for template in SphiratriothStarterPack.entries where !existingNames.contains(template.name) {
+            // Allocate a fresh UUID per install so the entry is the
+            // user's to own (rename / delete / edit). The starter
+            // pack template's UUID is per-process and not stable.
+            var copy = template
+            copy = LorebookEntry(
+                id: UUID(),
+                name: template.name,
+                content: template.content,
+                activationMode: template.activationMode,
+                keys: template.keys,
+                secondaryKeys: template.secondaryKeys,
+                enabled: template.enabled,
+                priority: template.priority,
+                positionMode: template.positionMode,
+                depth: template.depth,
+                maxRecentScenesScanned: template.maxRecentScenesScanned,
+                group: template.group,
+                weight: template.weight,
+                sticky: template.sticky
+            )
+            project.bible.lorebook.append(copy)
+            added += 1
+        }
+        if added > 0 {
+            markChanged()
+            DebugLog.shared.write("[bible] installSphiratriothStarterPack added=\(added)")
+        }
+        return added
+    }
+
     /// Phase 2 #7 — sets the prompt-injection mode for a Bible
     /// entity, irrespective of category. No-op if the ref is stale.
     public func setInjectionMode(_ mode: InjectionMode, for ref: BibleEntityRef) {
