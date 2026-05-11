@@ -114,6 +114,12 @@ public struct ProjectSettings: Codable, Equatable {
     /// the decode path is lazy-versioned so Phase 1 bundles load
     /// cleanly with the literary defaults populated.
     public var writingDirection: WritingDirection
+    /// Phase 2 #6 — project-level narrative POV style.
+    /// Distinct from `Scene.pov` (which references a character).
+    /// Surfaced as a pill-picker in the Settings window.
+    public var pov: POVStyle
+    /// Phase 2 #6 — project-level narrative tense.
+    public var tense: NarrativeTense
 
     public init(
         serverProfileId: UUID? = nil,
@@ -123,7 +129,9 @@ public struct ProjectSettings: Codable, Equatable {
         authorsNoteDepthLines: Int = 4,
         memory: String = "",
         instructTemplate: InstructTemplate = .auto,
-        writingDirection: WritingDirection = .defaults
+        writingDirection: WritingDirection = .defaults,
+        pov: POVStyle = .thirdPersonLimited,
+        tense: NarrativeTense = .past
     ) {
         self.serverProfileId = serverProfileId
         self.contextBudgetTokens = contextBudgetTokens
@@ -133,6 +141,8 @@ public struct ProjectSettings: Codable, Equatable {
         self.memory = memory
         self.instructTemplate = instructTemplate
         self.writingDirection = writingDirection
+        self.pov = pov
+        self.tense = tense
     }
 
     public static let defaults = ProjectSettings()
@@ -147,6 +157,8 @@ public struct ProjectSettings: Codable, Equatable {
         self.memory = try c.decodeIfPresent(String.self, forKey: .memory) ?? ""
         self.instructTemplate = try c.decodeIfPresent(InstructTemplate.self, forKey: .instructTemplate) ?? .auto
         self.writingDirection = try c.decodeIfPresent(WritingDirection.self, forKey: .writingDirection) ?? .defaults
+        self.pov = try c.decodeIfPresent(POVStyle.self, forKey: .pov) ?? .thirdPersonLimited
+        self.tense = try c.decodeIfPresent(NarrativeTense.self, forKey: .tense) ?? .past
     }
 }
 

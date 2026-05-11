@@ -15,6 +15,13 @@ public final class ProjectSettingsTabViewController: NSViewController, NSTextFie
     private var maxOutputField: NSTextField!
     private var useServerMaxButton: NSButton!
 
+    // Phase 2 #6 — narrative-style pill pickers.
+    public private(set) var povPicker: NSPopUpButton?
+    public private(set) var tensePicker: NSPopUpButton?
+    public private(set) var directionKindPicker: NSPopUpButton?
+    public private(set) var vocabularyPicker: NSPopUpButton?
+    public private(set) var explicitnessPicker: NSPopUpButton?
+
     private var suppressWriteback: Bool = false
     private var replaceObserver: NSObjectProtocol?
 
@@ -42,6 +49,50 @@ public final class ProjectSettingsTabViewController: NSViewController, NSTextFie
             left: DesignTokens.Spacing.md,
             bottom: DesignTokens.Spacing.md,
             right: DesignTokens.Spacing.md
+        )
+
+        // Narrative style section (Phase 2 #6).
+        stack.addArrangedSubview(makeSectionLabel("Narrative Style"))
+
+        povPicker = makePicker(
+            label: "POV",
+            cases: POVStyle.allCases,
+            display: Self.povDisplayName,
+            initial: session.project.settings.pov,
+            into: stack,
+            action: #selector(povPickerChanged)
+        )
+        tensePicker = makePicker(
+            label: "Tense",
+            cases: NarrativeTense.allCases,
+            display: Self.tenseDisplayName,
+            initial: session.project.settings.tense,
+            into: stack,
+            action: #selector(tensePickerChanged)
+        )
+        directionKindPicker = makePicker(
+            label: "Direction",
+            cases: DirectionKind.allCases,
+            display: Self.directionDisplayName,
+            initial: session.project.settings.writingDirection.kind,
+            into: stack,
+            action: #selector(directionPickerChanged)
+        )
+        vocabularyPicker = makePicker(
+            label: "Vocabulary",
+            cases: VocabularyRegister.allCases,
+            display: Self.vocabularyDisplayName,
+            initial: session.project.settings.writingDirection.register,
+            into: stack,
+            action: #selector(vocabularyPickerChanged)
+        )
+        explicitnessPicker = makePicker(
+            label: "Explicitness",
+            cases: ExplicitnessLevel.allCases,
+            display: Self.explicitnessDisplayName,
+            initial: session.project.settings.writingDirection.explicitnessLevel,
+            into: stack,
+            action: #selector(explicitnessPickerChanged)
         )
 
         // Memory section
@@ -163,7 +214,45 @@ public final class ProjectSettingsTabViewController: NSViewController, NSTextFie
         depthStepper?.integerValue = session.project.settings.authorsNoteDepthLines
         contextBudgetField?.stringValue = "\(session.project.settings.contextBudgetTokens)"
         maxOutputField?.stringValue = "\(session.project.settings.generationDefaults.maxOutputTokens)"
+        Self.selectCase(POVStyle.allCases, value: session.project.settings.pov, in: povPicker)
+        Self.selectCase(NarrativeTense.allCases, value: session.project.settings.tense, in: tensePicker)
+        Self.selectCase(DirectionKind.allCases, value: session.project.settings.writingDirection.kind, in: directionKindPicker)
+        Self.selectCase(VocabularyRegister.allCases, value: session.project.settings.writingDirection.register, in: vocabularyPicker)
+        Self.selectCase(ExplicitnessLevel.allCases, value: session.project.settings.writingDirection.explicitnessLevel, in: explicitnessPicker)
         suppressWriteback = false
+    }
+
+    // MARK: - Phase 2 #6 narrative-style public API (smoke-test surface)
+
+    public var selectedPOV: POVStyle? { Self.selectedCase(POVStyle.allCases, in: povPicker) }
+    public var selectedTense: NarrativeTense? { Self.selectedCase(NarrativeTense.allCases, in: tensePicker) }
+    public var selectedDirectionKind: DirectionKind? { Self.selectedCase(DirectionKind.allCases, in: directionKindPicker) }
+    public var selectedVocabulary: VocabularyRegister? { Self.selectedCase(VocabularyRegister.allCases, in: vocabularyPicker) }
+    public var selectedExplicitness: ExplicitnessLevel? { Self.selectedCase(ExplicitnessLevel.allCases, in: explicitnessPicker) }
+
+    public func setPOV(_ pov: POVStyle) {
+        session.setPOV(pov)
+        Self.selectCase(POVStyle.allCases, value: pov, in: povPicker)
+    }
+
+    public func setTense(_ tense: NarrativeTense) {
+        session.setTense(tense)
+        Self.selectCase(NarrativeTense.allCases, value: tense, in: tensePicker)
+    }
+
+    public func setDirectionKind(_ kind: DirectionKind) {
+        session.setWritingDirectionKind(kind)
+        Self.selectCase(DirectionKind.allCases, value: kind, in: directionKindPicker)
+    }
+
+    public func setVocabulary(_ register: VocabularyRegister) {
+        session.setWritingDirectionRegister(register)
+        Self.selectCase(VocabularyRegister.allCases, value: register, in: vocabularyPicker)
+    }
+
+    public func setExplicitness(_ level: ExplicitnessLevel) {
+        session.setWritingDirectionExplicitness(level)
+        Self.selectCase(ExplicitnessLevel.allCases, value: level, in: explicitnessPicker)
     }
 
     // MARK: - Writebacks
@@ -220,6 +309,145 @@ public final class ProjectSettingsTabViewController: NSViewController, NSTextFie
             useServerMaxButton.toolTip = "Set to \(trueMax) − reply − 256 (server-probed max context)."
         } else {
             useServerMaxButton.toolTip = "No server probe data yet — start a generation first."
+        }
+    }
+
+    // MARK: - Picker actions
+
+    @objc private func povPickerChanged(_ sender: NSPopUpButton) {
+        guard !suppressWriteback,
+              let v = Self.selectedCase(POVStyle.allCases, in: sender)
+        else { return }
+        session.setPOV(v)
+    }
+
+    @objc private func tensePickerChanged(_ sender: NSPopUpButton) {
+        guard !suppressWriteback,
+              let v = Self.selectedCase(NarrativeTense.allCases, in: sender)
+        else { return }
+        session.setTense(v)
+    }
+
+    @objc private func directionPickerChanged(_ sender: NSPopUpButton) {
+        guard !suppressWriteback,
+              let v = Self.selectedCase(DirectionKind.allCases, in: sender)
+        else { return }
+        session.setWritingDirectionKind(v)
+    }
+
+    @objc private func vocabularyPickerChanged(_ sender: NSPopUpButton) {
+        guard !suppressWriteback,
+              let v = Self.selectedCase(VocabularyRegister.allCases, in: sender)
+        else { return }
+        session.setWritingDirectionRegister(v)
+    }
+
+    @objc private func explicitnessPickerChanged(_ sender: NSPopUpButton) {
+        guard !suppressWriteback,
+              let v = Self.selectedCase(ExplicitnessLevel.allCases, in: sender)
+        else { return }
+        session.setWritingDirectionExplicitness(v)
+    }
+
+    // MARK: - Picker helpers
+
+    /// Builds a "<label>:  <popup>" row, adds it to the stack, returns
+    /// the popup. Generic over the enum's `allCases` so each picker
+    /// keeps a stable index↔case mapping (used by selectedCase /
+    /// selectCase below).
+    private func makePicker<T: Equatable>(
+        label: String,
+        cases: [T],
+        display: (T) -> String,
+        initial: T,
+        into stack: NSStackView,
+        action: Selector
+    ) -> NSPopUpButton {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .firstBaseline
+        row.spacing = DesignTokens.Spacing.sm
+
+        let title = NSTextField(labelWithString: "\(label):")
+        title.font = DesignTokens.Typography.subheadline
+        title.widthAnchor.constraint(equalToConstant: 100).isActive = true
+
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        popup.bezelStyle = .rounded
+        popup.controlSize = .regular
+        popup.font = DesignTokens.Typography.subheadline
+        for value in cases {
+            popup.addItem(withTitle: display(value))
+        }
+        if let initialIndex = cases.firstIndex(of: initial) {
+            popup.selectItem(at: initialIndex)
+        }
+        popup.target = self
+        popup.action = action
+
+        row.addArrangedSubview(title)
+        row.addArrangedSubview(popup)
+        stack.addArrangedSubview(row)
+        return popup
+    }
+
+    private static func selectedCase<T>(_ cases: [T], in popup: NSPopUpButton?) -> T? {
+        guard let popup = popup else { return nil }
+        let i = popup.indexOfSelectedItem
+        guard i >= 0, i < cases.count else { return nil }
+        return cases[i]
+    }
+
+    private static func selectCase<T: Equatable>(_ cases: [T], value: T, in popup: NSPopUpButton?) {
+        guard let popup = popup, let i = cases.firstIndex(of: value) else { return }
+        popup.selectItem(at: i)
+    }
+
+    // MARK: - Display strings
+
+    private static func povDisplayName(_ value: POVStyle) -> String {
+        switch value {
+        case .firstPerson:           return "First person"
+        case .secondPerson:          return "Second person"
+        case .thirdPersonLimited:    return "Third person (limited)"
+        case .thirdPersonOmniscient: return "Third person (omniscient)"
+        }
+    }
+
+    private static func tenseDisplayName(_ value: NarrativeTense) -> String {
+        switch value {
+        case .past:    return "Past"
+        case .present: return "Present"
+        }
+    }
+
+    private static func directionDisplayName(_ value: DirectionKind) -> String {
+        switch value {
+        case .literary:   return "Literary"
+        case .mainstream: return "Mainstream"
+        case .romance:    return "Romance"
+        case .erotica:    return "Erotica"
+        case .porn:       return "Porn"
+        }
+    }
+
+    private static func vocabularyDisplayName(_ value: VocabularyRegister) -> String {
+        switch value {
+        case .clinical: return "Clinical"
+        case .literary: return "Literary"
+        case .earthy:   return "Earthy"
+        case .crude:    return "Crude"
+        case .mixed:    return "Mixed"
+        }
+    }
+
+    private static func explicitnessDisplayName(_ value: ExplicitnessLevel) -> String {
+        switch value {
+        case .fadeToBlack: return "Fade to black"
+        case .suggestive:  return "Suggestive"
+        case .onScreen:    return "On-screen"
+        case .graphic:     return "Graphic"
+        case .extreme:     return "Extreme"
         }
     }
 

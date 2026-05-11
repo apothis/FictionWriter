@@ -259,6 +259,33 @@ public final class ProjectSession {
         markDirty()
     }
 
+    // MARK: - Project narrative-style + writing direction (Phase 2 #6)
+
+    public func setPOV(_ pov: POVStyle) {
+        project.settings.pov = pov
+        markDirty()
+    }
+
+    public func setTense(_ tense: NarrativeTense) {
+        project.settings.tense = tense
+        markDirty()
+    }
+
+    public func setWritingDirectionKind(_ kind: DirectionKind) {
+        project.settings.writingDirection.kind = kind
+        markDirty()
+    }
+
+    public func setWritingDirectionRegister(_ register: VocabularyRegister) {
+        project.settings.writingDirection.register = register
+        markDirty()
+    }
+
+    public func setWritingDirectionExplicitness(_ level: ExplicitnessLevel) {
+        project.settings.writingDirection.explicitnessLevel = level
+        markDirty()
+    }
+
     // MARK: - Internals
 
     private func markChanged() {
