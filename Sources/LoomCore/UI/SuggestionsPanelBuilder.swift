@@ -16,7 +16,7 @@ import AppKit
 ///   cascade grows the window to match (HANDOFF §2.1, opposite-
 ///   direction sibling of the original shrink incident).
 public enum SuggestionsPanelBuilder {
-    public static let maxContentHeight: CGFloat = 280
+    public static let maxContentHeight: CGFloat = 360
 
     public static func build(
         suggestions: [LedgerSuggestion],
@@ -67,8 +67,16 @@ public enum SuggestionsPanelBuilder {
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.drawsBackground = false
-        scroll.borderType = .noBorder
-        scroll.autohidesScrollers = true
+        // Bordered + always-visible scroller so the panel reads as a
+        // self-contained card with an obvious overflow affordance.
+        // Without a border the panel blends into the (often-empty)
+        // description scroll view directly below, making it ambiguous
+        // where one ends and the other begins; without a visible
+        // scroller the user can't tell there are more cards to scroll
+        // to.
+        scroll.borderType = .lineBorder
+        scroll.autohidesScrollers = false
+        scroll.scrollerStyle = .legacy
         scroll.documentView = stack
 
         container.addSubview(scroll)

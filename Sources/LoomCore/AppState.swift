@@ -168,8 +168,11 @@ public final class AppState {
         result: Result<[LedgerExtraction.ExtractedFact], Error>
     ) {
         switch result {
-        case .failure(let err):
-            DebugLog.shared.write("[ledger] extraction failed for scene=\(sceneId): \(err)")
+        case .failure:
+            // The coordinator already wrote a `[ledger] extraction
+            // failed` line with the error; the extractor adapter
+            // wrote a `[ledger] parse failed raw=...` line if it was
+            // a parse error. Don't re-log here — just drop out.
             return
         case .success(let extracted):
             let bible = currentSession.project.bible
@@ -183,7 +186,22 @@ public final class AppState {
                 return
             }
             ledgerSuggestionsQueue.add(suggestions)
-            DebugLog.shared.write("[ledger] queued \(suggestions.count) suggestions for scene=\(sceneId)")
+            // Per-character breakdown so we can disambiguate "the
+            // model only emits Mia-facts" from "Anders-facts exist
+            // but the user didn't click his row to see them".
+            let perCharacterBreakdown: String = {
+                var counts: [UUID: Int] = [:]
+                for s in suggestions { counts[s.characterId, default: 0] += 1 }
+                let parts = counts.compactMap { (id, n) -> String? in
+                    let name = currentSession.project.bible.characters.first(where: { $0.id == id })?.name ?? id.uuidString.prefix(8).description
+                    return "\(name)=\(n)"
+                }
+                return parts.joined(separator: " ")
+            }()
+            // Also report how many were extracted but DROPPED by the
+            // diff (unresolved character_id or verbatim dupe).
+            let dropped = extracted.count - suggestions.count
+            DebugLog.shared.write("[ledger] queued \(suggestions.count) suggestions for scene=\(sceneId) breakdown={\(perCharacterBreakdown)} dropped=\(dropped)/\(extracted.count)")
             NotificationCenter.default.post(
                 name: Self.ledgerSuggestionsDidChangeNotification,
                 object: self

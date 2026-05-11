@@ -93,6 +93,14 @@ public final class OllamaClient {
             "stream": false,
             "options": options.asDictionary,
             "format": schema,
+            // `keep_alive` overrides Ollama's default 5-minute unload
+            // timer. With the default, a writer who pauses to think
+            // for 6+ minutes finds the model cold on their next save,
+            // and the first cold-load inference under JSON-Schema
+            // constraint occasionally emits an empty string (verified
+            // live 2026-05-11). 30 minutes covers realistic editing
+            // gaps while still letting the model unload eventually.
+            "keep_alive": "30m",
         ]
     }
 
