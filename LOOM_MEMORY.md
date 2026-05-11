@@ -366,6 +366,11 @@ Pipeline (already specified, recapped here for completeness):
 
 **Falsifiable hypothesis**: per-scene knowledge-state extraction is feasible at <13B model size. Test with a small fixture corpus before committing UI in Phase 4.
 
+**Update 2026-05-11 (post-spike, [`LOOM_LEDGER_SPIKE.md`](LOOM_LEDGER_SPIKE.md)):** Hypothesis confirmed and refined. The production extractor is `gemma4_2b` (4.6B actual params, abliterated, on Ollama) — well under the 13B threshold. Five-round empirical spike shipped:
+- §8.1 GBNF / JSON-Schema constrained decoding is non-negotiable; eliminates malformed JSON, `<think>` leakage, and force-prefill workarounds as structural guarantees.
+- §8.3 **`unknown` / `mistaken` are NOT extracted** — they're derived from a per-character scene-exposure graph at query time (SymbolicToM pattern). Local LLMs cannot reliably extract negative knowledge; the extractor's grammar emits `asserted` only.
+- §10/§11/§12 empirical recall against the spike fixture: 0.80 aggregate, 100% on NSFW scenes; 43s/scene wall-clock against gemma4_2b. The §6.1 distinction (KNOWS / DOES NOT KNOW / MISTAKEN) survives but with the mechanism inverted: KNOWS via extraction, DOES NOT KNOW via scene-exposure set-difference, MISTAKEN via manual authoring.
+
 ### 4.6 Phase mapping
 
 | Phase | New memory features |

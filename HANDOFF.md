@@ -1,6 +1,6 @@
 # Loom — Handoff
 
-> **Date:** 2026-05-11 (updated late PM). **Status: Phase 1 + 1.5 + 2 + 2.5 + 3 §A–§F complete; Phase 4 in flight.** **502 tests passing**, all green; app builds clean. Branch `main` pushed to origin/apothis/FictionWriter through `95e4216` (Phase 3); Phase 4 in-flight commits (`3101de3` → `a3aeec4`) are local-only pending push. Phase 1 + 1.5 = Editor MVP (Continue/Expand/Rewrite, acceptance window, History inspector, Markdown export, per-call instruction box, A/N depth-N, Cmd-, Settings). Phase 2 = Story Bible v1 (WritingDirection / FanficMetadata / Bible-Keyed injection / Lorebook / snapshots-before-rewrite / @-mention / sparkline). Phase 2.5 = the @-popover UI + mention sparkline-bar + hover-preview popover that completed the Phase 2 #10–#11 affordances. Phase 3 = Manuscript hierarchy (Part > Chapter > Scene) + Plan view (NSCollectionView card grid in a standalone window) + target word counts. **Phase 4 in-flight slices (NSFW-anchored)**: rewriteVoice prompt layer (§14.1 #1), Continue-from-refusal (§14.1 #7), Sphiratrioth starter pack (§14.1 #8), Roll-Outcome action (§14.1 #8 sibling). See **§11 (Phase 2)**, **§12 (Phase 2.5)**, **§13 (Phase 3)**, **§15 (Phase 4 in-flight)** below.
+> **Date:** 2026-05-11 (updated evening). **Status: Phase 1 + 1.5 + 2 + 2.5 + 3 §A–§F complete; Phase 4 in flight, ledger spike landed.** **530 tests passing**, all green; app builds clean. Branch `main` through `e153e4f`. Phase 1 + 1.5 = Editor MVP (Continue/Expand/Rewrite, acceptance window, History inspector, Markdown export, per-call instruction box, A/N depth-N, Cmd-, Settings). Phase 2 = Story Bible v1 (WritingDirection / FanficMetadata / Bible-Keyed injection / Lorebook / snapshots-before-rewrite / @-mention / sparkline). Phase 2.5 = the @-popover UI + mention sparkline-bar + hover-preview popover that completed the Phase 2 #10–#11 affordances. Phase 3 = Manuscript hierarchy (Part > Chapter > Scene) + Plan view (NSCollectionView card grid in a standalone window) + target word counts. **Phase 4 shipped slices (NSFW-anchored)**: rewriteVoice prompt layer (§14.1 #1), Continue-from-refusal (§14.1 #7), Sphiratrioth starter pack + Roll-Outcome action (§14.1 #8), knowledge-ledger feasibility spike across 5 rounds — Phase 4 #7 pipeline is unblocked with `gemma4_2b` on Ollama chosen as the production extractor (see `LOOM_LEDGER_SPIKE.md`). See **§11 (Phase 2)**, **§12 (Phase 2.5)**, **§13 (Phase 3)**, **§15 (Phase 4)** below.
 >
 > **Repo**: `/Volumes/SSD1/Code/FictionWriter` · pushed to [github.com/apothis/FictionWriter](https://github.com/apothis/FictionWriter) · branch `main`. RPClient (the source of inherited plumbing) at `/Volumes/SSD1/Code/RPClient`.
 >
@@ -400,9 +400,9 @@ Spike landed clean. `NSCollectionViewFlowLayout` + custom `NSCollectionViewItem`
 3. Skim [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) §3 — the knowledge-ledger extraction pipeline (the distinctive Loom engineering). Schema is already on `Character.knownFactsBySceneId`.
 4. Skim [`LOOM_NSFW.md`](LOOM_NSFW.md) §2.5 — Sphiratrioth lorebook-as-active-scenario; the Lorebook schema shipped with `group/weight/sticky` fields specifically for this pattern.
 5. TDD posture per the saved [`feedback_tdd_always`](file:///Users/kevinappleyard/.claude/projects/-Volumes-SSD1-Code-FictionWriter/memory/feedback_tdd_always.md) memory: red → green → commit. Schema migrations include the forward-load case.
-6. Repo state on entry:
+6. Repo state on entry (frozen at Phase 3 ship; §15 captures all Phase 4 work since):
    - Branch `main`, all Phase 3 work pushed to `origin/main` through `95e4216`.
-   - 473 tests passing (`swift run LoomCoreTests`).
+   - 473 tests passing then (`swift run LoomCoreTests`); current count is in §15.5.
    - `./build.sh` builds `Loom.app`; run with `./Loom.app/Contents/MacOS/Loom` (NOT `./run.sh`).
    - Live server at `http://192.168.1.201:5001` (Qwen3.6-27B); defaultServerId in `~/Library/Application Support/Loom/settings.json`.
    - Settings window: `Cmd-,`. Plan view: `⌘⇧P` (View menu).
@@ -467,4 +467,30 @@ The §14.1 work-item list still stands. Internal ordering refined based on the c
 - **Live-app eyeball pass on Phase 2.5 + Phase 3 surfaces** is still recommended. Mount + server-probe sanity green; clickthrough QA (Bible inspector sub-tabs, @-mention popover under load, sparkline marker clicks, hover preview, Plan view, sidebar rename) needs a human pass before further visible work piles on.
 - **Floating selection toolbar (§14.4.1)** stays deferred. Each new Phase 4 selection-required mode adds drift from the design grammar; reckon by Phase 6 polish.
 - **Stale-arc compression** (LOOM_MEMORY §1.3 + §4.3) — not currently built; the recent-prose layer is raw verbatim. Once a manuscript crosses ~10 chapters this matters. Queue for Phase 4 late or Phase 5 early.
-- **Push the three Phase 4 commits to origin** when ready (currently local-only on `main`).
+- **Live-app inspector layout QA** post the §15.5 inspector fix is still owed (the layout-shrink cascade fix is pinned by Phase4InspectorLayoutTests but the visible inspector hasn't been clicked through end-to-end since the fix landed).
+
+### 15.5 Ledger spike (2026-05-11) — full writeup in [`LOOM_LEDGER_SPIKE.md`](LOOM_LEDGER_SPIKE.md)
+
+Ran across five rounds in a single session. Commits `01ddf34` →
+`e153e4f`. Headlines:
+
+- **Phase 4 #7 is fully unblocked.** Build the ledger pipeline next.
+- **Extractor model: `gemma4_2b` (abliterated) on Ollama.** 4.6B actual params, JSON-Schema-constrained via Ollama's `format` field. 0.80 recall, 100% on NSFW scenes, 43s/scene wall-clock — half the 4B sibling's latency at parity quality.
+- **Loom now has two backends** — KoboldCpp for the writer (Qwen3.6-27B), Ollama for the extractor (gemma4_2b). The role-routed servers pattern from RPClient accommodates this with no plumbing changes.
+- **Plumbing shipped:** GBNF + JSON Schema generators; `KoboldClient.generate(request:)` accepting `grammar`; `KoboldClient.embed(texts:)` (re-ported from RPClient); cosine-similarity scorer using the live embedding endpoint (nomic-embed-text 768-d); `Tools/LedgerSpike` backend-selectable via `LOOM_SPIKE_BACKEND=kobold|ollama`.
+- **Design call:** `unknown` knowledge is derived from per-character scene-exposure at query time, NOT extracted (LOOM_STORY_BIBLE §3.5 / SymbolicToM pattern). The extractor emits `asserted` only. `mistaken` is manual-authoring.
+- **Inspector + window-resize fix incident** (commits `e598ce6` + `9d90635`) added ~1h to the AppKit pivot pressure ledger (HANDOFF §2.1, memory `project_appkit_pivot_pressure.md`). Required `400pt` min-height on the bible list to defeat macOS-26's auto-refit-to-fittingSize cascade.
+- **Test count: 530 passing.**
+
+### 15.6 Carried forward — Phase 4 #7 (the next work item)
+
+The UI surfaces are unbuilt; everything else for #7 is in place. Sub-tasks, in suggested order:
+
+1. **Add `ServerProfile` support for an Ollama role.** RPClient's role-routed-servers pattern is the precedent; Loom Phase 1 ships a single-server model. Phase 4 #7 needs at least two — writer (existing KoboldCpp) and extractor (Ollama with gemma4_2b). One settings UI addition + persistence + the existing `KoboldClient`-vs-Ollama branch the spike already has.
+2. **Wire `LedgerExtraction` into a post-scene side-call.** Triggered on scene save with `>200`-word change (LOOM_STORY_BIBLE §3.2). Use the JSON-Schema + `gemma4_2b` shape from the spike. Debounced; background queue.
+3. **Diff vs existing ledger.** Per-character; produce a list of new facts the user hasn't seen.
+4. **Bible-inspector Suggestions chip + accept/reject UI.** Per-fact, with optional edit-in-place. Reuses the existing per-character inspector sub-tabs (LOOM_DESIGN_LANGUAGE §14.5.1).
+5. **Persist accepted facts** into `Character.knownFactsBySceneId` stamped with `sourceSceneId`.
+6. **Compute `unknown` from scene-exposure** at query time. Pure-data; needs scene-presence per character (Phase 2 mention-index gives us this for free).
+7. **Render the `[KNOWLEDGE-LEDGER]` prompt layer** below the cache boundary at generation time (LOOM_MEMORY §4.1).
+8. **The §10.5 production filters** — fact deduplication (embed → cluster cosine ≥ 0.85), evidence-quote validation (drop facts whose evidence has no high-cosine sentence in the prose), prompt-leakage filter — between extraction and Suggestions display.
