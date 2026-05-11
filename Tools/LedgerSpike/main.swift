@@ -74,7 +74,8 @@ struct SceneResult {
     let parseError: Error?
     let extracted: [LedgerExtraction.ExtractedFact]
     let score: LedgerExtraction.ScoreReport          // Jaccard (fast, wordform)
-    let scoreEmbedding: LedgerExtraction.ScoreReport // cosine (semantic, real)
+    var scoreEmbedding: LedgerExtraction.ScoreReport // cosine (semantic, real)
+    let elapsedSeconds: Double                        // wall-clock for the side-call
 }
 
 // MARK: - Runner
@@ -174,6 +175,8 @@ func extractSceneSync(
         characters: characters,
         scenePose: scene.prose
     )
+    let started = Date()
+    func elapsed() -> Double { -started.timeIntervalSinceNow }
 
     // Ollama backend: use JSON Schema instead of GBNF; otherwise the
     // same prompt + scoring shape. Ollama applies the model's chat
@@ -194,7 +197,8 @@ func extractSceneSync(
             return SceneResult(
                 scene: scene, prompt: prompt, rawResponse: "<<ollama error: \(e)>>",
                 parseError: e, extracted: [],
-                score: emptyEmbScore, scoreEmbedding: emptyEmbScore
+                score: emptyEmbScore, scoreEmbedding: emptyEmbScore,
+                elapsedSeconds: elapsed()
             )
         case .success(let raw):
             do {
@@ -206,13 +210,15 @@ func extractSceneSync(
                 return SceneResult(
                     scene: scene, prompt: prompt, rawResponse: raw,
                     parseError: nil, extracted: extracted, score: score,
-                    scoreEmbedding: emptyEmbScore
+                    scoreEmbedding: emptyEmbScore,
+                    elapsedSeconds: elapsed()
                 )
             } catch {
                 return SceneResult(
                     scene: scene, prompt: prompt, rawResponse: raw,
                     parseError: error, extracted: [],
-                    score: emptyEmbScore, scoreEmbedding: emptyEmbScore
+                    score: emptyEmbScore, scoreEmbedding: emptyEmbScore,
+                    elapsedSeconds: elapsed()
                 )
             }
         }
@@ -292,7 +298,8 @@ func extractSceneSync(
             scene: scene, prompt: prompt, rawResponse: "<<network error: \(e)>>",
             parseError: e, extracted: [],
             score: emptyEmbeddingScore,
-            scoreEmbedding: emptyEmbeddingScore
+            scoreEmbedding: emptyEmbeddingScore,
+            elapsedSeconds: elapsed()
         )
     }
 
@@ -307,14 +314,16 @@ func extractSceneSync(
         return SceneResult(
             scene: scene, prompt: prompt, rawResponse: raw,
             parseError: nil, extracted: extracted, score: score,
-            scoreEmbedding: emptyEmbeddingScore // populated post-extraction
+            scoreEmbedding: emptyEmbeddingScore, // populated post-extraction
+            elapsedSeconds: elapsed()
         )
     } catch {
         return SceneResult(
             scene: scene, prompt: prompt, rawResponse: raw,
             parseError: error, extracted: [],
             score: emptyEmbeddingScore,
-            scoreEmbedding: emptyEmbeddingScore
+            scoreEmbedding: emptyEmbeddingScore,
+            elapsedSeconds: elapsed()
         )
     }
 }
@@ -371,11 +380,9 @@ func attachEmbeddingScores(
             threshold: 0.65,
             aliases: fixtureAliases
         )
-        return SceneResult(
-            scene: r.scene, prompt: r.prompt, rawResponse: r.rawResponse,
-            parseError: r.parseError, extracted: r.extracted, score: r.score,
-            scoreEmbedding: score
-        )
+        var updated = r
+        updated.scoreEmbedding = score
+        return updated
     }
 }
 
@@ -384,9 +391,19 @@ func attachEmbeddingScores(
 func emitReport(results: [SceneResult]) -> String {
     var out = "# LOOM_LEDGER_SPIKE — knowledge-ledger feasibility eval\n\n"
     out += "**Date:** \(ISO8601DateFormatter().string(from: Date()))\n"
-    out += "**Server:** \(baseURLString)\n"
+    let backendDesc: String
+    switch backend {
+    case .kobold: backendDesc = "kobold @ \(baseURLString)"
+    case .ollama: backendDesc = "ollama @ \(ollamaURLString) model=\(ollamaModel)"
+    }
+    out += "**Backend:** \(backendDesc)\n"
     out += "**Fixture:** \(results.count) scenes, "
     out += "\(results.flatMap { $0.scene.gold_facts }.count) gold facts total\n\n"
+
+    let totalElapsed = results.reduce(0.0) { $0 + $1.elapsedSeconds }
+    let avgElapsed = results.isEmpty ? 0 : totalElapsed / Double(results.count)
+    out += "**Wall-clock (extraction side-call only):** total \(String(format: "%.1f", totalElapsed))s, "
+    out += "avg \(String(format: "%.1f", avgElapsed))s/scene\n\n"
     out += "**Hypothesis** (LOOM_MEMORY §4.5): per-scene knowledge-state extraction is feasible at <13B model size. We test against Qwen3.6-27B (a 27B-class abliterated model) — so the threshold here is even easier than the falsifiable claim.\n\n"
 
     let agg = LedgerExtraction.ScoreReport(
@@ -451,6 +468,8 @@ func emitReport(results: [SceneResult]) -> String {
     out += "## Per-scene detail\n\n"
     for r in results {
         out += "### Scene `\(r.scene.id)` — \(r.scene.title) [\(r.scene.tag)]\n\n"
+        out += "Wall-clock: \(String(format: "%.1f", r.elapsedSeconds))s · "
+        out += "extracted \(r.extracted.count) facts (gold has \(r.scene.gold_facts.count))\n\n"
         out += "Jaccard: TP \(r.score.truePositives) / FP \(r.score.falsePositives) / FN \(r.score.falseNegatives) — P \(String(format: "%.2f", r.score.precision)) R \(String(format: "%.2f", r.score.recall))\n"
         out += "Embedding: TP \(r.scoreEmbedding.truePositives) / FP \(r.scoreEmbedding.falsePositives) / FN \(r.scoreEmbedding.falseNegatives) — P \(String(format: "%.2f", r.scoreEmbedding.precision)) R \(String(format: "%.2f", r.scoreEmbedding.recall))\n\n"
 
@@ -517,7 +536,7 @@ for (i, scene) in fixture.scenes.enumerated() {
         characters: fixture.characters,
         maxContextLength: maxCtx
     )
-    logProgress("    raw=\(r.rawResponse.count) chars, TP \(r.score.truePositives) FP \(r.score.falsePositives) FN \(r.score.falseNegatives)")
+    logProgress("    \(String(format: "%.1f", r.elapsedSeconds))s · raw=\(r.rawResponse.count) chars · extracted \(r.extracted.count)")
     // Dump the raw response per scene so we can diagnose empty / weird
     // outputs without trying to fit them in the report excerpt window.
     let dumpURL = dumpDir.appendingPathComponent("\(scene.id).raw.txt")

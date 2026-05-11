@@ -583,6 +583,101 @@ Ollama can coexist on the same machine — RPClient's role-routed
 servers pattern (different server URL per role) accommodates this
 without further plumbing changes.
 
+## 12. Round-5 — gemma4_2b vs gemma4_4b (speed/quality A/B)
+
+§11's gemma4_4b verdict (85% recall, all scenes engaged) was solid on
+quality but the user flagged it as slow in practice. Loaded the
+smaller sibling (`gemma4_2b:latest`, 4.6B actual params, Q4_K_M,
+3.4GB) and ran the same fixture head-to-head. Wall-clock timing added
+to the spike runner this round.
+
+### 12.1 Direct comparison
+
+Same fixture, same prompt builder, same JSON Schema, same embedding
+scorer at threshold 0.65. Only the Ollama model name differs.
+
+| Metric (embedding scorer) | **gemma4_4b** | **gemma4_2b** | Δ |
+|---|---|---|---|
+| Total wall-clock (5 scenes) | 398.7s | **214.1s** | **-46%** (1.86× faster) |
+| Avg per scene | 79.7s | **42.8s** | -46% |
+| Aggregate recall | 0.80 | 0.80 | 0 |
+| Aggregate precision | 0.21 | 0.25 | +20% |
+| Aggregate F1 | 0.33 | 0.38 | +15% |
+| TP | 16 | 16 | 0 |
+| FP | 62 | 49 | -21% (less noise) |
+| FN | 4 | 4 | 0 |
+
+### 12.2 Per-scene breakdown
+
+| Scene          | Tag  | 4B time | 4B recall | 2B time | 2B recall |
+|----------------|------|---------|-----------|---------|-----------|
+| 01_door        | SFW  | 83.2s   | 0.67      | 48.2s   | **0.83** |
+| 02_coffee      | SFW  | 74.0s   | 0.75      | 47.9s   | 0.50      |
+| 03_first_night | NSFW | 79.4s   | **1.00**  | 50.7s   | **1.00** |
+| 04_revelation  | SFW  | 83.3s   | 0.75      | 33.7s   | 0.75      |
+| 05_confession  | NSFW | 78.7s   | **1.00**  | 33.6s   | **1.00** |
+
+Scene 1: 2B wins (0.83 vs 0.67). Scene 2: 4B wins (0.75 vs 0.50 —
+2B missed one gold fact). Scenes 3-5: identical recall, 2B almost
+twice as fast.
+
+### 12.3 Why is 2B's precision higher despite same recall?
+
+Looking at the extracted-fact counts per scene:
+
+| Scene | 4B extracted | 2B extracted |
+|---|---|---|
+| 01_door | 15 | 15 |
+| 02_coffee | 16 | 16 |
+| 03_first_night | 15 | 16 |
+| 04_revelation | 16 | **9** |
+| 05_confession | 16 | **9** |
+
+The 2B model **emits fewer facts on scenes 4 and 5** (9 vs 16) while
+maintaining the same gold-fact recall. The 4B model is "more
+thorough" in surfacing peripheral prose observations; the 2B model
+focuses on more central facts. Both find the load-bearing facts; 2B
+produces less noise to filter in the Suggestions UI.
+
+### 12.4 NSFW behaviour unchanged
+
+Both models hit 100% recall on the two NSFW scenes. No behavioural
+difference on explicit content — the abliteration takes equally on
+both sizes.
+
+### 12.5 Recommendation
+
+**Use gemma4_2b for the production extractor.** Same recall, less
+noise, **1.86× faster wall-clock**. The single scene where 4B beats
+2B on recall (scene 2: 0.75 → 0.50) is a 1-fact difference on a
+4-fact gold; not load-bearing for the Suggestions UI flow where the
+user is the final filter.
+
+Production-side-call latency budget (post-scene extraction):
+
+- **4B**: ~80s per scene → noticeable to the user even when run
+  asynchronously in the background.
+- **2B**: ~43s per scene → still slow by interactive-feature
+  standards but tolerable for a background side-call that doesn't
+  block the editor.
+
+A further speed optimisation is on the table for Phase 4 #7: the
+extraction prompt is identical across scenes for a given project (the
+character list is fixed), so the model's KV cache should be re-usable
+between calls. Ollama supports this via `keep_alive` (already default)
+plus the prompt prefix consistency the LedgerExtraction prompt builder
+already provides — the bible characters + schema instructions are
+the same prefix; only the scene prose tail changes.
+
+### 12.6 What graduated in Round-5
+
+- Wall-clock timing per scene-call + aggregate, threaded through
+  `SceneResult.elapsedSeconds` ([Tools/LedgerSpike/main.swift](Tools/LedgerSpike/main.swift)).
+- Report header gains a `Backend:` line showing the active config
+  (kobold vs ollama, URL, model) for unambiguous A/B reporting.
+- §12 comparison numbers are the empirical decision-record for
+  **gemma4_2b** as the Phase 4 #7 extractor model.
+
 ## 7. References
 
 - [LOOM_STORY_BIBLE.md §3](LOOM_STORY_BIBLE.md) — extraction pipeline spec.
