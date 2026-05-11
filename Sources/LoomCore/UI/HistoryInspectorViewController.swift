@@ -115,6 +115,9 @@ public final class HistoryInspectorViewController: NSViewController {
                 },
                 onInsertAgain: { [weak self] in
                     self?.insertResponseAtCursor(entry)
+                },
+                onPushPastRefusal: { [weak self] in
+                    self?.postContinueFromRefusal()
                 }
             )
             row.view.translatesAutoresizingMaskIntoConstraints = false
@@ -134,6 +137,32 @@ public final class HistoryInspectorViewController: NSViewController {
     }
 
     public static let requestInsertAgainNotification = Notification.Name("LoomHistoryInspector.requestInsertAgain")
+
+    // MARK: - Continue from refusal (Phase 4 §14.1 #7 / LOOM_NSFW §5)
+
+    /// Posted when the user clicks "Push past refusal" on a refusal-
+    /// flagged History row. Editor handles by inserting the stub at
+    /// cursor + loading the breaking instruction into the tray; user
+    /// fires Continue from there.
+    public static let requestContinueFromRefusalNotification = Notification.Name("LoomHistoryInspector.requestContinueFromRefusal")
+
+    /// Single source of truth for the userInfo payload — the editor
+    /// pulls `stub` + `instruction` out without reaching back to the
+    /// row's internals.
+    public static func makeContinueFromRefusalUserInfo() -> [AnyHashable: Any] {
+        return [
+            "stub": RefusalContinuation.continuationStub,
+            "instruction": RefusalContinuation.breakingInstruction
+        ]
+    }
+
+    fileprivate func postContinueFromRefusal() {
+        NotificationCenter.default.post(
+            name: HistoryInspectorViewController.requestContinueFromRefusalNotification,
+            object: self,
+            userInfo: HistoryInspectorViewController.makeContinueFromRefusalUserInfo()
+        )
+    }
 }
 
 // MARK: - Row view
@@ -145,16 +174,26 @@ final class HistoryEntryRowView {
     let view: NSView
     private let onToggle: () -> Void
     private let onInsertAgain: () -> Void
+    private let onPushPastRefusal: () -> Void
+
+    /// Pure predicate: should the "Push past refusal" affordance be
+    /// rendered on this entry? Exposed for tests so the UI shape can
+    /// be verified without driving AppKit.
+    public static func shouldShowPushPastRefusal(_ entry: GenerationLogEntry) -> Bool {
+        return entry.response.refusalDetected
+    }
 
     init(
         entry: GenerationLogEntry,
         isExpanded: Bool,
         onToggle: @escaping () -> Void,
-        onInsertAgain: @escaping () -> Void
+        onInsertAgain: @escaping () -> Void,
+        onPushPastRefusal: @escaping () -> Void = {}
     ) {
         self.entry = entry
         self.onToggle = onToggle
         self.onInsertAgain = onInsertAgain
+        self.onPushPastRefusal = onPushPastRefusal
 
         let container = ThemedBackgroundView(backgroundColor: DesignTokens.Background.group)
         container.layer?.cornerRadius = DesignTokens.Radius.section
@@ -207,7 +246,11 @@ final class HistoryEntryRowView {
         ])
 
         if isExpanded {
-            let panel = Self.makeExpandedPanel(entry: entry, insertAgain: onInsertAgain)
+            let panel = Self.makeExpandedPanel(
+                entry: entry,
+                insertAgain: onInsertAgain,
+                pushPastRefusal: onPushPastRefusal
+            )
             panel.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(panel)
             NSLayoutConstraint.activate([
@@ -257,7 +300,8 @@ final class HistoryEntryRowView {
 
     private static func makeExpandedPanel(
         entry: GenerationLogEntry,
-        insertAgain: @escaping () -> Void
+        insertAgain: @escaping () -> Void,
+        pushPastRefusal: @escaping () -> Void
     ) -> NSView {
         let panel = NSStackView()
         panel.orientation = .vertical
@@ -306,11 +350,26 @@ final class HistoryEntryRowView {
         insertBtn.bezelStyle = .inline
         insertBtn.controlSize = .small
         insertBtn.font = DesignTokens.Typography.subheadline
-        let bridge = HistoryRowExpandBridge(insertAgain: insertAgain)
+        let bridge = HistoryRowExpandBridge(insertAgain: insertAgain, pushPastRefusal: pushPastRefusal)
         objc_setAssociatedObject(insertBtn, &HistoryRowExpandBridge.key, bridge, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         insertBtn.target = bridge
         insertBtn.action = #selector(HistoryRowExpandBridge.insertClicked(_:))
         panel.addArrangedSubview(insertBtn)
+
+        // "Push past refusal" — only when the entry was flagged as a
+        // refusal. LOOM_NSFW §5: load a refusal-breaking instruction
+        // into the tray + drop an em-dash anchor at cursor; the user
+        // fires Continue themselves.
+        if HistoryEntryRowView.shouldShowPushPastRefusal(entry) {
+            let pushBtn = NSButton(title: "Push past refusal", target: nil, action: nil)
+            pushBtn.bezelStyle = .inline
+            pushBtn.controlSize = .small
+            pushBtn.font = DesignTokens.Typography.subheadline
+            pushBtn.toolTip = "Drop an em-dash anchor and a refusal-breaking instruction; you fire Continue."
+            pushBtn.target = bridge
+            pushBtn.action = #selector(HistoryRowExpandBridge.pushPastClicked(_:))
+            panel.addArrangedSubview(pushBtn)
+        }
 
         return panel
     }
@@ -346,8 +405,11 @@ private final class HistoryRowBridge: NSObject {
 private final class HistoryRowExpandBridge: NSObject {
     static var key: UInt8 = 0
     let insertAgain: () -> Void
-    init(insertAgain: @escaping () -> Void) {
+    let pushPastRefusal: () -> Void
+    init(insertAgain: @escaping () -> Void, pushPastRefusal: @escaping () -> Void) {
         self.insertAgain = insertAgain
+        self.pushPastRefusal = pushPastRefusal
     }
     @objc func insertClicked(_ sender: Any) { insertAgain() }
+    @objc func pushPastClicked(_ sender: Any) { pushPastRefusal() }
 }

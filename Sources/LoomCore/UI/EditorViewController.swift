@@ -29,6 +29,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var generationFinishObserver: NSObjectProtocol?
     private var generationStartObserver: NSObjectProtocol?
     private var insertAgainObserver: NSObjectProtocol?
+    private var pushPastRefusalObserver: NSObjectProtocol?
     private var keyEventMonitor: Any?
     private var mouseMovedMonitor: Any?
     private let mentionPopover = MentionPopover()
@@ -66,6 +67,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = generationFinishObserver { NotificationCenter.default.removeObserver(o) }
         if let o = generationStartObserver { NotificationCenter.default.removeObserver(o) }
         if let o = insertAgainObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = pushPastRefusalObserver { NotificationCenter.default.removeObserver(o) }
         if let o = emptyStateClickedObserver { NotificationCenter.default.removeObserver(o) }
         if let o = sessionDidChangeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = sessionDidReplaceObserver { NotificationCenter.default.removeObserver(o) }
@@ -251,6 +253,18 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         ) { [weak self] note in
             guard let text = note.userInfo?["text"] as? String else { return }
             self?.insertTextAtCursor(text)
+        }
+        pushPastRefusalObserver = NotificationCenter.default.addObserver(
+            forName: HistoryInspectorViewController.requestContinueFromRefusalNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let stub = note.userInfo?["stub"] as? String,
+                  let instruction = note.userInfo?["instruction"] as? String
+            else { return }
+            DebugLog.shared.write("[gen] continue-from-refusal: stub=\(stub.count) instruction=\(instruction.count)")
+            self?.insertTextAtCursor(stub)
+            self?.trayView.setInstruction(instruction)
         }
         emptyStateClickedObserver = NotificationCenter.default.addObserver(
             forName: EmptyProjectStateView.createSceneClickedNotification,

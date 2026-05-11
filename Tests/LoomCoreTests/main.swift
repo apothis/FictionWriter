@@ -77,6 +77,7 @@ let suites: [TestSuite] = [
     phase3PlanViewControllerTests(),
     phase3TargetWordCountsTests(),
     phase4RewriteVoiceTests(),
+    phase4ContinueFromRefusalTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

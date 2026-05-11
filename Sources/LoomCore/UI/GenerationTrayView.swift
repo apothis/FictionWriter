@@ -59,6 +59,14 @@ public final class GenerationTrayView: NSView {
         instructionField.stringValue = ""
     }
 
+    /// Replace the per-call instruction field's contents. Used by
+    /// "Push past refusal" (Phase 4 §14.1 #7) to seed the field with
+    /// the refusal-breaking direction; the user reviews + clicks
+    /// Continue. Does NOT auto-fire generation.
+    public func setInstruction(_ text: String) {
+        instructionField.stringValue = text
+    }
+
     /// Generation state for the busy indicator. The editor flips
     /// these via setGenerationStarted / setStreaming / setGenerationFinished.
     public enum GenerationState {
