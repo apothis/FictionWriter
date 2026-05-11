@@ -67,5 +67,15 @@ func phase3PlanViewLayoutTests() -> TestSuite {
         try expectEqual(layout.cards[0].summary, "Mia confronts the stranger.")
     }
 
+    s.test("cards carry the scene's targetWordCount when set, nil otherwise") {
+        let session = ProjectSession(project: Project(title: "T"))
+        let scene = session.addScene(title: "S1")
+        var layout = PlanViewLayout.build(for: session.project, scenes: session.scenes)
+        try expectNil(layout.cards[0].targetWordCount)
+        session.setSceneTargetWordCount(id: scene.id, to: 1500)
+        layout = PlanViewLayout.build(for: session.project, scenes: session.scenes)
+        try expectEqual(layout.cards[0].targetWordCount, 1500)
+    }
+
     return s
 }

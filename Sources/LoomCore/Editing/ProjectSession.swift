@@ -264,6 +264,30 @@ public final class ProjectSession {
         return captureSnapshot(sceneId: sceneId, label: "Before Rewrite")
     }
 
+    // MARK: - Target word counts (Phase 3 §F)
+
+    public func setProjectTargetWordCount(_ count: Int?) {
+        project.settings.targetWordCount = count
+        markDirty()
+    }
+
+    public func setChapterTargetWordCount(id: UUID, to count: Int?) {
+        for pIdx in project.manuscript.parts.indices {
+            if let cIdx = project.manuscript.parts[pIdx].chapters.firstIndex(where: { $0.id == id }) {
+                project.manuscript.parts[pIdx].chapters[cIdx].targetWordCount = count
+                markChanged()
+                return
+            }
+        }
+    }
+
+    public func setSceneTargetWordCount(id: UUID, to count: Int?) {
+        guard var scene = scenes[id] else { return }
+        scene.targetWordCount = count
+        scenes[id] = scene
+        markDirty()
+    }
+
     // MARK: - Scene metadata mutations (Phase 3 §E)
 
     public func setSceneStatus(id: UUID, to status: SceneStatus) {

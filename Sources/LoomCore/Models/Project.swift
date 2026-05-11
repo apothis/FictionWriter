@@ -120,6 +120,10 @@ public struct ProjectSettings: Codable, Equatable {
     public var pov: POVStyle
     /// Phase 2 #6 — project-level narrative tense.
     public var tense: NarrativeTense
+    /// Phase 3 §F — project-level target word count. Nil = no
+    /// target set. Scene + Chapter have their own
+    /// `targetWordCount: Int?` already (LOOM_DATA_MODEL.md §2).
+    public var targetWordCount: Int?
 
     public init(
         serverProfileId: UUID? = nil,
@@ -131,7 +135,8 @@ public struct ProjectSettings: Codable, Equatable {
         instructTemplate: InstructTemplate = .auto,
         writingDirection: WritingDirection = .defaults,
         pov: POVStyle = .thirdPersonLimited,
-        tense: NarrativeTense = .past
+        tense: NarrativeTense = .past,
+        targetWordCount: Int? = nil
     ) {
         self.serverProfileId = serverProfileId
         self.contextBudgetTokens = contextBudgetTokens
@@ -143,6 +148,7 @@ public struct ProjectSettings: Codable, Equatable {
         self.writingDirection = writingDirection
         self.pov = pov
         self.tense = tense
+        self.targetWordCount = targetWordCount
     }
 
     public static let defaults = ProjectSettings()
@@ -159,6 +165,7 @@ public struct ProjectSettings: Codable, Equatable {
         self.writingDirection = try c.decodeIfPresent(WritingDirection.self, forKey: .writingDirection) ?? .defaults
         self.pov = try c.decodeIfPresent(POVStyle.self, forKey: .pov) ?? .thirdPersonLimited
         self.tense = try c.decodeIfPresent(NarrativeTense.self, forKey: .tense) ?? .past
+        self.targetWordCount = try c.decodeIfPresent(Int.self, forKey: .targetWordCount)
     }
 }
 

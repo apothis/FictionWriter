@@ -187,7 +187,12 @@ public final class PlanSceneCardItem: NSCollectionViewItem {
     func configure(with card: PlanSceneCard) {
         groupLabel.stringValue = card.groupTitle.uppercased()
         titleLabel.stringValue = card.title.isEmpty ? "Untitled" : card.title
-        metaLabel.stringValue = "\(card.wordCount)w · \(card.status.rawValue)"
+        var meta = "\(card.wordCount)w"
+        if let target = card.targetWordCount {
+            meta += " / \(target)w"
+        }
+        meta += " · \(card.status.rawValue)"
+        metaLabel.stringValue = meta
         summaryLabel.stringValue = card.summary
     }
 

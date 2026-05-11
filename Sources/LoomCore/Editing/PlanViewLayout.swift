@@ -14,6 +14,8 @@ public struct PlanSceneCard: Equatable {
     /// chip on each card; the polished card-grid groups by this
     /// field as a section header.
     public let groupTitle: String
+    /// Phase 3 §F — per-scene target. Nil = no target set.
+    public let targetWordCount: Int?
 
     public init(
         sceneId: UUID,
@@ -21,7 +23,8 @@ public struct PlanSceneCard: Equatable {
         wordCount: Int,
         status: SceneStatus,
         summary: String,
-        groupTitle: String
+        groupTitle: String,
+        targetWordCount: Int? = nil
     ) {
         self.sceneId = sceneId
         self.title = title
@@ -29,6 +32,7 @@ public struct PlanSceneCard: Equatable {
         self.status = status
         self.summary = summary
         self.groupTitle = groupTitle
+        self.targetWordCount = targetWordCount
     }
 }
 
@@ -68,7 +72,8 @@ public struct PlanViewLayout: Equatable {
             wordCount: WordCount.count(scene.prose),
             status: scene.status,
             summary: scene.summary,
-            groupTitle: groupTitle
+            groupTitle: groupTitle,
+            targetWordCount: scene.targetWordCount
         )
     }
 }
