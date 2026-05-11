@@ -22,6 +22,16 @@ public final class AppState {
     public var lastProbedModelName: String?
     public var lastProbedMaxContext: Int?
 
+    /// Phase 4 #7 sub-task 2 — debounced post-scene knowledge-ledger
+    /// side-call coordinator. Constructed once at app init; the
+    /// extractorProvider closure consults `settings.extractorServer()`
+    /// at call time so the coordinator picks up server changes
+    /// without rebuild. `onExtractionComplete` is wired in sub-task 3
+    /// (diff vs existing ledger → Suggestions UI).
+    public let ledgerCoordinator: LedgerExtractionCoordinator
+
+    private var dirtyObserver: NSObjectProtocol?
+
     /// Test-only init. Production code uses `.shared`.
     public init(settingsStore: AppSettingsStore = AppSettingsStore()) {
         self.settingsStore = settingsStore
@@ -36,7 +46,65 @@ public final class AppState {
         let session = ProjectSession(project: Project(title: "Untitled"))
         _ = session.addScene()
         self.currentSession = session
+
+        // Captured-locally lookups (the closures can't reference `self`
+        // until after super.init / property assignment completes).
+        var settingsSnapshot: () -> AppSettings = { AppSettings() }
+        var sessionRef: () -> ProjectSession = { session }
+        let coordinator = LedgerExtractionCoordinator(
+            extractorProvider: { () -> LedgerExtractor? in
+                guard let profile = settingsSnapshot().extractorServer() else { return nil }
+                let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
+                return OllamaLedgerExtractor(baseURL: profile.baseURL, model: model)
+            },
+            scheduler: TimerScheduler(),
+            sceneProvider: { sceneId in
+                let s = sessionRef()
+                guard let scene = s.scenes[sceneId] else { return nil }
+                let characters = s.project.bible.characters.map {
+                    LedgerExtraction.CharacterRef(name: $0.name, aliases: $0.aliases)
+                }
+                return (prose: scene.prose, characters: characters)
+            }
+        )
+        self.ledgerCoordinator = coordinator
+
+        // Now that all stored properties are initialized, rebind the
+        // closures to reach `self` for live settings + session.
+        settingsSnapshot = { [weak self] in self?.settings ?? AppSettings() }
+        sessionRef = { [weak self] in self?.currentSession ?? session }
+
         DebugLog.shared.write("[loom] app-state init servers=\(self.settings.servers.count) default=\(self.settings.defaultServerId?.uuidString ?? "nil") session=\(session.project.title)")
+
+        // Subscribe to dirty→clean transitions (post-autosave) and
+        // evaluate the active scene against the ledger threshold.
+        // Production wiring; the coordinator itself is fully tested in
+        // Phase4LedgerExtractionCoordinatorTests.
+        dirtyObserver = NotificationCenter.default.addObserver(
+            forName: ProjectSession.didChangeDirtyStateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            self?.handleDirtyStateChange(note)
+        }
+    }
+
+    deinit {
+        if let obs = dirtyObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+    }
+
+    private func handleDirtyStateChange(_ note: Notification) {
+        guard let session = note.object as? ProjectSession, session === currentSession else { return }
+        // Only fire on dirty→clean (post-save) — clean→dirty is just
+        // "user started typing" and we don't want to schedule on the
+        // very first keystroke of a burst.
+        guard session.isDirty == false else { return }
+        guard let sceneId = session.currentSceneId else { return }
+        guard let scene = session.scenes[sceneId] else { return }
+        let wordCount = WordCount.count(scene.prose)
+        ledgerCoordinator.evaluate(sceneId: sceneId, currentWordCount: wordCount)
     }
 
     /// Replace settings in memory + on disk, then refresh the registry.
