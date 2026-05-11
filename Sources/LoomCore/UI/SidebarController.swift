@@ -55,16 +55,23 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
         scroll.documentView = outline
         self.outlineView = outline
 
-        // Bottom toolbar with `+ Scene`.
+        // Bottom toolbar with `+ Scene` and `+ Part`.
         let addButton = NSButton(title: "+ Scene", target: self, action: #selector(addSceneClicked))
         addButton.bezelStyle = .inline
         addButton.controlSize = .small
         addButton.translatesAutoresizingMaskIntoConstraints = false
         addButton.font = DesignTokens.Typography.subheadline
 
+        let addPartButton = NSButton(title: "+ Part", target: self, action: #selector(addPartClicked))
+        addPartButton.bezelStyle = .inline
+        addPartButton.controlSize = .small
+        addPartButton.translatesAutoresizingMaskIntoConstraints = false
+        addPartButton.font = DesignTokens.Typography.subheadline
+
         let toolbar = NSView()
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         toolbar.addSubview(addButton)
+        toolbar.addSubview(addPartButton)
 
         container.addSubview(scroll)
         container.addSubview(toolbar)
@@ -79,11 +86,17 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
             toolbar.heightAnchor.constraint(equalToConstant: 28),
             addButton.leadingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: DesignTokens.Spacing.sm),
             addButton.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
+            addPartButton.leadingAnchor.constraint(equalTo: addButton.trailingAnchor, constant: DesignTokens.Spacing.sm),
+            addPartButton.centerYAnchor.constraint(equalTo: toolbar.centerYAnchor),
         ])
 
-        // Right-click menu for scene rows.
+        // Right-click menu for rows (scene + part rows share it;
+        // "Add Chapter" only does anything on a Part row).
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "New Scene", action: #selector(addSceneClicked), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "New Part", action: #selector(addPartClicked), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Add Chapter to Part", action: #selector(addChapterToSelectedPart), keyEquivalent: ""))
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Rename", action: #selector(renameSelected), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Delete", action: #selector(deleteSelected), keyEquivalent: ""))
         outline.menu = menu
@@ -127,6 +140,33 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
         }
     }
 
+    @objc private func addPartClicked() {
+        let next = session.project.manuscript.parts.count + 1
+        let part = session.addPart(title: "Part \(next)")
+        // The session-change observer reloads; force the new Part
+        // visible by expanding the Manuscript group.
+        DispatchQueue.main.async { [weak self] in
+            self?.expandManuscriptGroup()
+            self?.outlineView.expandItem(SidebarItem.part(part.id))
+        }
+    }
+
+    @objc private func addChapterToSelectedPart() {
+        let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
+        guard row >= 0,
+              let item = outlineView.item(atRow: row) as? SidebarItem,
+              case .part(let partId) = item,
+              let chap = session.addChapter(
+                  title: "Chapter \((session.project.manuscript.parts.first(where: { $0.id == partId })?.chapters.count ?? 0) + 1)",
+                  in: partId
+              )
+        else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.outlineView.expandItem(SidebarItem.part(partId))
+            self?.outlineView.expandItem(SidebarItem.chapter(chap.id))
+        }
+    }
+
     @objc private func renameSelected() {
         let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
         guard row >= 0 else { return }
@@ -152,8 +192,21 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
         if item == nil { return 2 }
         guard let sidebarItem = item as? SidebarItem else { return 0 }
         switch sidebarItem {
-        case .group(.manuscript): return session.project.manuscript.orphanedSceneIds.count
-        case .group(.trash): return session.project.manuscript.trashedSceneIds.count
+        case .group(.manuscript):
+            // Phase 3 §D: Parts come first, then orphan scenes.
+            return session.project.manuscript.parts.count
+                + session.project.manuscript.orphanedSceneIds.count
+        case .group(.trash):
+            return session.project.manuscript.trashedSceneIds.count
+        case .part(let id):
+            return session.project.manuscript.parts.first(where: { $0.id == id })?.chapters.count ?? 0
+        case .chapter(let id):
+            for part in session.project.manuscript.parts {
+                if let chap = part.chapters.first(where: { $0.id == id }) {
+                    return chap.sceneIds.count
+                }
+            }
+            return 0
         case .scene: return 0
         }
     }
@@ -169,9 +222,27 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
         }
         switch sidebarItem {
         case .group(.manuscript):
-            return SidebarItem.scene(session.project.manuscript.orphanedSceneIds[index])
+            let parts = session.project.manuscript.parts
+            if index < parts.count {
+                return SidebarItem.part(parts[index].id)
+            }
+            // Past the Parts segment → orphan scenes.
+            let orphanIndex = index - parts.count
+            return SidebarItem.scene(session.project.manuscript.orphanedSceneIds[orphanIndex])
         case .group(.trash):
             return SidebarItem.scene(session.project.manuscript.trashedSceneIds[index])
+        case .part(let id):
+            guard let part = session.project.manuscript.parts.first(where: { $0.id == id }) else {
+                return SidebarItem.scene(UUID())
+            }
+            return SidebarItem.chapter(part.chapters[index].id)
+        case .chapter(let id):
+            for part in session.project.manuscript.parts {
+                if let chap = part.chapters.first(where: { $0.id == id }) {
+                    return SidebarItem.scene(chap.sceneIds[index])
+                }
+            }
+            return SidebarItem.scene(UUID())
         case .scene:
             return SidebarItem.scene(UUID())   // scenes have no children
         }
@@ -179,8 +250,12 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
 
     public func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
         guard let sidebarItem = item as? SidebarItem else { return false }
-        if case .group = sidebarItem { return true }
-        return false
+        switch sidebarItem {
+        case .group: return true
+        case .part:  return true
+        case .chapter: return true
+        case .scene: return false
+        }
     }
 
     public func outlineView(_ outlineView: NSOutlineView, isGroupItem item: Any) -> Bool {
@@ -206,6 +281,18 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
                 label.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor),
             ])
             return cell
+        case .part(let id):
+            let title = session.project.manuscript.parts.first(where: { $0.id == id })?.title ?? "Untitled Part"
+            return makeStructureRow(title: title, font: DesignTokens.Typography.headline)
+        case .chapter(let id):
+            var label = "Untitled Chapter"
+            for part in session.project.manuscript.parts {
+                if let chap = part.chapters.first(where: { $0.id == id }) {
+                    label = chap.title
+                    break
+                }
+            }
+            return makeStructureRow(title: label, font: DesignTokens.Typography.body)
         case .scene(let id):
             let cell = NSTableCellView()
             let title = session.scenes[id]?.title ?? "Untitled"
@@ -233,8 +320,27 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
 
     public func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
         guard let sidebarItem = item as? SidebarItem else { return false }
+        // Phase 3: only scenes are selectable — Parts and Chapters
+        // are structural rows. The editor pane needs a single
+        // current-scene id and structural rows can't fill that slot.
         if case .scene = sidebarItem { return true }
         return false
+    }
+
+    private func makeStructureRow(title: String, font: NSFont) -> NSView {
+        let cell = NSTableCellView()
+        let label = NSTextField(labelWithString: title)
+        label.font = font
+        label.textColor = DesignTokens.Foreground.primary
+        label.translatesAutoresizingMaskIntoConstraints = false
+        cell.textField = label
+        cell.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: DesignTokens.Spacing.xs),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor),
+        ])
+        return cell
     }
 
     public func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -312,6 +418,10 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
 /// only its kind for that reason; scenes are identified by UUID alone.
 public enum SidebarItem: Hashable {
     case group(SidebarGroupKind)
+    /// Phase 3 §D — a Part in the manuscript hierarchy.
+    case part(UUID)
+    /// Phase 3 §D — a Chapter inside a Part.
+    case chapter(UUID)
     case scene(UUID)
 }
 

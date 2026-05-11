@@ -72,6 +72,7 @@ let suites: [TestSuite] = [
     phase3ManuscriptHierarchyTests(),
     phase3ManuscriptMutationsTests(),
     phase3ManuscriptWalkTests(),
+    phase3SidebarTreeTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
