@@ -30,6 +30,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var generationStartObserver: NSObjectProtocol?
     private var insertAgainObserver: NSObjectProtocol?
     private var pushPastRefusalObserver: NSObjectProtocol?
+    private var rolledOutcomeObserver: NSObjectProtocol?
     private var keyEventMonitor: Any?
     private var mouseMovedMonitor: Any?
     private let mentionPopover = MentionPopover()
@@ -68,6 +69,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = generationStartObserver { NotificationCenter.default.removeObserver(o) }
         if let o = insertAgainObserver { NotificationCenter.default.removeObserver(o) }
         if let o = pushPastRefusalObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = rolledOutcomeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = emptyStateClickedObserver { NotificationCenter.default.removeObserver(o) }
         if let o = sessionDidChangeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = sessionDidReplaceObserver { NotificationCenter.default.removeObserver(o) }
@@ -264,6 +266,17 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             else { return }
             DebugLog.shared.write("[gen] continue-from-refusal: stub=\(stub.count) instruction=\(instruction.count)")
             self?.insertTextAtCursor(stub)
+            self?.trayView.setInstruction(instruction)
+        }
+        rolledOutcomeObserver = NotificationCenter.default.addObserver(
+            forName: AppDelegate.requestRolledOutcomeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let instruction = note.userInfo?["instruction"] as? String else { return }
+            let group = (note.userInfo?["group"] as? String) ?? "?"
+            let entryName = (note.userInfo?["entryName"] as? String) ?? "?"
+            DebugLog.shared.write("[gen] rolled-outcome: group=\(group) entry=\(entryName) instruction-chars=\(instruction.count)")
             self?.trayView.setInstruction(instruction)
         }
         emptyStateClickedObserver = NotificationCenter.default.addObserver(

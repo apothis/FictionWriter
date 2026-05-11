@@ -195,6 +195,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         installSph.target = self
         installSph.toolTip = "Adds the curated anti-positive-bias + sticky-scenario + weighted-outcome lorebook entries (LOOM_NSFW §2.5). Safe to re-run."
         bibleMenu.addItem(installSph)
+        let rollOutcome = NSMenuItem(
+            title: "Roll Outcome…",
+            action: #selector(rollOutcomeClicked),
+            keyEquivalent: "")
+        rollOutcome.target = self
+        rollOutcome.toolTip = "Pick a weighted lorebook group; Loom rolls one outcome and seeds it into the tray's per-call instruction field for the next Continue. (LOOM_NSFW §3.5)"
+        bibleMenu.addItem(rollOutcome)
         bibleMenuItem.submenu = bibleMenu
 
         NSApp.mainMenu = main
@@ -218,6 +225,54 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
+
+    @objc private func rollOutcomeClicked() {
+        let session = AppState.shared.currentSession
+        let groups = LorebookRoller.availableGroups(in: session.project.bible.lorebook)
+        guard !groups.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = "No outcome groups available"
+            alert.informativeText = "Roll-Outcome rolls one entry from a weighted lorebook group. Install the Sphiratrioth starter pack (Bible menu) or add your own grouped lorebook entries with non-zero weights, then try again."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        let chosenGroup: String
+        if groups.count == 1 {
+            chosenGroup = groups[0]
+        } else {
+            let picker = NSAlert()
+            picker.messageText = "Roll Outcome"
+            picker.informativeText = "Pick a weighted lorebook group to roll over."
+            for g in groups { picker.addButton(withTitle: g) }
+            picker.addButton(withTitle: "Cancel")
+            let response = picker.runModal()
+            let idx = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+            guard idx >= 0 && idx < groups.count else { return }
+            chosenGroup = groups[idx]
+        }
+        guard let rolled = LorebookRoller.pick(group: chosenGroup, from: session.project.bible.lorebook) else {
+            DebugLog.shared.write("[bible] menu: rollOutcome group=\(chosenGroup) result=nil")
+            return
+        }
+        DebugLog.shared.write("[bible] menu: rollOutcome group=\(chosenGroup) entry=\(rolled.name)")
+        NotificationCenter.default.post(
+            name: AppDelegate.requestRolledOutcomeNotification,
+            object: self,
+            userInfo: [
+                "instruction": rolled.content,
+                "group": chosenGroup,
+                "entryName": rolled.name
+            ]
+        )
+    }
+
+    /// Posted when the user rolls an outcome from the Bible menu. The
+    /// editor observes and loads the rolled content into the tray's
+    /// per-call instruction field. The user fires Continue themselves
+    /// — Roll-Outcome is a Bible action, not an auto-firing mode.
+    public static let requestRolledOutcomeNotification = Notification.Name("LoomBible.requestRolledOutcome")
 
     // MARK: - Plan window (Phase 3 §E)
 
