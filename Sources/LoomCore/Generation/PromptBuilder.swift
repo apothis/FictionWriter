@@ -569,6 +569,18 @@ public enum PromptBuilder {
             - Roughly matches the original length (±25%); do not summarise or balloon
             - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
             """
+        case .rewriteVoice:
+            // Phase 4 §14.1 #1 / LOOM_GENERATION_MODES.md §4.1.
+            // Target-voice descriptor is carried separately via the
+            // per-call instruction layer; the system prompt only
+            // commits to *what kind* of rewrite this is.
+            return """
+            You are a fiction writer rewriting an existing passage in a different voice. The selection below is finished prose. Rewrite it in the target voice supplied by the author, while preserving everything else about the passage. The rewrite must:
+            - Preserve every plot beat, dialogue beat, and named entity from the original (do not skip, do not invent events)
+            - Match the manuscript's tense and POV exactly
+            - Stay roughly the same length as the original (±20%); do not summarise or balloon
+            - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
+            """
         default:
             // Phase 4+ modes; PromptBuilder still produces something
             // sensible if invoked early.
@@ -595,6 +607,14 @@ public enum PromptBuilder {
             // Frame the selection as the passage to reshape.
             guard let selection = selectionText(in: context) else { return "" }
             return "Passage to rewrite:\n\(selection)\n\n—— Output the rewritten passage only. No preface, no commentary, no quotation marks around it."
+        case .rewriteVoice:
+            // Phase 4 §14.1 #1. The descriptor (target voice) rides
+            // on `perCallInstruction` and is emitted by its own layer
+            // just above this one — see the existing per-call
+            // instruction injector. So the mode instruction itself
+            // just frames the task and the passage.
+            guard let selection = selectionText(in: context) else { return "" }
+            return "Passage to rewrite in a new voice:\n\(selection)\n\n—— Output the rewritten passage only, in the target voice. No preface, no commentary, no quotation marks around it."
         default:
             return ""
         }
