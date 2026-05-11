@@ -93,6 +93,8 @@ let suites: [TestSuite] = [
     phase4LedgerDiffTests(),
     phase4LedgerSuggestionsQueueTests(),
     phase4LedgerDiffWiringTests(),
+    phase4LedgerSuggestionAcceptorTests(),
+    phase4LedgerAcceptWiringTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

@@ -61,6 +61,11 @@ final class SaveIndicator: NSView {
 /// reopen restores the user's context.
 public final class InspectorController: NSViewController {
     public let session: ProjectSession
+    /// Phase 4 #7 sub-task 4 — optional AppState handle so the Bible
+    /// inspector can render the per-character Suggestions section
+    /// (queue + accept/reject). Nil in unit tests; the production
+    /// MainWindowController passes `AppState.shared`.
+    public let appState: AppState?
     private var tabButtons: [InspectorTab: NSButton] = [:]
     private var contentContainer: NSView!
     private var tabRowTopConstraint: NSLayoutConstraint?
@@ -70,8 +75,9 @@ public final class InspectorController: NSViewController {
     private var current: NSViewController?
     private var observer: NSObjectProtocol?
 
-    public init(session: ProjectSession) {
+    public init(session: ProjectSession, appState: AppState? = nil) {
         self.session = session
+        self.appState = appState
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -163,7 +169,7 @@ public final class InspectorController: NSViewController {
         ])
         self.tabRowTopConstraint = tabRowTop
 
-        bibleVC = BibleInspectorViewController(session: session)
+        bibleVC = BibleInspectorViewController(session: session, appState: appState)
         historyVC = HistoryInspectorViewController(session: session)
         notesVC = NotesInspectorViewController(session: session)
 
@@ -286,6 +292,7 @@ public final class InspectorController: NSViewController {
 /// the structural list-detail layout the spec calls for.
 public final class BibleInspectorViewController: NSViewController, NSTextViewDelegate, NSTextFieldDelegate {
     public let session: ProjectSession
+    public let appState: AppState?
     public let viewModel = BibleInspectorViewModel()
     private let saveIndicator = SaveIndicator()
     private var filterButtons: [BibleFilter: NSButton] = [:]
@@ -293,14 +300,19 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
     private var detailContainer: NSView!
     private var detailEditor: BibleDetailEditor?
     private var sessionObserver: NSObjectProtocol?
+    private var suggestionsObserver: NSObjectProtocol?
 
-    public init(session: ProjectSession) {
+    public init(session: ProjectSession, appState: AppState? = nil) {
         self.session = session
+        self.appState = appState
         super.init(nibName: nil, bundle: nil)
     }
 
     deinit {
         if let obs = sessionObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        if let obs = suggestionsObserver {
             NotificationCenter.default.removeObserver(obs)
         }
     }
@@ -434,6 +446,19 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
             queue: .main
         ) { [weak self] _ in
             self?.reload()
+        }
+
+        // Phase 4 #7 sub-task 4 — refresh the per-character Suggestions
+        // panel when the ledger queue mutates (new extraction lands,
+        // user accepts/rejects).
+        if let appState = appState {
+            suggestionsObserver = NotificationCenter.default.addObserver(
+                forName: AppState.ledgerSuggestionsDidChangeNotification,
+                object: appState,
+                queue: .main
+            ) { [weak self] _ in
+                self?.renderDetail()
+            }
         }
 
         reload()
@@ -631,15 +656,25 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
             ])
             return
         }
+        // Phase 4 #7 sub-task 4 — suggestions pulled from AppState if
+        // wired; empty array otherwise. Only characters carry ledger
+        // suggestions (settings/objects don't).
+        let suggestions: [LedgerSuggestion] = {
+            guard let appState = appState, sel.category == .characters else { return [] }
+            return appState.ledgerSuggestionsQueue.suggestions(forCharacter: sel.id)
+        }()
         let editor = BibleDetailEditor(
             ref: sel,
             session: session,
             mentionCount: mentionCount(for: sel),
             sparklineLayout: sparklineLayout(for: sel),
+            suggestions: suggestions,
             onChanged: { [weak self] in self?.saveIndicator.flash() },
             onDelete: { [weak self] in self?.deleteSelected() },
             onInjectionModeChanged: { [weak self] mode in self?.setInjectionMode(mode) },
-            onSparklineMarkerClicked: { [weak self] sceneId in self?.scrollToScene(sceneId) }
+            onSparklineMarkerClicked: { [weak self] sceneId in self?.scrollToScene(sceneId) },
+            onAcceptSuggestion: { [weak self] suggestion in self?.appState?.acceptLedgerSuggestion(suggestion) },
+            onRejectSuggestion: { [weak self] factId in self?.appState?.rejectLedgerSuggestion(factId: factId) }
         )
         editor.view.translatesAutoresizingMaskIntoConstraints = false
         detailContainer.addSubview(editor.view)
@@ -735,10 +770,13 @@ private final class BibleDetailEditor {
         session: ProjectSession,
         mentionCount: Int,
         sparklineLayout: MentionSparklineLayout,
+        suggestions: [LedgerSuggestion] = [],
         onChanged: @escaping () -> Void,
         onDelete: @escaping () -> Void,
         onInjectionModeChanged: @escaping (InjectionMode) -> Void,
-        onSparklineMarkerClicked: @escaping (UUID) -> Void
+        onSparklineMarkerClicked: @escaping (UUID) -> Void,
+        onAcceptSuggestion: @escaping (LedgerSuggestion) -> Void = { _ in },
+        onRejectSuggestion: @escaping (UUID) -> Void = { _ in }
     ) {
         self.ref = ref
         self.session = session
@@ -831,8 +869,19 @@ private final class BibleDetailEditor {
         sparkline.widthAnchor.constraint(greaterThanOrEqualToConstant: 60).isActive = true
         sparkline.heightAnchor.constraint(equalToConstant: 14).isActive = true
 
+        // Phase 4 #7 sub-task 4 — Suggestions panel (characters only,
+        // and only when there's at least one pending suggestion).
+        // Sits between modeRow and the description so it surfaces
+        // when present but doesn't claim screen space otherwise.
+        let suggestionsPanel = Self.makeSuggestionsPanel(
+            suggestions: suggestions,
+            onAccept: onAcceptSuggestion,
+            onReject: onRejectSuggestion
+        )
+
         container.addSubview(name)
         container.addSubview(modeRow)
+        container.addSubview(suggestionsPanel)
         container.addSubview(descScroll)
         container.addSubview(deleteBtn)
 
@@ -847,7 +896,11 @@ private final class BibleDetailEditor {
             modeRow.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
             modeRow.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
 
-            descScroll.topAnchor.constraint(equalTo: modeRow.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            suggestionsPanel.topAnchor.constraint(equalTo: modeRow.bottomAnchor, constant: DesignTokens.Spacing.sm),
+            suggestionsPanel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
+            suggestionsPanel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
+
+            descScroll.topAnchor.constraint(equalTo: suggestionsPanel.bottomAnchor, constant: DesignTokens.Spacing.sm),
             descScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
             descScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
             descScroll.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -DesignTokens.Spacing.md),
@@ -897,6 +950,60 @@ private final class BibleDetailEditor {
         onInjectionModeChanged(mode)
     }
 
+    // MARK: - Phase 4 #7 sub-task 4 — Suggestions panel
+
+    /// Build the per-character Suggestions panel. Returns an empty
+    /// (zero-height) view when there are no pending suggestions so
+    /// the description scroll view inherits the freed space. Uses
+    /// `defaultHigh + 1` (751) height pins instead of `.required` to
+    /// stay clear of the macOS-26 fittingSize cascade that snaps the
+    /// window to its content's fittingSize (HANDOFF §2.1).
+    static func makeSuggestionsPanel(
+        suggestions: [LedgerSuggestion],
+        onAccept: @escaping (LedgerSuggestion) -> Void,
+        onReject: @escaping (UUID) -> Void
+    ) -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        guard !suggestions.isEmpty else {
+            // Zero-height when empty so the panel doesn't claim space.
+            let h = container.heightAnchor.constraint(equalToConstant: 0)
+            h.priority = NSLayoutConstraint.Priority(rawValue: 751)
+            h.isActive = true
+            return container
+        }
+
+        let stack = NSStackView()
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = DesignTokens.Spacing.xs
+
+        let title = NSTextField(labelWithString: "Suggestions (\(suggestions.count))")
+        title.font = DesignTokens.Typography.caption1
+        title.textColor = DesignTokens.Foreground.secondary
+        stack.addArrangedSubview(title)
+
+        for suggestion in suggestions {
+            let row = SuggestionRowView(
+                suggestion: suggestion,
+                onAccept: onAccept,
+                onReject: onReject
+            )
+            stack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        return container
+    }
+
     private static func snapshot(ref: BibleEntityRef, session: ProjectSession) -> (String, String, InjectionMode) {
         switch ref.category {
         case .characters:
@@ -928,6 +1035,80 @@ private final class BibleDetailBridge: NSObject, NSTextViewDelegate {
         detail?.injectionModeSelected(mode)
     }
     func textDidChange(_ notification: Notification) { detail?.writeBack() }
+}
+
+// MARK: - Phase 4 #7 sub-task 4 — per-suggestion row
+
+/// One row of the Suggestions panel: fact text + evidence quote +
+/// Accept / Reject buttons. Holds strong refs to the callbacks via
+/// closure capture; the row is recreated on every renderDetail() so
+/// stale captures aren't a concern.
+private final class SuggestionRowView: NSView {
+    private let suggestion: LedgerSuggestion
+    private let onAccept: (LedgerSuggestion) -> Void
+    private let onReject: (UUID) -> Void
+
+    init(
+        suggestion: LedgerSuggestion,
+        onAccept: @escaping (LedgerSuggestion) -> Void,
+        onReject: @escaping (UUID) -> Void
+    ) {
+        self.suggestion = suggestion
+        self.onAccept = onAccept
+        self.onReject = onReject
+        super.init(frame: .zero)
+        self.translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = DesignTokens.Radius.control
+        layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+        layer?.borderColor = NSColor.separatorColor.cgColor
+        layer?.borderWidth = 0.5
+
+        let factLabel = NSTextField(wrappingLabelWithString: suggestion.fact.fact)
+        factLabel.font = DesignTokens.Typography.body
+        factLabel.textColor = DesignTokens.Foreground.primary
+        factLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let evidenceLabel = NSTextField(wrappingLabelWithString: "“\(suggestion.evidenceQuote)”")
+        evidenceLabel.font = DesignTokens.Typography.caption1
+        evidenceLabel.textColor = DesignTokens.Foreground.tertiary
+        evidenceLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let acceptBtn = NSButton(title: "Accept", target: self, action: #selector(acceptClicked))
+        let rejectBtn = NSButton(title: "Reject", target: self, action: #selector(rejectClicked))
+        for b in [acceptBtn, rejectBtn] {
+            b.bezelStyle = .inline
+            b.controlSize = .small
+            b.font = DesignTokens.Typography.caption1
+            b.translatesAutoresizingMaskIntoConstraints = false
+        }
+        let buttonRow = NSStackView(views: [acceptBtn, NSView(), rejectBtn])
+        buttonRow.orientation = .horizontal
+        buttonRow.spacing = DesignTokens.Spacing.xs
+        buttonRow.distribution = .fill
+        buttonRow.translatesAutoresizingMaskIntoConstraints = false
+
+        let stack = NSStackView(views: [factLabel, evidenceLabel, buttonRow])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = DesignTokens.Spacing.xs
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: DesignTokens.Spacing.xs),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DesignTokens.Spacing.sm),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DesignTokens.Spacing.sm),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -DesignTokens.Spacing.xs),
+            buttonRow.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+            buttonRow.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
+        ])
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { nil }
+
+    @objc private func acceptClicked() { onAccept(suggestion) }
+    @objc private func rejectClicked() { onReject(suggestion.fact.id) }
 }
 
 // MARK: - Filter identifier marshalling

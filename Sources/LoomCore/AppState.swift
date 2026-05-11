@@ -115,6 +115,48 @@ public final class AppState {
         }
     }
 
+    // MARK: - Ledger suggestion accept/reject (Phase 4 #7 sub-tasks 4+5)
+
+    /// Accept a pending `LedgerSuggestion`: persist the underlying
+    /// `KnownFact` onto the resolved character's
+    /// `knownFactsBySceneId[sourceSceneId]`, remove the suggestion
+    /// from the queue, and post the change notification so the
+    /// inspector refreshes. Bible-inspector Suggestions chip wires
+    /// its Accept button to this.
+    ///
+    /// Stale character ids (the user deleted the character before
+    /// reviewing the suggestion) are a graceful no-op for the bible
+    /// write; the suggestion is still removed from the queue because
+    /// the user's intent is "done with this".
+    public func acceptLedgerSuggestion(_ suggestion: LedgerSuggestion) {
+        if let character = currentSession.project.bible.characters.first(where: { $0.id == suggestion.characterId }) {
+            let updated = LedgerSuggestionAcceptor.apply(suggestion, to: character)
+            currentSession.updateCharacter(updated)
+            DebugLog.shared.write("[ledger] accepted suggestion fact=\(suggestion.fact.id) character=\(suggestion.characterId)")
+        } else {
+            DebugLog.shared.write("[ledger] accept on stale character=\(suggestion.characterId); dropping suggestion")
+        }
+        ledgerSuggestionsQueue.remove(factId: suggestion.fact.id)
+        NotificationCenter.default.post(
+            name: Self.ledgerSuggestionsDidChangeNotification,
+            object: self
+        )
+    }
+
+    /// Reject a pending suggestion: remove it from the queue and
+    /// post the change notification. The bible is NOT mutated.
+    /// Rejecting doesn't blacklist the fact — the next extraction
+    /// may re-surface it, and that's intentional for Phase 4 #7
+    /// (a blacklist is a Phase 6 polish concern).
+    public func rejectLedgerSuggestion(factId: UUID) {
+        ledgerSuggestionsQueue.remove(factId: factId)
+        DebugLog.shared.write("[ledger] rejected suggestion fact=\(factId)")
+        NotificationCenter.default.post(
+            name: Self.ledgerSuggestionsDidChangeNotification,
+            object: self
+        )
+    }
+
     private func handleExtractionComplete(
         sceneId: UUID,
         result: Result<[LedgerExtraction.ExtractedFact], Error>

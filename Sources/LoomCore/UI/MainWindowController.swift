@@ -21,7 +21,7 @@ public final class MainWindowController: NSWindowController {
     public init() {
         let sidebar = SidebarController(session: AppState.shared.currentSession)
         let editor = EditorViewController(session: AppState.shared.currentSession)
-        let inspector = InspectorController(session: AppState.shared.currentSession)
+        let inspector = InspectorController(session: AppState.shared.currentSession, appState: AppState.shared)
 
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = DesignTokens.Editor.sidebarMinWidth
