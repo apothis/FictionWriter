@@ -26,9 +26,22 @@ public final class AppState {
     /// side-call coordinator. Constructed once at app init; the
     /// extractorProvider closure consults `settings.extractorServer()`
     /// at call time so the coordinator picks up server changes
-    /// without rebuild. `onExtractionComplete` is wired in sub-task 3
-    /// (diff vs existing ledger → Suggestions UI).
+    /// without rebuild. Sub-task 3 routes the coordinator's
+    /// `onExtractionComplete` into `ledgerSuggestionsQueue` via the
+    /// `LedgerDiff` pure-data pass.
     public let ledgerCoordinator: LedgerExtractionCoordinator
+
+    /// Phase 4 #7 sub-task 3 — in-memory pending-suggestions queue,
+    /// populated from extraction results via `LedgerDiff.diff(...)`.
+    /// The Bible inspector chip (sub-task 4) reads from this; the
+    /// accept-handler (sub-task 5) persists into
+    /// `Character.knownFactsBySceneId` and removes from the queue.
+    public let ledgerSuggestionsQueue: LedgerSuggestionsQueue
+
+    /// Posted on the main queue when new suggestions are appended
+    /// to `ledgerSuggestionsQueue`. Sub-task 4's Bible inspector
+    /// subscribes to refresh the chip count + list.
+    public static let ledgerSuggestionsDidChangeNotification = Notification.Name("LoomLedger.suggestionsDidChange")
 
     private var dirtyObserver: NSObjectProtocol?
 
@@ -68,11 +81,18 @@ public final class AppState {
             }
         )
         self.ledgerCoordinator = coordinator
+        self.ledgerSuggestionsQueue = LedgerSuggestionsQueue()
 
         // Now that all stored properties are initialized, rebind the
         // closures to reach `self` for live settings + session.
         settingsSnapshot = { [weak self] in self?.settings ?? AppSettings() }
         sessionRef = { [weak self] in self?.currentSession ?? session }
+
+        // Phase 4 #7 sub-task 3 — feed successful extractions into the
+        // suggestions queue via the LedgerDiff pure-data pass.
+        coordinator.onExtractionComplete = { [weak self] sceneId, result in
+            self?.handleExtractionComplete(sceneId: sceneId, result: result)
+        }
 
         DebugLog.shared.write("[loom] app-state init servers=\(self.settings.servers.count) default=\(self.settings.defaultServerId?.uuidString ?? "nil") session=\(session.project.title)")
 
@@ -92,6 +112,34 @@ public final class AppState {
     deinit {
         if let obs = dirtyObserver {
             NotificationCenter.default.removeObserver(obs)
+        }
+    }
+
+    private func handleExtractionComplete(
+        sceneId: UUID,
+        result: Result<[LedgerExtraction.ExtractedFact], Error>
+    ) {
+        switch result {
+        case .failure(let err):
+            DebugLog.shared.write("[ledger] extraction failed for scene=\(sceneId): \(err)")
+            return
+        case .success(let extracted):
+            let bible = currentSession.project.bible
+            let suggestions = LedgerDiff.diff(
+                extracted: extracted,
+                bible: bible,
+                sourceSceneId: sceneId
+            )
+            guard !suggestions.isEmpty else {
+                DebugLog.shared.write("[ledger] diff produced 0 new suggestions for scene=\(sceneId) (extracted=\(extracted.count))")
+                return
+            }
+            ledgerSuggestionsQueue.add(suggestions)
+            DebugLog.shared.write("[ledger] queued \(suggestions.count) suggestions for scene=\(sceneId)")
+            NotificationCenter.default.post(
+                name: Self.ledgerSuggestionsDidChangeNotification,
+                object: self
+            )
         }
     }
 
