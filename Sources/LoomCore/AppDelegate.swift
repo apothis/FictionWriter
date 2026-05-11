@@ -169,7 +169,31 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
 
         fileMenuItem.submenu = fileMenu
 
+        // View menu — Phase 3 §E adds the Plan view toggle.
+        let viewMenuItem = NSMenuItem()
+        main.addItem(viewMenuItem)
+        let viewMenu = NSMenu(title: "View")
+        let planView = NSMenuItem(
+            title: "Plan View",
+            action: #selector(showPlanWindow),
+            keyEquivalent: "p")
+        planView.keyEquivalentModifierMask = [.command, .shift]
+        planView.target = self
+        viewMenu.addItem(planView)
+        viewMenuItem.submenu = viewMenu
+
         NSApp.mainMenu = main
+    }
+
+    // MARK: - Plan window (Phase 3 §E)
+
+    private var planWindow: PlanWindowController?
+
+    @objc private func showPlanWindow() {
+        if planWindow == nil {
+            planWindow = PlanWindowController(session: AppState.shared.currentSession)
+        }
+        planWindow?.showAndActivate()
     }
 
     // MARK: - File menu actions

@@ -264,6 +264,23 @@ public final class ProjectSession {
         return captureSnapshot(sceneId: sceneId, label: "Before Rewrite")
     }
 
+    // MARK: - Scene metadata mutations (Phase 3 §E)
+
+    public func setSceneStatus(id: UUID, to status: SceneStatus) {
+        guard var scene = scenes[id] else { return }
+        scene.status = status
+        scenes[id] = scene
+        markDirty()
+        DebugLog.shared.write("[scene] status id=\(id) → \(status.rawValue)")
+    }
+
+    public func setSceneSummary(id: UUID, to summary: String) {
+        guard var scene = scenes[id] else { return }
+        scene.summary = summary
+        scenes[id] = scene
+        markDirty()
+    }
+
     // MARK: - Manuscript hierarchy mutations (Phase 3 §B)
 
     @discardableResult
