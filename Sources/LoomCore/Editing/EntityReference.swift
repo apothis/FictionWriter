@@ -44,9 +44,36 @@ public struct EntityReference: Equatable {
     /// in document order. Plain markdown links to URLs / other targets
     /// are skipped — only `#entity/<uuid>` matches.
     public static func scan(in prose: String) -> [EntityReference] {
-        let range = NSRange(prose.startIndex..., in: prose)
-        let matches = referencePattern.matches(in: prose, options: [], range: range)
-        return matches.compactMap { reference(from: $0, in: prose) }
+        scanWithRanges(in: prose).map(\.reference)
+    }
+
+    /// One entity reference along with the NSRange it occupies in
+    /// the source prose. Used by the hover-preview popover to map
+    /// mouse positions back to entity ids.
+    public struct Located: Equatable {
+        public let reference: EntityReference
+        public let range: NSRange
+    }
+
+    /// Like `scan(in:)` but also reports each match's NSRange.
+    public static func scanWithRanges(in prose: String) -> [Located] {
+        let nsRange = NSRange(prose.startIndex..., in: prose)
+        let matches = referencePattern.matches(in: prose, options: [], range: nsRange)
+        var out: [Located] = []
+        for m in matches {
+            guard let ref = reference(from: m, in: prose) else { continue }
+            out.append(Located(reference: ref, range: m.range))
+        }
+        return out
+    }
+
+    /// Returns the `Located` reference whose range covers
+    /// `location`, or nil if the location isn't in any entity link.
+    public static func referenceAt(location: Int, in prose: String) -> Located? {
+        for hit in scanWithRanges(in: prose) {
+            if NSLocationInRange(location, hit.range) { return hit }
+        }
+        return nil
     }
 
     // MARK: Internals

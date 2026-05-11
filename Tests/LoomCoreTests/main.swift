@@ -67,6 +67,8 @@ let suites: [TestSuite] = [
     phase2SparklineLayoutTests(),
     phase2SparklineViewTests(),
     phase2SparklineWiringTests(),
+    phase2EntityReferenceRangesTests(),
+    phase2EntityHoverTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

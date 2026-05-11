@@ -30,7 +30,9 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var generationStartObserver: NSObjectProtocol?
     private var insertAgainObserver: NSObjectProtocol?
     private var keyEventMonitor: Any?
+    private var mouseMovedMonitor: Any?
     private let mentionPopover = MentionPopover()
+    private let hoverPopover = EntityHoverPopover()
     /// Flipped from .thinking to .streaming on the first emitted token
     /// so the tray's busy indicator reflects "model has begun replying".
     private var firstTokenSeenThisGeneration: Bool = false
@@ -68,6 +70,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = sessionDidChangeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = sessionDidReplaceObserver { NotificationCenter.default.removeObserver(o) }
         if let m = keyEventMonitor { NSEvent.removeMonitor(m) }
+        if let m = mouseMovedMonitor { NSEvent.removeMonitor(m) }
     }
 
     public override func loadView() {
@@ -285,7 +288,9 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     public override func viewDidAppear() {
         super.viewDidAppear()
         view.window?.makeFirstResponder(textView)
+        view.window?.acceptsMouseMovedEvents = true
         installKeyShortcutMonitorIfNeeded()
+        installMouseMovedMonitorIfNeeded()
     }
 
     /// Phase 2 follow-on (HANDOFF §9.2) — ⌘⇧R Keep & Redo. AppKit
@@ -484,6 +489,79 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     public var isMentionPopoverVisibleForTesting: Bool { mentionPopover.isVisible }
     public var mentionPopoverMatchesForTesting: [EntityAutocompleteMatch] { mentionPopover.matches }
     public var mentionPopoverSelectedIndexForTesting: Int { mentionPopover.selectedIndex }
+
+    // MARK: - Phase 2.5 follow-on — entity-link hover preview
+
+    /// Resolves a character-index in the current prose to a
+    /// hover-info card (name + role + description excerpt) when it
+    /// falls inside an entity link. Public so smoke tests can
+    /// exercise the routing without driving mouseMoved events; the
+    /// editor's NSEvent monitor hooks it on hover.
+    public func hoverInfoAt(characterIndex: Int) -> EntityHoverInfo? {
+        let prose = textView.string
+        guard let hit = EntityReference.referenceAt(location: characterIndex, in: prose) else {
+            return nil
+        }
+        return EntityHoverResolver.info(for: hit.reference.id, in: session.project)
+    }
+
+    /// Installs a `.mouseMoved` local monitor that resolves the
+    /// glyph under the cursor and toggles the hover popover when it
+    /// lands inside an entity-link range. Mouse-moved events only
+    /// fire because `viewDidAppear` sets
+    /// `window.acceptsMouseMovedEvents = true`.
+    private func installMouseMovedMonitorIfNeeded() {
+        guard mouseMovedMonitor == nil else { return }
+        mouseMovedMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            guard let self = self else { return event }
+            guard self.view.window?.isKeyWindow == true else { return event }
+            self.handleMouseMoved(event)
+            return event
+        }
+    }
+
+    private func handleMouseMoved(_ event: NSEvent) {
+        guard let layoutMgr = textView.layoutManager, let container = textView.textContainer else { return }
+        let pointInWindow = event.locationInWindow
+        let pointInTV = textView.convert(pointInWindow, from: nil)
+        guard textView.bounds.contains(pointInTV) else {
+            hoverPopover.hide()
+            return
+        }
+        // Translate to container coordinates by undoing textContainerOrigin.
+        let containerPoint = NSPoint(
+            x: pointInTV.x - textView.textContainerOrigin.x,
+            y: pointInTV.y - textView.textContainerOrigin.y
+        )
+        var fraction: CGFloat = 0
+        let glyphIndex = layoutMgr.glyphIndex(for: containerPoint, in: container, fractionOfDistanceThroughGlyph: &fraction)
+        // Off the end of the text → no hover.
+        let glyphCount = layoutMgr.numberOfGlyphs
+        guard glyphCount > 0, glyphIndex < glyphCount, fraction < 1 else {
+            hoverPopover.hide()
+            return
+        }
+        let charIndex = layoutMgr.characterIndexForGlyph(at: glyphIndex)
+        guard let info = hoverInfoAt(characterIndex: charIndex) else {
+            hoverPopover.hide()
+            return
+        }
+        // Position the popover just below the hovered glyph.
+        guard let window = view.window else {
+            hoverPopover.hide()
+            return
+        }
+        let glyphRange = NSRange(location: glyphIndex, length: 1)
+        var rect = layoutMgr.boundingRect(forGlyphRange: glyphRange, in: container)
+        rect = rect.offsetBy(dx: textView.textContainerOrigin.x, dy: textView.textContainerOrigin.y)
+        let inView = textView.convert(rect, to: nil)
+        let onScreen = window.convertToScreen(inView)
+        let origin = NSPoint(x: onScreen.origin.x, y: onScreen.origin.y - 108)
+        hoverPopover.show(info, at: origin, in: window)
+    }
+
+    // Test-only accessor.
+    public var isHoverPopoverVisibleForTesting: Bool { hoverPopover.isVisible }
 
     // MARK: - Session ↔ text-storage sync
 
