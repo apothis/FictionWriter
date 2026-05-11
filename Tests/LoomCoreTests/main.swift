@@ -41,6 +41,8 @@ let suites: [TestSuite] = [
     phase2FanficMetadataTests(),
     phase2CharacterSchemaTests(),
     phase2BibleEntitiesTests(),
+    phase2BibleEntityMutationsTests(),
+    phase2BibleViewModelTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

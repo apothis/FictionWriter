@@ -172,6 +172,54 @@ public final class ProjectSession {
         DebugLog.shared.write("[bible] deleteCharacter id=\(id)")
     }
 
+    // MARK: - Bible mutations (Phase 2 #5: settings + objects)
+
+    @discardableResult
+    public func addSetting(name: String) -> Setting {
+        let setting = Setting(name: name)
+        project.bible.settings.append(setting)
+        markChanged()
+        DebugLog.shared.write("[bible] addSetting id=\(setting.id) name=\(name)")
+        return setting
+    }
+
+    public func updateSetting(_ setting: Setting) {
+        guard let idx = project.bible.settings.firstIndex(where: { $0.id == setting.id }) else { return }
+        project.bible.settings[idx] = setting
+        markChanged()
+        DebugLog.shared.write("[bible] updateSetting id=\(setting.id)")
+    }
+
+    public func deleteSetting(id: UUID) {
+        guard let idx = project.bible.settings.firstIndex(where: { $0.id == id }) else { return }
+        project.bible.settings.remove(at: idx)
+        markChanged()
+        DebugLog.shared.write("[bible] deleteSetting id=\(id)")
+    }
+
+    @discardableResult
+    public func addObject(name: String) -> BibleObject {
+        let object = BibleObject(name: name)
+        project.bible.objects.append(object)
+        markChanged()
+        DebugLog.shared.write("[bible] addObject id=\(object.id) name=\(name)")
+        return object
+    }
+
+    public func updateObject(_ object: BibleObject) {
+        guard let idx = project.bible.objects.firstIndex(where: { $0.id == object.id }) else { return }
+        project.bible.objects[idx] = object
+        markChanged()
+        DebugLog.shared.write("[bible] updateObject id=\(object.id)")
+    }
+
+    public func deleteObject(id: UUID) {
+        guard let idx = project.bible.objects.firstIndex(where: { $0.id == id }) else { return }
+        project.bible.objects.remove(at: idx)
+        markChanged()
+        DebugLog.shared.write("[bible] deleteObject id=\(id)")
+    }
+
     // MARK: - Notes + inspector tab
 
     public func updateNotes(_ notes: String) {
