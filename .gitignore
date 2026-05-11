@@ -5,3 +5,4 @@ Loom.app/
 DerivedData/
 *.xcodeproj/
 .DS_Store
+Tools/LedgerSpike/last-run/

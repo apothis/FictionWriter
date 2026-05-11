@@ -67,6 +67,12 @@ public enum LedgerExtraction {
         public let falsePositives: Int
         public let falseNegatives: Int
 
+        public init(truePositives: Int, falsePositives: Int, falseNegatives: Int) {
+            self.truePositives = truePositives
+            self.falsePositives = falsePositives
+            self.falseNegatives = falseNegatives
+        }
+
         public var precision: Double {
             let denom = truePositives + falsePositives
             return denom == 0 ? 1.0 : Double(truePositives) / Double(denom)
@@ -102,6 +108,18 @@ public enum LedgerExtraction {
             return String(data: data, encoding: .utf8) ?? "[]"
         }()
 
+        // Two load-bearing tail elements:
+        //
+        // 1. `JSON output:\n[` force-prefill — without the `[`, Qwen-
+        //    class base models reading the §3.3 prompt verbatim treat
+        //    the scene prose as document-complete and emit EOS
+        //    immediately (observed: completion_tokens=1, empty text).
+        //    Starting the prompt inside a JSON array forces the model
+        //    to continue the structure.
+        //
+        // 2. The downstream parser already handles preamble/postamble
+        //    and anchors on the outermost `[`/`]`, so the synthesized
+        //    leading `[` doesn't need to be stripped here.
         return """
         Read the scene below. Extract factual claims about characters present in or referenced by the scene. For each fact, output a JSON object with:
         - character_id: which character this fact is about (use NAME or ALIAS).
@@ -118,6 +136,9 @@ public enum LedgerExtraction {
 
         Scene:
         \(scenePose)
+
+        JSON output:
+        [
         """
     }
 
@@ -125,41 +146,88 @@ public enum LedgerExtraction {
 
     public static func parseExtractedFacts(_ raw: String) throws -> [ExtractedFact] {
         // Local models routinely wrap structured output in preamble /
-        // postamble. Locate the outermost `[` ... `]` pair and parse
-        // that. (We can't naively trim balanced brackets because an
-        // evidence_quote string may contain `[` or `]`; instead we
-        // anchor on the FIRST `[` and the LAST `]` in the response,
-        // which works for the well-formed-array-in-the-middle case
-        // and degrades to a parse error for true noise.)
-        guard let first = raw.firstIndex(of: "["),
-              let last = raw.lastIndex(of: "]"),
-              first <= last
-        else { throw ParseError.noJSONArrayFound }
-        let trimmed = String(raw[first...last])
-        guard let data = trimmed.data(using: .utf8) else { throw ParseError.malformedJSON }
+        // postamble. Locate the outermost `[` and try strict array
+        // decoding if a matching `]` exists; otherwise fall through
+        // to per-object recovery (the model frequently runs out of
+        // tokens mid-array and never closes the `]`).
+        guard let first = raw.firstIndex(of: "[") else {
+            throw ParseError.noJSONArrayFound
+        }
 
-        // Decode loosely so an invalid certainty doesn't kill the
-        // whole array. Decode to a raw `[Item]` with optional fields,
-        // then filter to valid ExtractedFact.
         struct RawItem: Decodable {
             let character_id: String?
             let fact: String?
             let certainty: String?
             let evidence_quote: String?
         }
-        guard let items = try? JSONDecoder().decode([RawItem].self, from: data) else {
+
+        func itemsToFacts(_ items: [RawItem]) -> [ExtractedFact] {
+            items.compactMap { raw in
+                guard
+                    let cid = raw.character_id,
+                    let f = raw.fact,
+                    let c = raw.certainty,
+                    let cert = Certainty(rawValue: c),
+                    let q = raw.evidence_quote
+                else { return nil }
+                return ExtractedFact(characterId: cid, fact: f, certainty: cert, evidenceQuote: q)
+            }
+        }
+
+        // Strict path: full array decode (only if there's a closing
+        // `]` and the contents parse cleanly).
+        if let last = raw.lastIndex(of: "]"), first <= last {
+            let trimmed = String(raw[first...last])
+            if let data = trimmed.data(using: .utf8),
+               let items = try? JSONDecoder().decode([RawItem].self, from: data) {
+                return itemsToFacts(items)
+            }
+        }
+
+        // Fallback path: the array is malformed or unclosed
+        // (truncation, key typos, missing commas — all observed
+        // against Qwen3-class models doing this task). Walk the
+        // response from the first `[` and try to parse each
+        // top-level `{...}` block individually. Use a brace-depth
+        // counter that ignores braces inside strings.
+        var objects: [String] = []
+        var depth = 0
+        var inString = false
+        var escape = false
+        var start: String.Index? = nil
+        var i = first
+        while i < raw.endIndex {
+            let ch = raw[i]
+            if escape { escape = false }
+            else if ch == "\\" && inString { escape = true }
+            else if ch == "\"" { inString.toggle() }
+            else if !inString {
+                if ch == "{" {
+                    if depth == 0 { start = i }
+                    depth += 1
+                } else if ch == "}" {
+                    depth -= 1
+                    if depth == 0, let s = start {
+                        let nextIdx = raw.index(after: i)
+                        objects.append(String(raw[s..<nextIdx]))
+                        start = nil
+                    }
+                }
+            }
+            i = raw.index(after: i)
+        }
+
+        var collected: [ExtractedFact] = []
+        for objText in objects {
+            guard let data = objText.data(using: .utf8),
+                  let item = try? JSONDecoder().decode(RawItem.self, from: data)
+            else { continue }
+            collected.append(contentsOf: itemsToFacts([item]))
+        }
+        if collected.isEmpty && objects.isEmpty {
             throw ParseError.malformedJSON
         }
-        return items.compactMap { raw in
-            guard
-                let cid = raw.character_id,
-                let f = raw.fact,
-                let c = raw.certainty,
-                let cert = Certainty(rawValue: c),
-                let q = raw.evidence_quote
-            else { return nil }
-            return ExtractedFact(characterId: cid, fact: f, certainty: cert, evidenceQuote: q)
-        }
+        return collected
     }
 
     // MARK: - Scorer

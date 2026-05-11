@@ -1,0 +1,85 @@
+{
+  "_description": "Hand-graded fixture for the LedgerSpike eval (LOOM_MEMORY §4.5 falsifiable hypothesis). 5 short scenes from a single arc, mix of SFW and NSFW per the LOOM_NSFW strategic-anchor directive. Each scene's gold ledger captures only NEW facts characters DID or LEARNED in that scene — not facts established in earlier scenes. This matches the production extractor's per-scene-diff posture (LOOM_STORY_BIBLE §3.2 step 3).",
+
+  "characters": [
+    {"name": "Mia",    "aliases": ["Mia Vance", "Miss Vance", "the librarian"]},
+    {"name": "Anders", "aliases": ["the stranger", "Anders Voll"]},
+    {"name": "Karim",  "aliases": ["Karim Vance"]}
+  ],
+
+  "aliases_canonical": {
+    "Mia Vance": "Mia",
+    "Miss Vance": "Mia",
+    "the librarian": "Mia",
+    "Anders Voll": "Anders",
+    "the stranger": "Anders",
+    "Karim Vance": "Karim"
+  },
+
+  "scenes": [
+    {
+      "id": "01_door",
+      "title": "The Knock",
+      "tag": "SFW",
+      "prose": "Mia was halfway through her wine when the knock came. Three short raps, then silence. She set the glass on the kitchen counter and crossed the hallway, the floorboards complaining under her bare feet.\n\nThe man on the landing was younger than she'd expected — maybe thirty, dark coat damp from the rain. He had the careful posture of someone who knew he didn't belong.\n\n\"Sorry to bother you,\" he said. \"I'm looking for number nineteen. The directory downstairs is — uh — not helpful.\"\n\n\"Down one floor, opposite corner.\" Mia kept her hand on the door. \"You alright?\"\n\n\"Better in a second.\" He gave her a tight, embarrassed smile. \"Anders. I'm meant to be at a dinner.\"\n\n\"Mia.\" She didn't offer her hand.\n\n\"Thanks, Mia.\" He glanced down the corridor. \"Have a good evening.\"\n\nShe closed the door and listened to his footsteps recede. Halfway through her wine again before she realised she was smiling.",
+      "gold_facts": [
+        {"character_id": "Mia",    "fact": "Mia was drinking wine alone in her flat.",                  "certainty": "asserted", "evidence_quote": "halfway through her wine"},
+        {"character_id": "Mia",    "fact": "Mia learned the stranger's name is Anders.",                "certainty": "asserted", "evidence_quote": "\"Anders. I'm meant to be at a dinner.\""},
+        {"character_id": "Mia",    "fact": "Mia gave the stranger directions to flat nineteen.",        "certainty": "asserted", "evidence_quote": "\"Down one floor, opposite corner.\""},
+        {"character_id": "Anders", "fact": "Anders was lost and looking for flat nineteen.",            "certainty": "asserted", "evidence_quote": "\"I'm looking for number nineteen.\""},
+        {"character_id": "Anders", "fact": "Anders was going to a dinner.",                             "certainty": "asserted", "evidence_quote": "\"I'm meant to be at a dinner.\""},
+        {"character_id": "Anders", "fact": "Anders's coat was damp from rain.",                         "certainty": "asserted", "evidence_quote": "dark coat damp from the rain"}
+      ]
+    },
+
+    {
+      "id": "02_coffee",
+      "title": "Coffee with Karim",
+      "tag": "SFW",
+      "prose": "Karim was already at the table when Mia got to the cafe, two coffees in front of him.\n\n\"You're late,\" he said, sliding one across.\n\n\"I'm always late.\" Mia sat. \"I had a stranger at my door last night.\"\n\n\"A stranger.\" Karim raised an eyebrow.\n\n\"Looking for the Bergmans' flat. Nice enough. Embarrassed about getting the directory wrong.\"\n\n\"Mia.\" Her brother's tone took on the careful patience he reserved for her worse decisions. \"Tell me you didn't invite a stranger in.\"\n\n\"I gave him directions and closed the door.\"\n\nHe sipped his coffee. \"Speaking of which — work hired someone. Anders something. Started Monday. Reasonable, doesn't talk too much. You'd like him.\"\n\n\"Hm.\" Mia turned the cup in her hands. The name caught somewhere in her chest and stayed there, but she said nothing. Lots of men were called Anders.",
+      "gold_facts": [
+        {"character_id": "Mia",   "fact": "Mia told Karim about the stranger at her door.",              "certainty": "asserted", "evidence_quote": "\"I had a stranger at my door last night.\""},
+        {"character_id": "Karim", "fact": "Karim is Mia's brother.",                                     "certainty": "asserted", "evidence_quote": "Her brother's tone"},
+        {"character_id": "Karim", "fact": "Karim has a new coworker named Anders who started Monday.",   "certainty": "asserted", "evidence_quote": "\"work hired someone. Anders something. Started Monday.\""},
+        {"character_id": "Mia",   "fact": "Mia did not connect Karim's coworker Anders with the stranger at her door.", "certainty": "unknown", "evidence_quote": "Lots of men were called Anders."}
+      ]
+    },
+
+    {
+      "id": "03_first_night",
+      "title": "First Night",
+      "tag": "NSFW",
+      "prose": "It was the third time they'd had dinner, and the first time Anders stayed.\n\nMia let him kiss her in the hallway, in the kitchen, against the bedroom door. By the time her dress hit the floor she'd stopped pretending to be in control of anything, and that was the part that surprised her most — how good it felt to stop pretending.\n\nHis mouth was patient. He took his time with her, hands flat against her hips, then her thighs, then everywhere she wanted them. She'd told herself, beforehand, that she wouldn't make a sound. That lasted maybe a minute.\n\nAfterward she lay against his chest, hair stuck to her cheek, watching the streetlight bend across the ceiling. He traced a slow line down her spine.\n\n\"You're quieter than I expected,\" he said.\n\n\"Liar.\"\n\nHe laughed, low. She felt it through his ribs.",
+      "gold_facts": [
+        {"character_id": "Mia",    "fact": "Mia and Anders had sex at Mia's flat.",                       "certainty": "asserted", "evidence_quote": "the first time Anders stayed"},
+        {"character_id": "Mia",    "fact": "This was Mia and Anders's third dinner together.",            "certainty": "asserted", "evidence_quote": "It was the third time they'd had dinner"},
+        {"character_id": "Anders", "fact": "Anders stayed the night at Mia's flat for the first time.",   "certainty": "asserted", "evidence_quote": "the first time Anders stayed"}
+      ]
+    },
+
+    {
+      "id": "04_revelation",
+      "title": "The Coworker",
+      "tag": "SFW",
+      "prose": "They were in Mia's kitchen, two weeks later. Anders was making pasta. Badly.\n\n\"My boss is impossible,\" he said over the hiss of the pan. \"But the new junior — Karim — actually halfway competent. Showed me a fix on a query yesterday that would have taken me a week.\"\n\nMia, on her stool, went very still.\n\n\"Karim what.\"\n\n\"Vance, I think. Why?\"\n\n\"He's my brother.\"\n\nAnders turned. \"You're joking.\"\n\n\"I'm really not.\"\n\nHe stared at her for a long second. \"Right.\" Then: \"He doesn't know it's me, does he. He's mentioned a sister. Never names.\"\n\n\"No.\" She set down her wine. \"He doesn't.\"\n\n\"Well.\" Anders looked at the pasta. The pasta looked back. \"That's going to be an interesting Monday.\"",
+      "gold_facts": [
+        {"character_id": "Mia",    "fact": "Mia learned Anders works with her brother Karim.",                 "certainty": "asserted", "evidence_quote": "\"He's my brother.\""},
+        {"character_id": "Anders", "fact": "Anders learned Karim is Mia's brother.",                           "certainty": "asserted", "evidence_quote": "\"You're joking.\""},
+        {"character_id": "Karim",  "fact": "Karim does not yet know his coworker Anders is dating his sister.", "certainty": "unknown",  "evidence_quote": "\"He doesn't know it's me, does he.\""},
+        {"character_id": "Anders", "fact": "Anders thinks Karim is a competent junior coworker.",              "certainty": "asserted", "evidence_quote": "\"actually halfway competent\""}
+      ]
+    },
+
+    {
+      "id": "05_confession",
+      "title": "Confession",
+      "tag": "NSFW",
+      "prose": "She'd been quiet all evening, and Anders had known to leave it alone, which was one of the reasons she'd already decided to keep him.\n\nThey'd gone to bed early. After, lying tangled in the sheet with her cheek against his shoulder, Mia finally said it.\n\n\"I'm going to tell Karim.\"\n\n\"Tomorrow?\"\n\n\"Tomorrow.\"\n\nHe shifted so he could see her face. The streetlight made his eyes look almost grey.\n\n\"Are you scared?\"\n\n\"A little. He'll be weird about it. He's always weird about it.\"\n\n\"Then I'll be there when you tell him.\"\n\nShe pressed her mouth to his collarbone, then lower. \"You don't have to.\"\n\n\"I'd like to.\"\n\nShe didn't answer in words. There were better answers available. By the time she came back up for air he'd stopped pretending he could form sentences either, and the conversation about her brother could wait until morning.",
+      "gold_facts": [
+        {"character_id": "Mia",    "fact": "Mia decided to tell Karim about her relationship with Anders the next day.", "certainty": "asserted", "evidence_quote": "\"I'm going to tell Karim.\" \"Tomorrow?\" \"Tomorrow.\""},
+        {"character_id": "Anders", "fact": "Anders offered to be present when Mia tells Karim.",                          "certainty": "asserted", "evidence_quote": "\"Then I'll be there when you tell him.\""},
+        {"character_id": "Mia",    "fact": "Mia and Anders had sex again.",                                                "certainty": "asserted", "evidence_quote": "There were better answers available."}
+      ]
+    }
+  ]
+}

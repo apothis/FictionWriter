@@ -31,7 +31,22 @@ let package = Package(
         .executableTarget(
             name: "LoomCoreTests",
             dependencies: ["LoomCore"],
-            path: "Tests/LoomCoreTests"
+            path: "Tests/LoomCoreTests",
+            // Bundle the fixture JSON so the eval runner (LedgerSpike,
+            // declared below) can resolve `Bundle.module` to read it.
+            // The LedgerSpike target imports LoomCore for the
+            // extraction module and re-reads the fixture from disk.
+            exclude: ["Fixtures"]
+        ),
+        // One-off network-y eval runners ("spike" targets). These hit
+        // a live local-LLM server and emit a markdown report; they're
+        // not part of the standard test suite. Run on demand:
+        //   `swift run LedgerSpike` (requires the Qwen3.6-27B
+        //   summariser-role server reachable at the configured URL).
+        .executableTarget(
+            name: "LedgerSpike",
+            dependencies: ["LoomCore"],
+            path: "Tools/LedgerSpike"
         ),
     ]
 )
