@@ -80,8 +80,81 @@ struct SceneResult {
 // MARK: - Runner
 
 let fixtureRelativePath = "Tests/LoomCoreTests/Fixtures/LedgerSpike/fixture.json"
+
+/// Two backends supported:
+/// - `kobold` (default): hits KoboldCpp at LOOM_SPIKE_BASE_URL via the
+///   `/api/v1/generate` endpoint with a GBNF `grammar` field. The
+///   existing production server (Qwen3.6-27B) speaks this.
+/// - `ollama`: hits Ollama at LOOM_SPIKE_OLLAMA_URL via `/api/chat`
+///   with a `format: <JSON schema>` field. The §10 → §11 evolution:
+///   embedding-scorer findings + research §5 motivated swapping the
+///   extractor model; Ollama with a small Gemma 4 variant is the
+///   first such swap to validate.
+enum Backend: String { case kobold, ollama }
+let backend = Backend(rawValue: ProcessInfo.processInfo.environment["LOOM_SPIKE_BACKEND"] ?? "kobold") ?? .kobold
 let baseURLString = ProcessInfo.processInfo.environment["LOOM_SPIKE_BASE_URL"]
     ?? "http://192.168.1.201:5001/"
+let ollamaURLString = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_URL"]
+    ?? "http://localhost:11434/"
+let ollamaModel = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_MODEL"]
+    ?? "gemma4_4b:latest"
+
+/// Send the §3.3 extraction call to Ollama. Uses `/api/chat` (so
+/// Ollama applies the model's chat template — important for Gemma
+/// which needs `<start_of_turn>user/model` wrapping) with the JSON
+/// Schema in the `format` field. Returns the message content on
+/// success; error otherwise. Synchronous wrapper for the spike runner.
+func ollamaExtract(
+    prompt: String,
+    schema: [String: Any]
+) -> Result<String, Error> {
+    guard let url = URL(string: "api/chat", relativeTo: URL(string: ollamaURLString))?.absoluteURL else {
+        return .failure(NSError(domain: "Spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "bad ollama URL"]))
+    }
+    let body: [String: Any] = [
+        "model": ollamaModel,
+        "messages": [["role": "user", "content": prompt]],
+        "stream": false,
+        "options": [
+            "temperature": 0.3,
+            "num_predict": 1024,
+            // rep_pen equivalent in Ollama options; default 1.1.
+            "repeat_penalty": 1.1,
+        ],
+        "format": schema,
+    ]
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+    let cfg = URLSessionConfiguration.default
+    cfg.timeoutIntervalForRequest = 600
+    let s = URLSession(configuration: cfg)
+    let sem = DispatchSemaphore(value: 0)
+    var result: Result<String, Error> = .failure(NSError(domain: "Spike", code: -1))
+    s.dataTask(with: req) { data, _, err in
+        defer { sem.signal() }
+        if let err = err { result = .failure(err); return }
+        guard let data = data else {
+            result = .failure(NSError(domain: "Spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "no body"]))
+            return
+        }
+        do {
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            if let msg = obj?["message"] as? [String: Any],
+               let content = msg["content"] as? String {
+                result = .success(content)
+            } else {
+                let raw = String(data: data, encoding: .utf8) ?? ""
+                result = .failure(NSError(domain: "Spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "unexpected shape: \(raw.prefix(200))"]))
+            }
+        } catch {
+            result = .failure(error)
+        }
+    }.resume()
+    sem.wait()
+    return result
+}
 
 func loadFixture() throws -> (Fixture, URL) {
     let cwd = FileManager.default.currentDirectoryPath
@@ -101,6 +174,49 @@ func extractSceneSync(
         characters: characters,
         scenePose: scene.prose
     )
+
+    // Ollama backend: use JSON Schema instead of GBNF; otherwise the
+    // same prompt + scoring shape. Ollama applies the model's chat
+    // template via /api/chat — works for Gemma 4, which expects
+    // `<start_of_turn>user...<end_of_turn><start_of_turn>model`.
+    if backend == .ollama {
+        let schema = LedgerExtraction.jsonSchema(
+            certainties: [.asserted],
+            characters: characters
+        )
+        let emptyEmbScore = LedgerExtraction.ScoreReport(
+            truePositives: 0, falsePositives: 0,
+            falseNegatives: scene.gold_facts.count
+        )
+        let response = ollamaExtract(prompt: prompt, schema: schema)
+        switch response {
+        case .failure(let e):
+            return SceneResult(
+                scene: scene, prompt: prompt, rawResponse: "<<ollama error: \(e)>>",
+                parseError: e, extracted: [],
+                score: emptyEmbScore, scoreEmbedding: emptyEmbScore
+            )
+        case .success(let raw):
+            do {
+                let extracted = try LedgerExtraction.parseExtractedFacts(raw)
+                let gold = scene.gold_facts.map { $0.asExtracted() }
+                let score = LedgerExtraction.score(
+                    extracted: extracted, gold: gold, aliases: fixtureAliases
+                )
+                return SceneResult(
+                    scene: scene, prompt: prompt, rawResponse: raw,
+                    parseError: nil, extracted: extracted, score: score,
+                    scoreEmbedding: emptyEmbScore
+                )
+            } catch {
+                return SceneResult(
+                    scene: scene, prompt: prompt, rawResponse: raw,
+                    parseError: error, extracted: [],
+                    score: emptyEmbScore, scoreEmbedding: emptyEmbScore
+                )
+            }
+        }
+    }
 
     // Tight sampler — extraction wants deterministic JSON, not creative
     // prose. Temperature 0.3, no XTC (which actively pushes the model

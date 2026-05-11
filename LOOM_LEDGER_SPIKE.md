@@ -476,6 +476,113 @@ All three are pure-data follow-ons that reuse the existing
   metrics in the aggregate table.
 - Six new TDD tests pinning behaviour.
 
+## 11. Round-4 — Gemma 4 4B abliterated via Ollama (the §9.4 model-swap)
+
+§9.4 / research §5 recommended swapping the extractor side-call to a
+smaller, extraction-tuned, non-thinking model on the role-routed
+summariser server. The user spun up an abliterated Gemma 4 4B
+(`gemma4_4b:latest`, 7.5B actual params, Q4_K_M) on Ollama at
+`localhost:11434`. Wired the spike to talk to it via `/api/chat` with
+the JSON Schema in the `format` field — Ollama 0.5+ supports
+schema-constrained outputs natively, and Ollama applies the model's
+chat template (Gemma's `<start_of_turn>user/model` wrapping)
+automatically.
+
+### 11.1 New machinery shipped
+
+- `LedgerExtraction.jsonSchema(certainties:characters:)` — sibling to
+  `gbnfGrammar(...)`. Produces a top-level array schema with the
+  ledger-fact object shape, with optional certainty + character_id
+  enum restrictions matching the GBNF. Three TDD tests pin behaviour.
+- `LedgerSpike` now backend-selects on `LOOM_SPIKE_BACKEND` env var:
+  `kobold` (default, hits KoboldCpp's `/api/v1/generate` with GBNF)
+  or `ollama` (hits Ollama's `/api/chat` with JSON Schema). Two
+  additional env vars (`LOOM_SPIKE_OLLAMA_URL`,
+  `LOOM_SPIKE_OLLAMA_MODEL`) configure the Ollama path.
+- The embedding scorer (§10) continues to run against the KoboldCpp
+  server's embedding endpoint regardless of which backend produced
+  the extractions. The two servers are independent.
+
+### 11.2 Empirical numbers
+
+Live run, same fixture, same prompt builder, same embedding scorer at
+threshold 0.65 — only the generation backend differs:
+
+| Scene          | Tag  | Extracted | Gold | TP/FP/FN | Recall |
+|----------------|------|-----------|------|----------|--------|
+| 01_door        | SFW  | 16        | 6    | 5/11/1   | 0.83   |
+| 02_coffee      | SFW  | 15        | 4    | 3/12/1   | 0.75   |
+| 03_first_night | NSFW | 15        | 3    | 3/12/0   | **1.00** |
+| 04_revelation  | SFW  | 15        | 4    | 3/12/1   | 0.75   |
+| 05_confession  | NSFW | 16        | 3    | 3/13/0   | **1.00** |
+
+Aggregate: TP 17 / FP 60 / FN 3. Precision 0.22, **Recall 0.85**,
+F1 0.35.
+
+### 11.3 Comparison vs Qwen3.6-27B
+
+| Metric (embedding scorer)       | Qwen3.6-27B + GBNF | Gemma 4 4B + JSON Schema |
+|---------------------------------|---------------------|----------------------------|
+| Aggregate recall                | 0.40                | **0.85**                   |
+| Scenes engaged (non-empty)      | 3 of 5              | **5 of 5**                 |
+| 100%-recall scenes              | 1                   | **2**                      |
+| Total FN                        | 12                  | **3**                      |
+| Model params                    | 27B                 | 7.5B (q4)                  |
+
+Gemma 4 4B at a quarter of the parameters has more than double the
+recall — exactly what the research §5 prediction (non-thinking,
+structured-output-strong small models outperform creative-writing
+generalists at this task) suggested would happen. The §9 / §10 issues
+with Qwen (`[]`-emission on some scenes, prompt-text leakage into
+strings, degenerate loops) **do not appear at all** under Gemma 4 4B
+in this run.
+
+### 11.4 Precision is dragged down by selective hand-gold, not model error
+
+Aggregate precision 0.22 looks weak but is the same artefact as
+§9.3 / §10.4: the model emits 15-16 facts per scene; the gold is the
+3-6 most-load-bearing facts hand-picked for the eval. Most "FPs"
+are valid prose observations the user would accept in the
+Suggestions UI flow ("Anders placed his hands on Mia's hips",
+"Mia watched the streetlight bend across the ceiling") — they're
+not extraction errors.
+
+For Phase 4 #7's UI flow this is actually the **right tradeoff**:
+recall-heavy extraction + per-fact user accept/reject in the
+Bible-inspector Suggestions chip. The §10.5 production filters
+(deduplication, evidence-quote validation, prompt-leakage filter)
+trim the high-FP output to the most useful candidates before they
+reach the user.
+
+### 11.5 Revised recommendation (supersedes §9.4)
+
+**The extractor for Phase 4 #7 production is Gemma 4 4B abliterated
+on Ollama (or equivalent abliterated small model at ≤ 8B params).**
+The empirical numbers cleared the §9.4 model-swap prerequisite. Next:
+
+1. Build the Phase 4 #7 UI surfaces against this extractor:
+   - Post-scene side-call to Ollama with the §11.1 plumbing.
+   - Diff vs existing ledger.
+   - Bible-inspector Suggestions chip per character.
+   - User accept / reject / edit, per-fact, with the
+     fixture-aliases-style canonicalisation already in place.
+2. Wire the §10.5 production filters (deduplication, evidence-quote
+   validation, prompt-leakage filter) as quality gates between
+   extraction and Suggestions display.
+3. Compute `unknown` from per-character scene-exposure at query time
+   (§8.3 / SymbolicToM, already documented in
+   [LOOM_STORY_BIBLE §3.5](LOOM_STORY_BIBLE.md)).
+4. Persist accepted facts into `Character.knownFactsBySceneId`
+   stamped with `sourceSceneId`; render the
+   `[KNOWLEDGE-LEDGER]` prompt layer below the cache boundary at
+   generation time.
+
+The Qwen3.6-27B writer stays as the primary generation model;
+Gemma 4 4B (or similar) is the role-routed summariser. KoboldCpp +
+Ollama can coexist on the same machine — RPClient's role-routed
+servers pattern (different server URL per role) accommodates this
+without further plumbing changes.
+
 ## 7. References
 
 - [LOOM_STORY_BIBLE.md §3](LOOM_STORY_BIBLE.md) — extraction pipeline spec.

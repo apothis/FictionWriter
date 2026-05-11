@@ -356,6 +356,54 @@ func phase4LedgerExtractionTests() -> TestSuite {
         try expectTrue(g.contains("\\\"Mia\\\""), "Mia should be wrapped as GBNF string literal")
     }
 
+    // MARK: - JSON Schema (Ollama / OpenAI-compat structured-output path)
+
+    s.test("jsonSchema returns a top-level array schema with the ledger-fact object shape") {
+        let schema = LedgerExtraction.jsonSchema()
+        try expectEqual(schema["type"] as? String, "array")
+        guard let items = schema["items"] as? [String: Any] else {
+            throw TestFailure(message: "items missing", file: #file, line: #line)
+        }
+        try expectEqual(items["type"] as? String, "object")
+        guard let props = items["properties"] as? [String: Any] else {
+            throw TestFailure(message: "properties missing", file: #file, line: #line)
+        }
+        try expectTrue(props["character_id"] != nil, "character_id property missing")
+        try expectTrue(props["fact"] != nil, "fact property missing")
+        try expectTrue(props["certainty"] != nil, "certainty property missing")
+        try expectTrue(props["evidence_quote"] != nil, "evidence_quote property missing")
+        // All four fields must be required (Ollama / OpenAI strict mode).
+        let required = items["required"] as? [String] ?? []
+        try expectTrue(required.contains("character_id"))
+        try expectTrue(required.contains("fact"))
+        try expectTrue(required.contains("certainty"))
+        try expectTrue(required.contains("evidence_quote"))
+    }
+
+    s.test("jsonSchema constrains certainty to the supplied subset") {
+        let schema = LedgerExtraction.jsonSchema(certainties: [.asserted])
+        let items = schema["items"] as? [String: Any] ?? [:]
+        let props = items["properties"] as? [String: Any] ?? [:]
+        let cert = props["certainty"] as? [String: Any] ?? [:]
+        let certEnum = cert["enum"] as? [String] ?? []
+        try expectEqual(certEnum, ["asserted"])
+    }
+
+    s.test("jsonSchema constrains character_id to bible names + aliases when supplied") {
+        let chars = [
+            LedgerExtraction.CharacterRef(name: "Mia", aliases: ["Miss Vance"]),
+            LedgerExtraction.CharacterRef(name: "Anders", aliases: []),
+        ]
+        let schema = LedgerExtraction.jsonSchema(characters: chars)
+        let items = schema["items"] as? [String: Any] ?? [:]
+        let props = items["properties"] as? [String: Any] ?? [:]
+        let cid = props["character_id"] as? [String: Any] ?? [:]
+        let cidEnum = cid["enum"] as? [String] ?? []
+        try expectTrue(cidEnum.contains("Mia"))
+        try expectTrue(cidEnum.contains("Miss Vance"))
+        try expectTrue(cidEnum.contains("Anders"))
+    }
+
     s.test("grammar without characters falls back to free string for character_id (back-compat)") {
         let g = LedgerExtraction.gbnfGrammar()
         try expectTrue(

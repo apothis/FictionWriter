@@ -199,6 +199,53 @@ public enum LedgerExtraction {
             + "ws ::= \" \"?"
     }
 
+    // MARK: - JSON Schema (Ollama / OpenAI-compat structured outputs)
+
+    /// JSON Schema for the §3.3 ledger-fact array. Same shape as the
+    /// GBNF (sibling `gbnfGrammar(certainties:characters:)`) but in
+    /// JSON-Schema form for backends that take a schema rather than a
+    /// grammar — specifically Ollama's `format` parameter (≥ 0.5) and
+    /// the OpenAI `response_format: json_schema` strict mode.
+    ///
+    /// Returns `[String: Any]` rather than `Data` because callers
+    /// usually want to splice this into a larger request body before
+    /// serialising — saves a round-trip through `JSONSerialization`.
+    public static func jsonSchema(
+        certainties: [Certainty] = Certainty.allCases,
+        characters: [CharacterRef] = []
+    ) -> [String: Any] {
+        let characterIdProperty: [String: Any]
+        if characters.isEmpty {
+            characterIdProperty = ["type": "string"]
+        } else {
+            var allNames: [String] = []
+            for c in characters {
+                allNames.append(c.name)
+                allNames.append(contentsOf: c.aliases)
+            }
+            characterIdProperty = [
+                "type": "string",
+                "enum": allNames,
+            ]
+        }
+        return [
+            "type": "array",
+            "items": [
+                "type": "object",
+                "properties": [
+                    "character_id": characterIdProperty,
+                    "fact": ["type": "string"],
+                    "certainty": [
+                        "type": "string",
+                        "enum": certainties.map { $0.rawValue },
+                    ],
+                    "evidence_quote": ["type": "string"],
+                ],
+                "required": ["character_id", "fact", "certainty", "evidence_quote"],
+            ],
+        ]
+    }
+
     // MARK: - Response parser
 
     public static func parseExtractedFacts(_ raw: String) throws -> [ExtractedFact] {
