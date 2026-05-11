@@ -30,6 +30,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var generationStartObserver: NSObjectProtocol?
     private var insertAgainObserver: NSObjectProtocol?
     private var keyEventMonitor: Any?
+    private let mentionPopover = MentionPopover()
     /// Flipped from .thinking to .streaming on the first emitted token
     /// so the tray's busy indicator reflects "model has begun replying".
     private var firstTokenSeenThisGeneration: Bool = false
@@ -308,6 +309,21 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
                 DebugLog.shared.write("[editor] shortcut: ⌘⇧R Keep & Redo")
                 return nil   // swallow
             }
+            // Phase 2.5 — when the mention popover is visible, route
+            // arrow keys / Enter / Esc to it before they reach the
+            // text view (which would otherwise move the cursor /
+            // insert newline / start completion).
+            if self.mentionPopover.isVisible {
+                // 125 = down, 126 = up, 36 = Return, 76 = numpad Enter,
+                // 48 = Tab, 53 = Esc.
+                switch event.keyCode {
+                case 126: self.moveMentionPopoverSelection(by: -1); return nil
+                case 125: self.moveMentionPopoverSelection(by: 1); return nil
+                case 36, 76, 48: self.commitMentionPopoverSelection(); return nil
+                case 53: self.dismissMentionPopover(); return nil
+                default: break
+                }
+            }
             // Esc or ⌘. while generating → cancel mid-stream
             // (HANDOFF §9.2). Esc has keyCode 53; ⌘. is Cmd +
             // period. Either swallows the event so it doesn't reach
@@ -411,6 +427,64 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         refreshFromSession()
     }
 
+    // MARK: - Phase 2.5 follow-on — @-mention popover
+
+    /// Recomputes the popover state against the current cursor +
+    /// project. Called from `textDidChange` AND directly from smoke
+    /// tests after they prime the cursor via `setCursorOffsetForTesting`.
+    public func refreshMentionPopover() {
+        guard let result = currentMentionContext() else {
+            mentionPopover.hide()
+            return
+        }
+        mentionPopover.setMatches(result.matches)
+        if mentionPopover.matches.isEmpty {
+            // setMatches hides on empty; nothing else to do.
+            return
+        }
+        // Wire commit/dismiss → controller routing on first use.
+        if mentionPopover.onCommit == nil {
+            mentionPopover.onCommit = { [weak self] in self?.commitMentionPopoverSelection() }
+            mentionPopover.onDismiss = nil
+        }
+        // Position near the cursor. textView's selectedRange().lower
+        // is the cursor; firstRect(forCharacterRange:) gives a screen
+        // rect we can pin the panel below.
+        if let window = view.window, let layoutMgr = textView.layoutManager, let container = textView.textContainer {
+            let cursor = textView.selectedRange().location
+            let glyphRange = layoutMgr.glyphRange(forCharacterRange: NSRange(location: max(0, cursor - 1), length: 1), actualCharacterRange: nil)
+            var rect = layoutMgr.boundingRect(forGlyphRange: glyphRange, in: container)
+            rect = rect.offsetBy(dx: textView.textContainerOrigin.x, dy: textView.textContainerOrigin.y)
+            let inView = textView.convert(rect, to: nil)
+            let onScreen = window.convertToScreen(inView)
+            let origin = NSPoint(x: onScreen.origin.x, y: onScreen.origin.y - 168)   // below the line
+            mentionPopover.present(at: origin, in: window)
+        } else {
+            // No window yet (tests) — still show "logically" so the
+            // smoke can observe visibility.
+            mentionPopover.present(at: .zero, in: nil)
+        }
+    }
+
+    public func commitMentionPopoverSelection() {
+        guard let match = mentionPopover.currentSelection() else { return }
+        applyMention(match)
+        mentionPopover.hide()
+    }
+
+    public func dismissMentionPopover() {
+        mentionPopover.hide()
+    }
+
+    public func moveMentionPopoverSelection(by delta: Int) {
+        mentionPopover.moveSelection(by: delta)
+    }
+
+    // Test-only state accessors.
+    public var isMentionPopoverVisibleForTesting: Bool { mentionPopover.isVisible }
+    public var mentionPopoverMatchesForTesting: [EntityAutocompleteMatch] { mentionPopover.matches }
+    public var mentionPopoverSelectedIndexForTesting: Int { mentionPopover.selectedIndex }
+
     // MARK: - Session ↔ text-storage sync
 
     private func refreshFromSession() {
@@ -467,6 +541,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         session.updateProse(id: id, prose: prose)
         postWordCount()
         pushTrayState()
+        refreshMentionPopover()
     }
 
     private func pushTrayState() {
