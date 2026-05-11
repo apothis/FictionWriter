@@ -264,6 +264,146 @@ public final class ProjectSession {
         return captureSnapshot(sceneId: sceneId, label: "Before Rewrite")
     }
 
+    // MARK: - Manuscript hierarchy mutations (Phase 3 §B)
+
+    @discardableResult
+    public func addPart(title: String) -> Part {
+        let part = Part(title: title)
+        project.manuscript.parts.append(part)
+        markChanged()
+        DebugLog.shared.write("[manuscript] addPart id=\(part.id) title=\(title)")
+        return part
+    }
+
+    /// Overload that takes an explicit Part (used when seeding a
+    /// part with chapters that already exist — e.g. import / undo).
+    public func addPart(_ part: Part) {
+        project.manuscript.parts.append(part)
+        markChanged()
+        DebugLog.shared.write("[manuscript] addPart id=\(part.id) (with \(part.chapters.count) chapters)")
+    }
+
+    public func updatePart(_ part: Part) {
+        guard let idx = project.manuscript.parts.firstIndex(where: { $0.id == part.id }) else { return }
+        project.manuscript.parts[idx] = part
+        markChanged()
+        DebugLog.shared.write("[manuscript] updatePart id=\(part.id)")
+    }
+
+    /// Removes a Part. Chapters inside it are dissolved — their
+    /// scene ids fall back into `orphanedSceneIds` so the user
+    /// can re-place them. The Phase 1 "scenes-without-chapters"
+    /// fallback means no scene id ever disappears from the
+    /// manuscript by accident.
+    public func deletePart(id: UUID) {
+        guard let idx = project.manuscript.parts.firstIndex(where: { $0.id == id }) else { return }
+        let part = project.manuscript.parts.remove(at: idx)
+        for chap in part.chapters {
+            for sceneId in chap.sceneIds where !project.manuscript.orphanedSceneIds.contains(sceneId) {
+                project.manuscript.orphanedSceneIds.append(sceneId)
+            }
+        }
+        markChanged()
+        DebugLog.shared.write("[manuscript] deletePart id=\(id)")
+    }
+
+    public func reorderParts(from: Int, to: Int) {
+        var parts = project.manuscript.parts
+        guard from != to, from >= 0, from < parts.count, to >= 0, to < parts.count else { return }
+        let moved = parts.remove(at: from)
+        parts.insert(moved, at: to)
+        project.manuscript.parts = parts
+        markChanged()
+        DebugLog.shared.write("[manuscript] reorderParts \(from) → \(to)")
+    }
+
+    @discardableResult
+    public func addChapter(title: String, in partId: UUID) -> Chapter? {
+        guard let pIdx = project.manuscript.parts.firstIndex(where: { $0.id == partId }) else {
+            DebugLog.shared.write("[manuscript] addChapter: stale partId \(partId)")
+            return nil
+        }
+        let chap = Chapter(title: title)
+        project.manuscript.parts[pIdx].chapters.append(chap)
+        markChanged()
+        DebugLog.shared.write("[manuscript] addChapter id=\(chap.id) in part=\(partId)")
+        return chap
+    }
+
+    /// Overload that takes an explicit Chapter (mirrors addPart).
+    public func addChapter(_ chapter: Chapter, in partId: UUID) {
+        guard let pIdx = project.manuscript.parts.firstIndex(where: { $0.id == partId }) else { return }
+        project.manuscript.parts[pIdx].chapters.append(chapter)
+        markChanged()
+    }
+
+    public func updateChapter(_ chapter: Chapter) {
+        for pIdx in project.manuscript.parts.indices {
+            if let cIdx = project.manuscript.parts[pIdx].chapters.firstIndex(where: { $0.id == chapter.id }) {
+                project.manuscript.parts[pIdx].chapters[cIdx] = chapter
+                markChanged()
+                DebugLog.shared.write("[manuscript] updateChapter id=\(chapter.id)")
+                return
+            }
+        }
+    }
+
+    public func deleteChapter(id: UUID) {
+        for pIdx in project.manuscript.parts.indices {
+            if let cIdx = project.manuscript.parts[pIdx].chapters.firstIndex(where: { $0.id == id }) {
+                let removed = project.manuscript.parts[pIdx].chapters.remove(at: cIdx)
+                for sceneId in removed.sceneIds where !project.manuscript.orphanedSceneIds.contains(sceneId) {
+                    project.manuscript.orphanedSceneIds.append(sceneId)
+                }
+                markChanged()
+                DebugLog.shared.write("[manuscript] deleteChapter id=\(id)")
+                return
+            }
+        }
+    }
+
+    /// Moves a scene id into the target chapter, removing it from
+    /// any current chapter or from `orphanedSceneIds`. No-op when
+    /// the chapter id is stale.
+    public func placeScene(_ sceneId: UUID, in chapterId: UUID) {
+        var targetPIdx: Int? = nil
+        var targetCIdx: Int? = nil
+        for pIdx in project.manuscript.parts.indices {
+            if let cIdx = project.manuscript.parts[pIdx].chapters.firstIndex(where: { $0.id == chapterId }) {
+                targetPIdx = pIdx
+                targetCIdx = cIdx
+                break
+            }
+        }
+        guard let pIdx = targetPIdx, let cIdx = targetCIdx else { return }
+        // Strip from any current location.
+        for p in project.manuscript.parts.indices {
+            for c in project.manuscript.parts[p].chapters.indices {
+                project.manuscript.parts[p].chapters[c].sceneIds.removeAll(where: { $0 == sceneId })
+            }
+        }
+        project.manuscript.orphanedSceneIds.removeAll(where: { $0 == sceneId })
+        // Add to destination if not already there (the removeAll above
+        // already cleared it).
+        project.manuscript.parts[pIdx].chapters[cIdx].sceneIds.append(sceneId)
+        markChanged()
+        DebugLog.shared.write("[manuscript] placeScene \(sceneId) in chapter=\(chapterId)")
+    }
+
+    /// Moves a scene id out of any chapter back into orphanedSceneIds.
+    public func unplaceScene(_ sceneId: UUID) {
+        for p in project.manuscript.parts.indices {
+            for c in project.manuscript.parts[p].chapters.indices {
+                project.manuscript.parts[p].chapters[c].sceneIds.removeAll(where: { $0 == sceneId })
+            }
+        }
+        if !project.manuscript.orphanedSceneIds.contains(sceneId) {
+            project.manuscript.orphanedSceneIds.append(sceneId)
+        }
+        markChanged()
+        DebugLog.shared.write("[manuscript] unplaceScene \(sceneId)")
+    }
+
     // MARK: - Lorebook mutations (Phase 2 #8)
 
     @discardableResult
