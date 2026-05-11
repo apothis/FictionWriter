@@ -1,6 +1,6 @@
 # Loom — Handoff
 
-> **Date:** 2026-05-11 (updated PM). **Status: Phase 1 + Phase 1.5 + Phase 2 complete.** 403 tests passing. Branch `main` ahead of origin (Phase 2 + §9.2 gaps pushed). Editor MVP shipped (Continue/Expand/Rewrite, acceptance window, History inspector, Markdown export); Phase 1.5 layered on Rewrite, per-call instruction box, Author's Note depth-N injection, Cmd-, Settings window. **Phase 2 ships Story Bible v1 — see §11 below for the ship state.** Next: **Phase 3 — Manuscript hierarchy + Plan view**. See **§9 (Phase 2 ship state)** below.
+> **Date:** 2026-05-11 (updated late PM). **Status: Phase 1 + 1.5 + 2 + 2.5 + 3 §A–§F complete.** **473 tests passing**, all green; app builds clean. Branch `main` pushed to origin/apothis/FictionWriter through `95e4216`. Phase 1 + 1.5 = Editor MVP (Continue/Expand/Rewrite, acceptance window, History inspector, Markdown export, per-call instruction box, A/N depth-N, Cmd-, Settings). Phase 2 = Story Bible v1 (WritingDirection / FanficMetadata / Bible-Keyed injection / Lorebook / snapshots-before-rewrite / @-mention / sparkline). Phase 2.5 = the @-popover UI + mention sparkline-bar + hover-preview popover that completed the Phase 2 #10–#11 affordances. Phase 3 = Manuscript hierarchy (Part > Chapter > Scene) + Plan view (NSCollectionView card grid in a standalone window) + target word counts. **Next: Phase 4 — Generation-mode expansion + knowledge ledger.** See **§11 (Phase 2)**, **§12 (Phase 2.5)**, **§13 (Phase 3)** below.
 >
 > **Repo**: `/Volumes/SSD1/Code/FictionWriter` · pushed to [github.com/apothis/FictionWriter](https://github.com/apothis/FictionWriter) · branch `main`. RPClient (the source of inherited plumbing) at `/Volumes/SSD1/Code/RPClient`.
 >
@@ -332,3 +332,93 @@ These don't ship code in Phase 2 but the schema landed in #1-#3 must support the
 8. Begin Phase 2 #1 (Project schema migration + tests).
 
 Estimated time-to-end-of-Phase-2: 3-5 days of focused work. Phase 2 #1-#3 land first; everything else parallelises on top.
+
+---
+
+## 12. Phase 2.5 polish ship state (added 2026-05-11 late PM)
+
+After Phase 2 schema + plumbing landed, three polish items completed the user-visible affordances the Phase 2 work items promised. All TDD-first.
+
+| Item | Commit |
+|------|--------|
+| @-mention popover UI (NSPanel + NSTableView; arrow/Enter/Tab/Esc navigation; positions below the cursor's glyph rect) | `7528f88` |
+| Mention sparkline bar with marker dots (replaces the "N mentions" text caption; click a marker → `session.selectScene(id:)`) | `ceb35ad` |
+| Entity-link hover-preview popover (mouseMoved → glyph → character → reference → resolver card with name + role + 200-char excerpt) | `b0e38f9` |
+
+Also closed-out **HANDOFF §9.2 Phase 1 gaps** as part of this batch:
+
+| Item | Commit |
+|------|--------|
+| editorMaxWidth doc drift (720pt → 1080pt) | `3b06966` |
+| ⌘⇧R Keep & Redo keyboard binding | `3b06966` |
+| Esc / ⌘. cancel generation mid-stream | `3b06966` |
+| Auto-probe on server add (async + AutoProbe.applyResult) | `3b06966` |
+
+Phase 2.5 deferrals (carried into Phase 3 / Phase 4 polish):
+- Lorebook editing UI — Phase 4 Sphiratrioth territory; data + plumbing already in place.
+- Per-entity inspector sub-tabs (Knowledge ledger / Relationships / Mentions / Notes per §14.5.1) — most need Phase 4 data.
+- Inline floating selection toolbar — heavy AppKit, no Phase-2 contract depends on it.
+
+---
+
+## 13. Phase 3 ship state (added 2026-05-11 late PM)
+
+All six work items §A–§F landed TDD-first, totalling 45 new tests (428 → 473). Pushed to origin through `95e4216`.
+
+| § | Item | Commit |
+|---|------|--------|
+| A | Part + Chapter schema on Manuscript; lazy-versioned decode; Phase 1/2 forward-load contract intact | `fb04d06` |
+| B | ProjectSession CRUD: add/update/delete/reorder Part; add/update/delete Chapter (across parts); placeScene / unplaceScene moves scene ids between containers | `fb04d06` |
+| C | `Manuscript.flatSceneIds` walks Parts → Chapters → orphan tail; `ManuscriptWordCount.compute` folds scene counts up to chapter / part / project totals (orphan scenes count toward project total only) | `fb04d06` |
+| D | Sidebar `NSOutlineView` renders Part > Chapter > Scene hierarchy; Parts + Chapters are expandable but not selectable; `+ Part` toolbar button + `New Part` / `Add Chapter to Part` context menu | `8e42134` |
+| E | Plan view: `NSCollectionView` flow-layout card grid in standalone window (⌘⇧P / View menu). Each card: title · group label (chapter title) · word count + status · summary excerpt. Click routes through `session.selectScene(id:)`. Decoupled from main split view so the NSCollectionView spike doesn't touch existing layout. | `9fce49b` |
+| F | `ProjectSettings.targetWordCount: Int?` (project-level target; Scene + Chapter already carried `targetWordCount: Int?` from the Phase 1 schema). Session setters for all three levels. Plan-view cards render "Nw / Tw · status" when target is set. | `95e4216` |
+
+### 13.1 §9.4 risk #1 forward-load contract — met
+
+Every Phase 3 schema migration includes a hand-rolled "Phase 1/2 JSON → Phase 3 decode" test. A bundle on disk in the pre-Phase-3 shape loads cleanly with `manuscript.parts = []` and `settings.targetWordCount = nil`.
+
+### 13.2 §11.4 NSCollectionView reassess gate — preliminary verdict
+
+Spike landed clean. `NSCollectionViewFlowLayout` + custom `NSCollectionViewItem` renderer + selection routing — no surprises during implementation. Verdict: **AppKit stays viable for Phase 3**. The pivot question can re-open if drag-rearrange between chapters/parts becomes messy in §D.2 polish, but the foundation is solid.
+
+### 13.3 Phase 3 polish carried forward
+
+- **Drag-rearrange between chapters / between Parts.** Current drag-rearrange still works within `orphanedSceneIds` (Phase 1 contract); chapter-aware pasteboard handling is real DnD work.
+- **Inline rename for Parts + Chapters** in the sidebar (currently only scenes are inline-editable; rename is via the right-click menu's Rename which today only works for scenes).
+- **Plan-view section headers per chapter** (the `groupTitle` field already drives this; just needs the supplementary-view wiring) + **Grid/Matrix/Outline view-mode toggle** (per LOOM_UI_RESEARCH.md §B.2.16).
+- **Target-word editing UI**: project-target field in Settings window; per-chapter/per-scene target in a right-click menu or scene-metadata inspector.
+- **Status strip showing project total / target**.
+- **Live-app eyeball pass** on the new sidebar tree + Plan window. Mount smoke is green; honest UI verification is still the right next step before relying on either daily.
+
+---
+
+## 14. Phase 4 entry checklist (for the next context)
+
+1. Read this handoff §11 → §12 → §13 to understand the ship state.
+2. Skim [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) — Phase 4 ships the rest of the modes (Rewrite sub-variants / Show-don't-tell / Brainstorm / Critique / Bridge / Describe / NameSuggest) per `GenerationMode` enum + LOOM_PLAN.md L4.
+3. Skim [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) §3 — the knowledge-ledger extraction pipeline (the distinctive Loom engineering). Schema is already on `Character.knownFactsBySceneId`.
+4. Skim [`LOOM_NSFW.md`](LOOM_NSFW.md) §2.5 — Sphiratrioth lorebook-as-active-scenario; the Lorebook schema shipped with `group/weight/sticky` fields specifically for this pattern.
+5. TDD posture per the saved [`feedback_tdd_always`](file:///Users/kevinappleyard/.claude/projects/-Volumes-SSD1-Code-FictionWriter/memory/feedback_tdd_always.md) memory: red → green → commit. Schema migrations include the forward-load case.
+6. Repo state on entry:
+   - Branch `main`, all Phase 3 work pushed to `origin/main` through `95e4216`.
+   - 473 tests passing (`swift run LoomCoreTests`).
+   - `./build.sh` builds `Loom.app`; run with `./Loom.app/Contents/MacOS/Loom` (NOT `./run.sh`).
+   - Live server at `http://192.168.1.201:5001` (Qwen3.6-27B); defaultServerId in `~/Library/Application Support/Loom/settings.json`.
+   - Settings window: `Cmd-,`. Plan view: `⌘⇧P` (View menu).
+
+### 14.1 Phase 4 work-item proposal (subject to a kickoff session refinement)
+
+1. **Rewrite sub-modes**: rewriteVoice / rewriteTense / rewritePOV / rewriteLength. Per-sub-mode system prompt + per-sub-mode `ModeInstruction` layer. Reuse the existing acceptance window + snapshot-before-rewrite plumbing.
+2. **Show-don't-tell** generation mode. Selection-replace shape (like rewrite).
+3. **Brainstorm** mode: blank-canvas riff. Side-panel or modal? Decide based on the History tab's grammar.
+4. **Critique** mode: read-only suggestion overlay. Doesn't mutate prose; renders alongside.
+5. **Bridge** mode: fills the gap between two selected paragraphs. Selection-replace.
+6. **Knowledge ledger** extraction pipeline (the load-bearing distinctive item): post-generation side-call to a summariser-role server (RPClient parallel-server pattern) that extracts character-fact tuples per scene; `Character.knownFactsBySceneId` populates; the prompt assembler reads from it on next generation.
+7. **Refusal-detection chip → Continue from refusal** action (LOOM_NSFW.md §5).
+8. **Sphiratrioth lorebook starter pack** + Roll-Outcome generation mode (LOOM_NSFW.md §2.5 + §3.5).
+
+### 14.2 Open before Phase 4 starts
+
+- **Decide whether Knowledge Ledger is Phase 4.1 (early, blocks new modes) or 4.2 (after Rewrite sub-variants ship).** Per LOOM_PLAN.md L4 they're grouped; in practice the modes can ship first since they don't strictly need the ledger to function.
+- **Live-app eyeball on Phase 2.5 + Phase 3 surfaces.** The mount smoke catches state transitions; layout fragility is what the §9.4 risk warns about. Recommend an explicit hour clicking around the Bible inspector / Plan window / hover popovers before Phase 4 commits start.
