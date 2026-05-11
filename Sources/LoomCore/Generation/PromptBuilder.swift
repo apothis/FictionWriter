@@ -358,6 +358,50 @@ public enum PromptBuilder {
                 evictionPriority: 40
             ))
         }
+
+        // Phase 4 #7 sub-task 7 — [KNOWLEDGE-LEDGER] layer. Renders the
+        // POV character's KNOWS / DOES NOT KNOW blocks derived from
+        // per-scene exposure (LedgerKnowledge.compute). Below the cache
+        // boundary because the ledger changes whenever extraction adds
+        // a fact or the user accepts a suggestion; keeping it below
+        // means cache hit rates stay high across scenes that share the
+        // same constant-bible above-cache content.
+        //
+        // Only rendered when the current scene has a POV character AND
+        // there's at least one fact in either bucket — an empty layer
+        // would just waste tokens.
+        if let currentSceneId = context.currentSceneId,
+           let currentScene = context.scenes[currentSceneId],
+           let povId = currentScene.pov,
+           let povCharacter = context.project.bible.characters.first(where: { $0.id == povId }) {
+            let knowledge = LedgerKnowledge.compute(
+                characterId: povId,
+                asOfSceneId: currentSceneId,
+                in: context.project,
+                scenes: context.scenes
+            )
+            if !knowledge.knows.isEmpty || !knowledge.unknowns.isEmpty {
+                let text = formatKnowledgeLedger(
+                    povName: povCharacter.name,
+                    knows: knowledge.knows,
+                    unknowns: knowledge.unknowns
+                )
+                layers.append(Layer(
+                    kind: .knowledgeLedger,
+                    label: "Knowledge ledger (\(povCharacter.name))",
+                    content: text,
+                    tokens: TokenEstimator.estimate(text),
+                    aboveCache: false,
+                    sourceId: povId,
+                    // Higher than bible-keyed (50) — the ledger is the
+                    // distinctive engineering and POV consistency depends
+                    // on it. Lower than .max so heavy budget pressure can
+                    // still drop it before the prose itself.
+                    evictionPriority: 70
+                ))
+            }
+        }
+
         let trimmedAN = an.trimmingCharacters(in: .whitespacesAndNewlines)
         let willInjectAN = !trimmedAN.isEmpty && recentProse != nil && depthLines > 0
         if willInjectAN, var proseLayer = recentProse {
@@ -701,6 +745,32 @@ public enum PromptBuilder {
             out += "\n\n— \(entry.name)"
             if !entry.content.isEmpty {
                 out += "\n\(entry.content)"
+            }
+        }
+        return out
+    }
+
+    /// Phase 4 #7 sub-task 7 — render the `[KNOWLEDGE-LEDGER]` block.
+    /// Format per LOOM_GENERATION_MODES.md §11. Each sub-block (KNOWS,
+    /// DOES NOT KNOW) is omitted when its bucket is empty so an
+    /// empty bullet list never reaches the model.
+    private static func formatKnowledgeLedger(
+        povName: String,
+        knows: [KnownFact],
+        unknowns: [KnownFact]
+    ) -> String {
+        var out = "[KNOWLEDGE-LEDGER]"
+        if !knows.isEmpty {
+            out += "\n\(povName) knows the following as of this scene:"
+            for fact in knows {
+                out += "\n- \(fact.fact)"
+            }
+        }
+        if !unknowns.isEmpty {
+            if !knows.isEmpty { out += "\n" }
+            out += "\n\(povName) does NOT know:"
+            for fact in unknowns {
+                out += "\n- \(fact.fact)"
             }
         }
         return out
