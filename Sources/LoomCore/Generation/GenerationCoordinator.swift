@@ -75,6 +75,13 @@ public final class GenerationCoordinator {
             return
         }
 
+        // Phase 2 #9 — capture pre-rewrite snapshot (Scrivener pattern,
+        // HANDOFF §9.1 row 9). No-op for non-rewrite modes; no-op for
+        // in-memory ("Untitled") sessions. Runs before the network
+        // request so an in-flight cancel still leaves the snapshot
+        // intact.
+        session.captureBeforeRewriteIfNeeded(mode: mode, sceneId: sceneId)
+
         // Build the prompt. PromptBuilder is pure; no network yet.
         // Pass the last-probed model name so `.auto` template detection
         // resolves against the live model (e.g. "Qwen3.6-..." → .chatml).

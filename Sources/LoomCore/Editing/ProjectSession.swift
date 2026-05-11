@@ -220,6 +220,50 @@ public final class ProjectSession {
         DebugLog.shared.write("[bible] deleteObject id=\(id)")
     }
 
+    // MARK: - Snapshots (Phase 2 #9)
+
+    /// Captures the current prose of `sceneId` as a snapshot file on
+    /// disk (`<project>/snapshots/<ts>-<uuid>.json`). Returns the
+    /// persisted record, or nil when no work was done — either
+    /// the session is in-memory (`url == nil`) or the scene id is
+    /// stale.
+    @discardableResult
+    public func captureSnapshot(sceneId: UUID, label: String?) -> PersistedSnapshot? {
+        guard let projectURL = url else {
+            DebugLog.shared.write("[snapshot] capture skipped: in-memory session")
+            return nil
+        }
+        guard let scene = scenes[sceneId] else {
+            DebugLog.shared.write("[snapshot] capture skipped: stale sceneId \(sceneId)")
+            return nil
+        }
+        let snap = PersistedSnapshot(
+            sceneId: sceneId,
+            takenAt: Date(),
+            label: label,
+            contentSnapshot: scene.prose
+        )
+        do {
+            try SnapshotStore().write(snap, in: projectURL)
+            return snap
+        } catch {
+            DebugLog.shared.write("[snapshot] write failed: \(error)")
+            return nil
+        }
+    }
+
+    /// Captures a "Before Rewrite" snapshot if the mode is part of the
+    /// rewrite family (LOOM_DATA_MODEL.md §5: rewrite / rewriteVoice /
+    /// rewriteTense / rewritePOV / rewriteLength — all destructive,
+    /// they replace selected prose in place). No-op for non-rewrite
+    /// modes. Designed to be called by GenerationCoordinator.start()
+    /// before the network request kicks off.
+    @discardableResult
+    public func captureBeforeRewriteIfNeeded(mode: GenerationMode, sceneId: UUID) -> PersistedSnapshot? {
+        guard SnapshotPolicy.shouldSnapshot(beforeMode: mode) else { return nil }
+        return captureSnapshot(sceneId: sceneId, label: "Before Rewrite")
+    }
+
     // MARK: - Lorebook mutations (Phase 2 #8)
 
     @discardableResult
