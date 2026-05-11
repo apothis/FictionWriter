@@ -43,7 +43,7 @@ public final class AppState {
     /// subscribes to refresh the chip count + list.
     public static let ledgerSuggestionsDidChangeNotification = Notification.Name("LoomLedger.suggestionsDidChange")
 
-    private var dirtyObserver: NSObjectProtocol?
+    private var wordCountObserver: NSObjectProtocol?
 
     /// Test-only init. Production code uses `.shared`.
     public init(settingsStore: AppSettingsStore = AppSettingsStore()) {
@@ -96,21 +96,27 @@ public final class AppState {
 
         DebugLog.shared.write("[loom] app-state init servers=\(self.settings.servers.count) default=\(self.settings.defaultServerId?.uuidString ?? "nil") session=\(session.project.title)")
 
-        // Subscribe to dirty→clean transitions (post-autosave) and
-        // evaluate the active scene against the ledger threshold.
-        // Production wiring; the coordinator itself is fully tested in
-        // Phase4LedgerExtractionCoordinatorTests.
-        dirtyObserver = NotificationCenter.default.addObserver(
-            forName: ProjectSession.didChangeDirtyStateNotification,
+        // Subscribe to the editor's per-keystroke word-count signal
+        // and evaluate the active scene against the ledger threshold.
+        // (Originally hooked into ProjectSession.didChangeDirtyState
+        // on the dirty→clean post-autosave edge, but
+        // ProjectSession.scheduleAutoSave is a no-op when url == nil
+        // — i.e., untitled in-memory projects never reach the
+        // dirty→clean edge, so the coordinator was never called for
+        // the most common first-run case. The coordinator's own 2s
+        // debounce already handles keystroke-burst collapse, so
+        // gating on autosave was both redundant and broken.)
+        wordCountObserver = NotificationCenter.default.addObserver(
+            forName: EditorViewController.wordCountChangedNotification,
             object: nil,
             queue: .main
         ) { [weak self] note in
-            self?.handleDirtyStateChange(note)
+            self?.handleWordCountChange(note)
         }
     }
 
     deinit {
-        if let obs = dirtyObserver {
+        if let obs = wordCountObserver {
             NotificationCenter.default.removeObserver(obs)
         }
     }
@@ -185,15 +191,13 @@ public final class AppState {
         }
     }
 
-    private func handleDirtyStateChange(_ note: Notification) {
-        guard let session = note.object as? ProjectSession, session === currentSession else { return }
-        // Only fire on dirty→clean (post-save) — clean→dirty is just
-        // "user started typing" and we don't want to schedule on the
-        // very first keystroke of a burst.
-        guard session.isDirty == false else { return }
-        guard let sceneId = session.currentSceneId else { return }
-        guard let scene = session.scenes[sceneId] else { return }
-        let wordCount = WordCount.count(scene.prose)
+    private func handleWordCountChange(_ note: Notification) {
+        guard let info = note.userInfo,
+              let sceneId = info["sceneId"] as? UUID,
+              let wordCount = info["wordCount"] as? Int else { return }
+        // The coordinator's 2s debounce collapses bursts: rapid-fire
+        // keystroke posts cancel + reschedule, so the extractor only
+        // runs once after the user pauses.
         ledgerCoordinator.evaluate(sceneId: sceneId, currentWordCount: wordCount)
     }
 

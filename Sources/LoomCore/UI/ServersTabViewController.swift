@@ -208,16 +208,28 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
 
     @objc private func setExtractorClicked() {
         let row = tableView.selectedRow
-        guard row >= 0, row < appState.settings.servers.count else { return }
-        let profile = appState.settings.servers[row]
-        // If this profile is already the extractor, clicking the button
-        // clears the role (toggle behaviour, matches "Set as Default"'s
-        // implicit clear-on-reassign).
-        if appState.settings.extractorServerId == profile.id {
-            try? setExtractor(id: nil)
+        if row >= 0, row < appState.settings.servers.count {
+            let profile = appState.settings.servers[row]
+            if appState.settings.extractorServerId == profile.id {
+                try? setExtractor(id: nil)   // toggle off
+            } else {
+                try? setExtractor(id: profile.id)
+            }
         } else {
-            try? setExtractor(id: profile.id)
+            // No row selected (macOS-26 inset-style click can leave the
+            // visual highlight in place without registering selection on
+            // the delegate). Fall back to designating the first Ollama-
+            // kind profile — that's almost always what the user means
+            // when they click this button in the Phase 4 #7 flow.
+            setExtractorViaFallbackForTest()
         }
+    }
+
+    /// Test-visible fallback used both by the no-selection click path
+    /// and by the dedicated suite that pins the behaviour.
+    public func setExtractorViaFallbackForTest() {
+        guard let ollama = appState.settings.servers.first(where: { $0.kind == .ollama }) else { return }
+        try? setExtractor(id: ollama.id)
     }
 
     private func presentAddServerSheet() {
@@ -294,12 +306,21 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
     }
 
     private func refreshButtons() {
-        let hasSelection = tableView.selectedRow >= 0
-        removeButton.isEnabled = hasSelection
-        setDefaultButton.isEnabled = hasSelection
-        setExtractorButton.isEnabled = hasSelection
+        // Enable whenever there's at least one row. macOS-26's
+        // `style = .inset` NSTableView shows a visual selection pill
+        // on click but doesn't reliably propagate to the delegate's
+        // `tableViewSelectionDidChange`, leaving a visually-selected
+        // row paired with disabled buttons — confusing dead-end. The
+        // click handlers now validate at action time and fall back
+        // sensibly when `selectedRow == -1`.
+        let hasRows = !appState.settings.servers.isEmpty
+        removeButton.isEnabled = hasRows
+        setDefaultButton.isEnabled = hasRows
+        setExtractorButton.isEnabled = hasRows
         // Update the extractor button's label so the toggle behaviour
-        // is visible: "Set as Extractor" / "Clear Extractor".
+        // is visible: "Set as Extractor" / "Clear Extractor". Reads
+        // from current selection when valid, else from whether *any*
+        // ollama profile is currently the extractor.
         let row = tableView.selectedRow
         if row >= 0, row < appState.settings.servers.count,
            appState.settings.servers[row].id == appState.settings.extractorServerId {

@@ -56,26 +56,22 @@ func phase4LedgerCoordinatorWiringTests() -> TestSuite {
         try expectEqual(appState.settings.extractorServer()?.kind, .ollama)
     }
 
-    s.test("AppState observes ProjectSession.didChangeDirtyStateNotification for evaluate") {
+    s.test("AppState observes EditorViewController.wordCountChangedNotification for evaluate") {
         let appState = freshAppState()
-        // This is honest-smoke — verifying the observer was registered
-        // by triggering a state change and ensuring no crash. The
-        // coordinator's state machine is unit-tested separately.
-        let session = appState.currentSession
-        let sceneId = session.currentSceneId!
-        // Manually drive a dirty→clean transition via the test hook.
-        session.updateProse(id: sceneId, prose: "Some prose here.")
-        session.markCleanForTest()
-        // Post the dirty-state change notification ourselves (the
-        // production path posts it after flushSave; under TestKit the
-        // run loop isn't pumped, so timer-based autosave never fires).
+        // The full state-machine semantics live in
+        // Phase4LedgerExtractionCoordinatorTests; this is honest-smoke
+        // that the observer is wired (no crash; reaches the
+        // coordinator). The runtime trigger is per-keystroke from the
+        // editor, NOT post-autosave — autosave is a no-op for untitled
+        // (in-memory) projects and we'd otherwise never evaluate.
+        let sceneId = appState.currentSession.currentSceneId!
         NotificationCenter.default.post(
-            name: ProjectSession.didChangeDirtyStateNotification,
-            object: session
+            name: EditorViewController.wordCountChangedNotification,
+            object: nil,
+            userInfo: ["sceneId": sceneId, "wordCount": 50]
         )
-        // No assertion needed — the observer must not throw; the
-        // coordinator's evaluate is benign for under-threshold input.
-        try expectEqual(session.isDirty, false)
+        // Below-threshold: no crash, no state change.
+        try expectNil(appState.ledgerCoordinator.baseline(for: sceneId))
     }
 
     return s

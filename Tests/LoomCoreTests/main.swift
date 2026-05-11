@@ -98,6 +98,8 @@ let suites: [TestSuite] = [
     phase4ScenePresenceTests(),
     phase4LedgerKnowledgeTests(),
     phase4KnowledgeLedgerLayerTests(),
+    phase4LedgerWordCountTriggerTests(),
+    phase4ExtractorButtonEnableTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
