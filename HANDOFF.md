@@ -1,6 +1,6 @@
 # Loom — Handoff
 
-> **Date:** 2026-05-11 (updated late PM). **Status: Phase 1 + 1.5 + 2 + 2.5 + 3 §A–§F complete.** **473 tests passing**, all green; app builds clean. Branch `main` pushed to origin/apothis/FictionWriter through `95e4216`. Phase 1 + 1.5 = Editor MVP (Continue/Expand/Rewrite, acceptance window, History inspector, Markdown export, per-call instruction box, A/N depth-N, Cmd-, Settings). Phase 2 = Story Bible v1 (WritingDirection / FanficMetadata / Bible-Keyed injection / Lorebook / snapshots-before-rewrite / @-mention / sparkline). Phase 2.5 = the @-popover UI + mention sparkline-bar + hover-preview popover that completed the Phase 2 #10–#11 affordances. Phase 3 = Manuscript hierarchy (Part > Chapter > Scene) + Plan view (NSCollectionView card grid in a standalone window) + target word counts. **Next: Phase 4 — Generation-mode expansion + knowledge ledger.** See **§11 (Phase 2)**, **§12 (Phase 2.5)**, **§13 (Phase 3)** below.
+> **Date:** 2026-05-11 (updated late PM). **Status: Phase 1 + 1.5 + 2 + 2.5 + 3 §A–§F complete; Phase 4 in flight.** **494 tests passing**, all green; app builds clean. Branch `main` pushed to origin/apothis/FictionWriter through `95e4216` (Phase 3); the three Phase 4 in-flight commits (`3101de3`, `e5c9abe`, `1f3836d`) are local-only pending push. Phase 1 + 1.5 = Editor MVP (Continue/Expand/Rewrite, acceptance window, History inspector, Markdown export, per-call instruction box, A/N depth-N, Cmd-, Settings). Phase 2 = Story Bible v1 (WritingDirection / FanficMetadata / Bible-Keyed injection / Lorebook / snapshots-before-rewrite / @-mention / sparkline). Phase 2.5 = the @-popover UI + mention sparkline-bar + hover-preview popover that completed the Phase 2 #10–#11 affordances. Phase 3 = Manuscript hierarchy (Part > Chapter > Scene) + Plan view (NSCollectionView card grid in a standalone window) + target word counts. **Phase 4 in-flight slices**: rewriteVoice prompt layer (§14.1 #1), Continue-from-refusal chip action (§14.1 #7), Sphiratrioth lorebook starter pack (§14.1 #8). See **§11 (Phase 2)**, **§12 (Phase 2.5)**, **§13 (Phase 3)**, **§15 (Phase 4 in-flight)** below.
 >
 > **Repo**: `/Volumes/SSD1/Code/FictionWriter` · pushed to [github.com/apothis/FictionWriter](https://github.com/apothis/FictionWriter) · branch `main`. RPClient (the source of inherited plumbing) at `/Volumes/SSD1/Code/RPClient`.
 >
@@ -422,3 +422,47 @@ Spike landed clean. `NSCollectionViewFlowLayout` + custom `NSCollectionViewItem`
 
 - **Decide whether Knowledge Ledger is Phase 4.1 (early, blocks new modes) or 4.2 (after Rewrite sub-variants ship).** Per LOOM_PLAN.md L4 they're grouped; in practice the modes can ship first since they don't strictly need the ledger to function.
 - **Live-app eyeball on Phase 2.5 + Phase 3 surfaces.** The mount smoke catches state transitions; layout fragility is what the §9.4 risk warns about. Recommend an explicit hour clicking around the Bible inspector / Plan window / hover popovers before Phase 4 commits start.
+
+---
+
+## 15. Phase 4 ship state — in-flight (added 2026-05-11)
+
+Three NSFW-leaning + rewrite-pattern slices have landed since the §14 entry checklist. The user's standing directive: NSFW remains a strategic anchor for Phase 4 priority. Tests: 473 → 494 (21 new). All commits local on `main` pending push.
+
+### 15.1 What landed
+
+| § / # | Item | Commit |
+|-------|------|--------|
+| §14.1 #1 | **rewriteVoice prompt layer.** `GenerationModeAvailability` flips on selection; `PromptBuilder.systemPromptFor` + `modeInstructionFor` add the voice-rewrite framing per LOOM_GENERATION_MODES §4.1. Target-voice descriptor rides `PromptContext.perCallInstruction` — no schema change. **Not yet user-reachable** — tray/menu wiring deferred until rewriteTense/Length/POV prompt layers also land, so one coherent sub-mode picker covers all four. | `3101de3` |
+| §14.1 #7 | **Continue-from-refusal chip action** (LOOM_NSFW §5). When `RefusalDetector.looksLikeRefusal` fires, the expanded History row now shows a "Push past refusal" button alongside "Insert again at cursor". Click → editor inserts an em-dash anchor at cursor + seeds the tray's per-call instruction field with a bracketed-Author's-Note breaking direction. User reviews and clicks Continue themselves — no auto-fire. Signal-not-block contract intact. | `e5c9abe` |
+| §14.1 #8 | **Sphiratrioth lorebook starter pack** (LOOM_NSFW §2.5). New `Bible → Install Sphiratrioth Lorebook Pack` menu item adds a curated 9-entry pack: 3 anti-positive-bias constants + 2 sticky scenario anchors + 4 weighted entries in the `action_outcome` group. `ProjectSession.installSphiratriothStarterPack()` is additive-by-name; safe to re-run. Substrate for the upcoming Roll-Outcome mode. | `1f3836d` |
+
+### 15.2 Design calls locked in this batch
+
+- **Sub-mode descriptors ride `perCallInstruction`** rather than a new typed field on `PromptContext`. Pattern extends naturally to rewriteTense (target tense), rewritePOV (target POV character), rewriteLength (target %). Each sub-mode gets its own system-prompt + mode-instruction case; no schema migration.
+- **Sphiratrioth install is additive-by-name with NO tombstones.** A user-deleted entry comes back on re-install — install is "fill what's missing," not "honour past deletions." Documented at the installer's doc comment.
+- **Continue-from-refusal does NOT auto-fire Continue.** The em-dash + breaking-instruction land in the tray; the user clicks Continue. Avoids hidden-action surprise; respects the "signal not block" contract.
+- **Bible menu joins File / View at the top level.** Phase 4 home for project-content actions (sphiratrioth install today; lorebook editing, knowledge-ledger import, ledger Re-extract actions as they land).
+
+### 15.3 Re-prioritised Phase 4 work-item order (post-spike)
+
+The §14.1 work-item list still stands. Internal ordering refined based on the corpus re-read (LOOM_RESEARCH §M.5 / §O.2 / LOOM_NSFW §3.9):
+
+1. ✅ **rewriteVoice prompt layer** — `3101de3`.
+2. ✅ **Continue-from-refusal action** — `e5c9abe`.
+3. ✅ **Sphiratrioth starter pack + Bible menu** — `1f3836d`.
+4. **Roll-Outcome generation mode** (LOOM_NSFW §3.5, LOOM_MEMORY §B3) — substrate ready in `action_outcome` group; needs new `GenerationMode.rollOutcome` + weighted-pick utility + two-phase prompt assembly (roll → generate with rolled entry as constraint).
+5. **Knowledge-ledger feasibility spike** (LOOM_MEMORY §4.5 falsifiable hypothesis) — half-day eval of the §3.3 extraction prompt against Qwen3.6-27B on a hand-graded 5–10 scene fixture. Gates whether to build the full pipeline at full intent or defer the extractor side to Phase 5.
+6. **rewriteTense + rewriteLength prompt layers** + one coherent sub-mode picker UI covering Voice/Tense/Length.
+7. **Knowledge-ledger pipeline** (contingent on #5): post-scene side-call → diff → Suggestions chip → user accept/reject → `[KNOWLEDGE-LEDGER]` prompt layer below cache boundary.
+8. **rewritePOV** (after ledger lands — §4.3 `KNOWLEDGE_LEDGER_HINT` slot has data to fill).
+9. **Show-don't-tell** (independent, selection-replace pattern).
+10. **Lorebook editing UI** in the Bible inspector — schema + injection plumbing already shipped Phase 2; the inspector list-detail surface gains a Lorebook section with per-entry edit form.
+11. **Brainstorm / Critique / Bridge** (heavier UI surfaces: popover, History-tab-only output, multi-selection).
+
+### 15.4 Carried forward
+
+- **Live-app eyeball pass on Phase 2.5 + Phase 3 surfaces** is still recommended. Mount + server-probe sanity green; clickthrough QA (Bible inspector sub-tabs, @-mention popover under load, sparkline marker clicks, hover preview, Plan view, sidebar rename) needs a human pass before further visible work piles on.
+- **Floating selection toolbar (§14.4.1)** stays deferred. Each new Phase 4 selection-required mode adds drift from the design grammar; reckon by Phase 6 polish.
+- **Stale-arc compression** (LOOM_MEMORY §1.3 + §4.3) — not currently built; the recent-prose layer is raw verbatim. Once a manuscript crosses ~10 chapters this matters. Queue for Phase 4 late or Phase 5 early.
+- **Push the three Phase 4 commits to origin** when ready (currently local-only on `main`).
