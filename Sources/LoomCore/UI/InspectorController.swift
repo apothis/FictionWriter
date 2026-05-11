@@ -460,6 +460,26 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
             .totalCount(for: ref.id)
     }
 
+    /// Phase 2.5 (#11 follow-on) — builds the sparkline layout for
+    /// an entity. The manuscript order for Phase 1 is just
+    /// `orphanedSceneIds`; Phase 3's Part/Chapter hierarchy will
+    /// supersede this with a flat-walk of the tree.
+    public func sparklineLayout(for ref: BibleEntityRef) -> MentionSparklineLayout {
+        let index = MentionIndex.build(for: session.project, scenes: session.scenes)
+        let perScene = index.perSceneByEntityId[ref.id] ?? [:]
+        return MentionSparklineLayout.build(
+            sceneOrder: session.project.manuscript.orphanedSceneIds,
+            mentionsBySceneId: perScene
+        )
+    }
+
+    /// Phase 2.5 (#11 follow-on) — switches the active scene. The
+    /// editor listens on `selectionDidChangeNotification` and pulls
+    /// the new scene's prose into the text view.
+    public func scrollToScene(_ sceneId: UUID) {
+        session.selectScene(id: sceneId)
+    }
+
     /// Phase 2 #7 — sets the injection mode on the currently-selected
     /// entity. Routed from the detail editor's mode pill.
     public func setInjectionMode(_ mode: InjectionMode) {
@@ -575,9 +595,11 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
             ref: sel,
             session: session,
             mentionCount: mentionCount(for: sel),
+            sparklineLayout: sparklineLayout(for: sel),
             onChanged: { [weak self] in self?.saveIndicator.flash() },
             onDelete: { [weak self] in self?.deleteSelected() },
-            onInjectionModeChanged: { [weak self] mode in self?.setInjectionMode(mode) }
+            onInjectionModeChanged: { [weak self] mode in self?.setInjectionMode(mode) },
+            onSparklineMarkerClicked: { [weak self] sceneId in self?.scrollToScene(sceneId) }
         )
         editor.view.translatesAutoresizingMaskIntoConstraints = false
         detailContainer.addSubview(editor.view)
@@ -672,9 +694,11 @@ private final class BibleDetailEditor {
         ref: BibleEntityRef,
         session: ProjectSession,
         mentionCount: Int,
+        sparklineLayout: MentionSparklineLayout,
         onChanged: @escaping () -> Void,
         onDelete: @escaping () -> Void,
-        onInjectionModeChanged: @escaping (InjectionMode) -> Void
+        onInjectionModeChanged: @escaping (InjectionMode) -> Void,
+        onSparklineMarkerClicked: @escaping (UUID) -> Void
     ) {
         self.ref = ref
         self.session = session
@@ -739,10 +763,9 @@ private final class BibleDetailEditor {
 
         // Inject-mode row sits between the name field and the
         // description: "Inject: [Constant | Keyed]". The pill is the
-        // user-facing affordance for Phase 2 #7. Phase 2 #11 appends
-        // the mention-count caption on the trailing edge of the same
-        // row — "N mentions" reads as the entity's importance at a
-        // glance; the sparkline-bar version is a follow-on iteration.
+        // user-facing affordance for Phase 2 #7. Phase 2 #11 +
+        // Phase 2.5 polish — trailing edge carries the mention
+        // sparkline bar + count caption per §14.5.1.
         let modeRow = NSStackView()
         modeRow.translatesAutoresizingMaskIntoConstraints = false
         modeRow.orientation = .horizontal
@@ -751,13 +774,22 @@ private final class BibleDetailEditor {
         let modeLabel = NSTextField(labelWithString: "Inject:")
         modeLabel.font = DesignTokens.Typography.subheadline
         modeLabel.textColor = DesignTokens.Foreground.secondary
+
+        let sparkline = MentionSparklineView()
+        sparkline.translatesAutoresizingMaskIntoConstraints = false
+        sparkline.setLayout(sparklineLayout)
+        sparkline.onMarkerClicked = onSparklineMarkerClicked
+
         let mentionCaption = NSTextField(labelWithString: mentionCount == 1 ? "1 mention" : "\(mentionCount) mentions")
         mentionCaption.font = DesignTokens.Typography.caption1
         mentionCaption.textColor = DesignTokens.Foreground.tertiary
+
         modeRow.addArrangedSubview(modeLabel)
         modeRow.addArrangedSubview(modePopup)
-        modeRow.addArrangedSubview(NSView())   // spacer
+        modeRow.addArrangedSubview(sparkline)
         modeRow.addArrangedSubview(mentionCaption)
+        sparkline.widthAnchor.constraint(greaterThanOrEqualToConstant: 60).isActive = true
+        sparkline.heightAnchor.constraint(equalToConstant: 14).isActive = true
 
         container.addSubview(name)
         container.addSubview(modeRow)
