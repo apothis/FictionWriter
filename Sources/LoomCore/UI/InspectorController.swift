@@ -873,7 +873,7 @@ private final class BibleDetailEditor {
         // and only when there's at least one pending suggestion).
         // Sits between modeRow and the description so it surfaces
         // when present but doesn't claim screen space otherwise.
-        let suggestionsPanel = Self.makeSuggestionsPanel(
+        let suggestionsPanel = SuggestionsPanelBuilder.build(
             suggestions: suggestions,
             onAccept: onAcceptSuggestion,
             onReject: onRejectSuggestion
@@ -950,60 +950,6 @@ private final class BibleDetailEditor {
         onInjectionModeChanged(mode)
     }
 
-    // MARK: - Phase 4 #7 sub-task 4 — Suggestions panel
-
-    /// Build the per-character Suggestions panel. Returns an empty
-    /// (zero-height) view when there are no pending suggestions so
-    /// the description scroll view inherits the freed space. Uses
-    /// `defaultHigh + 1` (751) height pins instead of `.required` to
-    /// stay clear of the macOS-26 fittingSize cascade that snaps the
-    /// window to its content's fittingSize (HANDOFF §2.1).
-    static func makeSuggestionsPanel(
-        suggestions: [LedgerSuggestion],
-        onAccept: @escaping (LedgerSuggestion) -> Void,
-        onReject: @escaping (UUID) -> Void
-    ) -> NSView {
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        guard !suggestions.isEmpty else {
-            // Zero-height when empty so the panel doesn't claim space.
-            let h = container.heightAnchor.constraint(equalToConstant: 0)
-            h.priority = NSLayoutConstraint.Priority(rawValue: 751)
-            h.isActive = true
-            return container
-        }
-
-        let stack = NSStackView()
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = DesignTokens.Spacing.xs
-
-        let title = NSTextField(labelWithString: "Suggestions (\(suggestions.count))")
-        title.font = DesignTokens.Typography.caption1
-        title.textColor = DesignTokens.Foreground.secondary
-        stack.addArrangedSubview(title)
-
-        for suggestion in suggestions {
-            let row = SuggestionRowView(
-                suggestion: suggestion,
-                onAccept: onAccept,
-                onReject: onReject
-            )
-            stack.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        }
-
-        container.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: container.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        return container
-    }
-
     private static func snapshot(ref: BibleEntityRef, session: ProjectSession) -> (String, String, InjectionMode) {
         switch ref.category {
         case .characters:
@@ -1037,79 +983,9 @@ private final class BibleDetailBridge: NSObject, NSTextViewDelegate {
     func textDidChange(_ notification: Notification) { detail?.writeBack() }
 }
 
-// MARK: - Phase 4 #7 sub-task 4 — per-suggestion row
-
-/// One row of the Suggestions panel: fact text + evidence quote +
-/// Accept / Reject buttons. Holds strong refs to the callbacks via
-/// closure capture; the row is recreated on every renderDetail() so
-/// stale captures aren't a concern.
-private final class SuggestionRowView: NSView {
-    private let suggestion: LedgerSuggestion
-    private let onAccept: (LedgerSuggestion) -> Void
-    private let onReject: (UUID) -> Void
-
-    init(
-        suggestion: LedgerSuggestion,
-        onAccept: @escaping (LedgerSuggestion) -> Void,
-        onReject: @escaping (UUID) -> Void
-    ) {
-        self.suggestion = suggestion
-        self.onAccept = onAccept
-        self.onReject = onReject
-        super.init(frame: .zero)
-        self.translatesAutoresizingMaskIntoConstraints = false
-        wantsLayer = true
-        layer?.cornerRadius = DesignTokens.Radius.control
-        layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
-        layer?.borderColor = NSColor.separatorColor.cgColor
-        layer?.borderWidth = 0.5
-
-        let factLabel = NSTextField(wrappingLabelWithString: suggestion.fact.fact)
-        factLabel.font = DesignTokens.Typography.body
-        factLabel.textColor = DesignTokens.Foreground.primary
-        factLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let evidenceLabel = NSTextField(wrappingLabelWithString: "“\(suggestion.evidenceQuote)”")
-        evidenceLabel.font = DesignTokens.Typography.caption1
-        evidenceLabel.textColor = DesignTokens.Foreground.tertiary
-        evidenceLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        let acceptBtn = NSButton(title: "Accept", target: self, action: #selector(acceptClicked))
-        let rejectBtn = NSButton(title: "Reject", target: self, action: #selector(rejectClicked))
-        for b in [acceptBtn, rejectBtn] {
-            b.bezelStyle = .inline
-            b.controlSize = .small
-            b.font = DesignTokens.Typography.caption1
-            b.translatesAutoresizingMaskIntoConstraints = false
-        }
-        let buttonRow = NSStackView(views: [acceptBtn, NSView(), rejectBtn])
-        buttonRow.orientation = .horizontal
-        buttonRow.spacing = DesignTokens.Spacing.xs
-        buttonRow.distribution = .fill
-        buttonRow.translatesAutoresizingMaskIntoConstraints = false
-
-        let stack = NSStackView(views: [factLabel, evidenceLabel, buttonRow])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = DesignTokens.Spacing.xs
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: DesignTokens.Spacing.xs),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: DesignTokens.Spacing.sm),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -DesignTokens.Spacing.sm),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -DesignTokens.Spacing.xs),
-            buttonRow.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
-            buttonRow.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
-        ])
-    }
-
-    @available(*, unavailable) required init?(coder: NSCoder) { nil }
-
-    @objc private func acceptClicked() { onAccept(suggestion) }
-    @objc private func rejectClicked() { onReject(suggestion.fact.id) }
-}
+// `SuggestionRowView` lives alongside `SuggestionsPanelBuilder` in
+// `SuggestionsPanelBuilder.swift` so the testable builder can use it
+// without dragging `BibleDetailEditor`'s private surface into tests.
 
 // MARK: - Filter identifier marshalling
 
