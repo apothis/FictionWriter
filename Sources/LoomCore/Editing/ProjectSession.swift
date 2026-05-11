@@ -220,6 +220,31 @@ public final class ProjectSession {
         DebugLog.shared.write("[bible] deleteObject id=\(id)")
     }
 
+    // MARK: - Lorebook mutations (Phase 2 #8)
+
+    @discardableResult
+    public func addLorebookEntry(name: String) -> LorebookEntry {
+        let entry = LorebookEntry(name: name)
+        project.bible.lorebook.append(entry)
+        markChanged()
+        DebugLog.shared.write("[bible] addLorebookEntry id=\(entry.id) name=\(name)")
+        return entry
+    }
+
+    public func updateLorebookEntry(_ entry: LorebookEntry) {
+        guard let idx = project.bible.lorebook.firstIndex(where: { $0.id == entry.id }) else { return }
+        project.bible.lorebook[idx] = entry
+        markChanged()
+        DebugLog.shared.write("[bible] updateLorebookEntry id=\(entry.id)")
+    }
+
+    public func deleteLorebookEntry(id: UUID) {
+        guard let idx = project.bible.lorebook.firstIndex(where: { $0.id == id }) else { return }
+        project.bible.lorebook.remove(at: idx)
+        markChanged()
+        DebugLog.shared.write("[bible] deleteLorebookEntry id=\(id)")
+    }
+
     /// Phase 2 #7 — sets the prompt-injection mode for a Bible
     /// entity, irrespective of category. No-op if the ref is stale.
     public func setInjectionMode(_ mode: InjectionMode, for ref: BibleEntityRef) {

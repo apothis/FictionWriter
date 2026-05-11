@@ -14,15 +14,22 @@ public struct Bible: Codable, Equatable {
     /// Phase 2 #5 — objects (significant artefacts). Same shape
     /// pattern as Character; see LOOM_DATA_MODEL.md §3.3.
     public var objects: [BibleObject]
+    /// Phase 2 #8 — lorebook entries. NovelAI / KoboldAI / SillyTavern
+    /// trichotomy (LOOM_DATA_MODEL.md §3.6). UI editing lands Phase 4
+    /// when the Sphiratrioth active-scenario pattern becomes
+    /// user-facing; schema + prompt-injection plumbing here.
+    public var lorebook: [LorebookEntry]
 
     public init(
         characters: [Character] = [],
         settings: [Setting] = [],
-        objects: [BibleObject] = []
+        objects: [BibleObject] = [],
+        lorebook: [LorebookEntry] = []
     ) {
         self.characters = characters
         self.settings = settings
         self.objects = objects
+        self.lorebook = lorebook
     }
 
     public static let empty = Bible()
@@ -32,5 +39,6 @@ public struct Bible: Codable, Equatable {
         self.characters = try c.decodeIfPresent([Character].self, forKey: .characters) ?? []
         self.settings = try c.decodeIfPresent([Setting].self, forKey: .settings) ?? []
         self.objects = try c.decodeIfPresent([BibleObject].self, forKey: .objects) ?? []
+        self.lorebook = try c.decodeIfPresent([LorebookEntry].self, forKey: .lorebook) ?? []
     }
 }

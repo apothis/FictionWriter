@@ -50,6 +50,8 @@ let suites: [TestSuite] = [
     phase2BibleInjectorTests(),
     phase2BibleKeyedIntegrationTests(),
     phase2InjectionModePillTests(),
+    phase2LorebookSchemaTests(),
+    phase2LorebookIntegrationTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

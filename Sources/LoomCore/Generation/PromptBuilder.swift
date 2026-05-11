@@ -101,6 +101,7 @@ public enum ChicletKind: String, Codable, Equatable, CaseIterable {
     case sceneSummary
     case bibleConstant
     case bibleKeyed
+    case lorebookEntry
     case knowledgeLedger
     case recentProse
     case sceneAnchor
@@ -318,6 +319,43 @@ public enum PromptBuilder {
                 // valuable but evicting them is preferable to losing
                 // the recent prose itself.
                 evictionPriority: 50
+            ))
+        }
+
+        // Phase 2 #8 — Lorebook layer. Constant entries always; keyed
+        // entries when at least one primary key matches AND every
+        // secondary key matches (AND-gating per LOOM_DATA_MODEL.md
+        // §3.6). Vectorised mode is Phase 5; LorebookActivator skips
+        // it. Constant entries route above the cache (cache-stable);
+        // keyed entries route below (recency-derived). Even though
+        // the activator returns a single list, this split-routing
+        // keeps prompt-cache hit rates high in projects that mix
+        // both kinds.
+        let activatedLore = LorebookActivator.activated(in: context.project, recentProse: matchProse)
+        let constantLore = activatedLore.filter { $0.activationMode == .constant }
+        let keyedLore = activatedLore.filter { $0.activationMode == .keyed }
+        if !constantLore.isEmpty {
+            let text = formatLorebookEntries(constantLore)
+            layers.append(Layer(
+                kind: .lorebookEntry,
+                label: "Lore (constant, \(constantLore.count))",
+                content: text,
+                tokens: TokenEstimator.estimate(text),
+                aboveCache: true,
+                sourceId: nil,
+                evictionPriority: 90
+            ))
+        }
+        if !keyedLore.isEmpty {
+            let text = formatLorebookEntries(keyedLore)
+            layers.append(Layer(
+                kind: .lorebookEntry,
+                label: "Lore (keyed, \(keyedLore.count))",
+                content: text,
+                tokens: TokenEstimator.estimate(text),
+                aboveCache: false,
+                sourceId: nil,
+                evictionPriority: 40
             ))
         }
         let trimmedAN = an.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -632,6 +670,20 @@ public enum PromptBuilder {
             blocks.append(out)
         }
         return blocks.joined(separator: "\n\n")
+    }
+
+    /// Phase 2 #8 — formats activated lorebook entries into a prose
+    /// blob. Entry name + content; name elided when content already
+    /// reads as a complete thought.
+    private static func formatLorebookEntries(_ entries: [LorebookEntry]) -> String {
+        var out = "Lore:"
+        for entry in entries {
+            out += "\n\n— \(entry.name)"
+            if !entry.content.isEmpty {
+                out += "\n\(entry.content)"
+            }
+        }
+        return out
     }
 
     // MARK: - Template resolution + prefill
