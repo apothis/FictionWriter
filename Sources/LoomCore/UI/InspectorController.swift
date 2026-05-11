@@ -118,6 +118,22 @@ public final class InspectorController: NSViewController {
         tabRow.distribution = .fillEqually
         tabRow.alignment = .centerY
         tabRow.translatesAutoresizingMaskIntoConstraints = false
+        // Pin the tab row to its button-row height. Without this, the
+        // vertical chain (tabRow.top → content.top → content.bottom)
+        // leaves Auto Layout free to grow the row to fill — observed
+        // at 373pt in a 458pt-tall pane, with the buttons centered
+        // inside the bloated stack and the bible content squashed.
+        // Use NON-required priority: a `.required` height (or
+        // `.required` content hugging) propagates into the contentView
+        // fittingSize and triggers the macOS-26 auto-refit cascade
+        // that snaps the window's height down to ~127pt every layout
+        // pass (per HANDOFF §2.1). `.defaultHigh + 1` (751) wins over
+        // the stack's default low hugging priority but isn't strong
+        // enough to participate in fittingSize. (Pinned by
+        // Phase4InspectorLayoutTests.)
+        let tabRowHeight = tabRow.heightAnchor.constraint(equalToConstant: 24)
+        tabRowHeight.priority = NSLayoutConstraint.Priority(rawValue: 751)
+        tabRowHeight.isActive = true
 
         let content = NSView()
         content.translatesAutoresizingMaskIntoConstraints = false
@@ -140,16 +156,6 @@ public final class InspectorController: NSViewController {
             tabRowTop,
             tabRow.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.sm),
             tabRow.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.sm),
-            // Lock the tab row to its button-row height. Without this,
-            // the vertical-constraint chain (tabRow.top → content.top
-            // → content.bottom) has freedom to grow the row to fill
-            // the container — observed at 373pt in a 458pt-tall
-            // inspector pane, with the buttons centered inside the
-            // ballooned stack (visually at the inspector mid-point)
-            // and the Bible content squashed into a 41pt band at the
-            // bottom. Pinning the height to the recessed/small button
-            // metric is the surgical fix. (Phase4InspectorLayoutTests.)
-            tabRow.heightAnchor.constraint(equalToConstant: 24),
             content.topAnchor.constraint(equalTo: tabRow.bottomAnchor, constant: DesignTokens.Spacing.sm),
             content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -316,6 +322,14 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
             bottom: DesignTokens.Spacing.sm,
             right: DesignTokens.Spacing.md
         )
+        // Same fix as the outer tab row — non-required height pin so
+        // the bible's filterStrip doesn't balloon to fill, but the
+        // constraint stays below the priority threshold that would
+        // make AppKit treat it as a fittingSize requirement and
+        // trigger the macOS-26 auto-refit-to-fit cascade.
+        let filterStripHeight = filterStrip.heightAnchor.constraint(equalToConstant: 32)
+        filterStripHeight.priority = NSLayoutConstraint.Priority(rawValue: 751)
+        filterStripHeight.isActive = true
 
         let allBtn = makeFilterButton(title: "All", filter: .all)
         filterStrip.addArrangedSubview(allBtn)
@@ -390,6 +404,21 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
             // this, flipped stack content collapses to intrinsic
             // width and rows clip on the right.
             stack.widthAnchor.constraint(equalTo: listScroll.widthAnchor),
+
+            // Required floor on the list scroll view's height. This is
+            // load-bearing for the window: macOS-26's auto-refit-to-
+            // fittingSize cascade snaps the window's height down to
+            // the contentView's Auto-Layout fittingSize, and `minSize`
+            // / `contentMinSize` are ignored by the cascade. The only
+            // thing the cascade can't override is a `.required` Auto-
+            // Layout constraint. Pin the list (which has no intrinsic
+            // height of its own) to a 400pt floor — that pushes the
+            // inspector's fittingSize to ~500pt, and (since the
+            // inspector is the tallest split-item content) the
+            // window's fittingSize to ~520pt. The window can't shrink
+            // below that. (The constraint is `greaterThanOrEqual`, so
+            // the list happily grows above 400pt when there's room.)
+            listScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 400),
         ])
 
         self.view = container

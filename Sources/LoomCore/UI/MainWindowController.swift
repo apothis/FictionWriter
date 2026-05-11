@@ -95,24 +95,6 @@ public final class MainWindowController: NSWindowController {
         // outright is the cleanest reset path.
         UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames Loom.MainSplitView")
 
-        let restored = window.setFrameUsingName("Loom.MainWindow")
-        window.setFrameAutosaveName("Loom.MainWindow")
-        let restoredFrame = window.frame
-        let isUsable = restored
-            && Self.isFrameOnVisibleScreen(restoredFrame)
-            && restoredFrame.width >= 600
-            && restoredFrame.height >= 400
-        if !isUsable {
-            DebugLog.shared.write("[loom] window: restoring default frame (saved=\(restored ? "\(restoredFrame)" : "none"))")
-            // Reset to the default contentRect size, then centre. This
-            // also overwrites the bad saved frame on the next move.
-            window.setFrame(frame, display: false)
-            window.center()
-            UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames Loom.MainSplitView.v2")
-        } else {
-            DebugLog.shared.write("[loom] window: restored frame \(restoredFrame)")
-        }
-
         // Compose splitVC.view + status strip inside a properly
         // subclassed container view-controller (LoomWindowContentVC,
         // declared below). The previous implementation created an
@@ -126,7 +108,31 @@ public final class MainWindowController: NSWindowController {
         // in loadView, which is when AppKit expects the hierarchy +
         // child-VC plumbing to be set up.
         let host = LoomWindowContentVC(splitVC: split, statusStrip: strip)
+        // ORDER MATTERS on macOS 26: setting `contentViewController`
+        // triggers an auto-refit-to-fittingSize cascade. Wire the
+        // contentViewController FIRST, then restore/apply the frame
+        // as the last word — that way the cascade fires while the
+        // window is at its default frame, and our setFrame is what
+        // the user sees. (The cascade itself is then defeated by a
+        // required min-height constraint inside the inspector — see
+        // InspectorController's listScroll heightAnchor.)
         window.contentViewController = host
+
+        let restored = window.setFrameUsingName("Loom.MainWindow")
+        window.setFrameAutosaveName("Loom.MainWindow")
+        let restoredFrame = window.frame
+        let isUsable = restored
+            && Self.isFrameOnVisibleScreen(restoredFrame)
+            && restoredFrame.width >= 600
+            && restoredFrame.height >= 400
+        if !isUsable {
+            DebugLog.shared.write("[loom] window: restoring default frame (saved=\(restored ? "\(restoredFrame)" : "none"))")
+            window.setFrame(frame, display: false)
+            window.center()
+            UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames Loom.MainSplitView.v2")
+        } else {
+            DebugLog.shared.write("[loom] window: restored frame \(restoredFrame)")
+        }
 
         super.init(window: window)
         refreshTitleFromSession()

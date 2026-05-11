@@ -14,18 +14,25 @@ import AppKit
 func phase4InspectorLayoutTests() -> TestSuite {
     let s = TestSuite("Phase4InspectorLayout")
 
-    /// Mount the InspectorController, force its container view to a
-    /// known frame (matching the production-observed 333.5 × 458pt),
-    /// and run a layout pass. Bypasses the off-screen splitVC layout-
-    /// distribution dance — what we actually want to assert is "given
-    /// a reasonably-sized container, the tab row sticks to its button
-    /// height instead of ballooning to fill."
+    /// Mount the InspectorController, pin its container view to a
+    /// known size with explicit width/height constraints (production-
+    /// observed 333.5 × 458pt), and run a layout pass. Bypasses the
+    /// off-screen splitVC layout-distribution dance.
+    ///
+    /// Forcing `view.frame = ...` is NOT sufficient — without a real
+    /// constraint, Auto Layout derives the view's size from its
+    /// children's intrinsic + constraint demands, which minimizes to
+    /// nothing for a chain like ours. Explicit width/height constraints
+    /// pin the container's size for the duration of the layout pass.
     @MainActor
     func mountWithFrame(width: CGFloat = 333.5, height: CGFloat = 458) -> InspectorController {
         let session = ProjectSession(project: Project.empty(title: "LayoutProbe"))
         let inspector = InspectorController(session: session)
-        // Trigger loadView, then size the container as production does.
-        inspector.view.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        inspector.view.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            inspector.view.widthAnchor.constraint(equalToConstant: width),
+            inspector.view.heightAnchor.constraint(equalToConstant: height),
+        ])
         // viewDidAppear runs the titlebar-offset adjustment; trigger it.
         inspector.viewDidAppear()
         inspector.view.layoutSubtreeIfNeeded()
@@ -80,23 +87,45 @@ func phase4InspectorLayoutTests() -> TestSuite {
         }
     }
 
-    s.test("Bible filter strip sits near the top of the bible-tab content area") {
+    s.test("Bible filter strip hugs its intrinsic height (does not stretch vertically)") {
         try MainActor.assumeIsolated {
             let vc = mountWithFrame()
-            // The bible-tab VC is mounted as a child of the inspector's
-            // contentContainer. Find it by walking the hierarchy.
             guard let bibleView = vc.children.compactMap({ $0 as? BibleInspectorViewController }).first?.view else {
                 throw TestFailure(message: "bible inspector child VC not mounted", file: #file, line: #line)
             }
             guard let filterStrip = findFilterStrip(in: bibleView) else {
                 throw TestFailure(message: "filter strip not found in bible inspector", file: #file, line: #line)
             }
-            // Filter strip is top-anchored to the bible view; its minY
-            // should be 0 (in the bible view's coordinate space).
-            let topInset = filterStrip.frame.minY
+            // Same regression as the outer Bible/History/Notes tab row:
+            // the filter strip's NSStackView had no vertical-height
+            // constraint and ballooned to ~389pt inside a 390pt bible
+            // container, squashing the list-detail content to 1pt each.
+            // Pin the strip to its button-row metric + sm padding.
+            let h = filterStrip.frame.height
             try expectTrue(
-                topInset < 8,
-                "filter strip should hug bible-view top (≤8pt); got \(topInset)"
+                h <= 48,
+                "filter strip should hug its button-row height (≤48pt); got \(h)"
+            )
+        }
+    }
+
+    s.test("Bible list scroll view gets the vertical space below the filter strip (not squashed)") {
+        try MainActor.assumeIsolated {
+            let vc = mountWithFrame()
+            guard let bibleView = vc.children.compactMap({ $0 as? BibleInspectorViewController }).first?.view else {
+                throw TestFailure(message: "bible inspector child VC not mounted", file: #file, line: #line)
+            }
+            guard let scroll = bibleView.subviews.first(where: { $0 is NSScrollView }) else {
+                throw TestFailure(message: "bible list scroll view not found", file: #file, line: #line)
+            }
+            // The bug squashed list-detail to 1pt each because the filter
+            // strip consumed all the vertical space. The list should
+            // claim most of the remaining height (everything below the
+            // filter strip).
+            let h = scroll.frame.height
+            try expectTrue(
+                h > 100,
+                "bible list should have meaningful height (>100pt); got \(h)"
             )
         }
     }
