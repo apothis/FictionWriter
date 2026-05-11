@@ -32,7 +32,13 @@ public enum SuggestionsPanelBuilder {
             return container
         }
 
-        let stack = NSStackView()
+        // FlippedStackView so the scroll view's content origin lives
+        // at top-left. Without flipping, NSScrollView anchors content
+        // to the bottom-left, which means a tall stack inside the
+        // scroll view shows its BOTTOM half by default — header + the
+        // top suggestions scroll out of view, exactly what we don't
+        // want for a top-to-bottom suggestions list.
+        let stack = FlippedStackView()
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -50,6 +56,10 @@ public enum SuggestionsPanelBuilder {
                 onReject: onReject
             )
             stack.addArrangedSubview(row)
+            // Pin each row to the stack's full width so the cards fill
+            // the panel horizontally; otherwise the row's intrinsic
+            // content size leaves a ragged right edge.
+            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
 
         let scroll = NSScrollView()
@@ -108,9 +118,11 @@ final class SuggestionRowView: NSView {
         self.translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
         layer?.cornerRadius = DesignTokens.Radius.control
-        layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
-        layer?.borderColor = NSColor.separatorColor.cgColor
         layer?.borderWidth = 0.5
+        // Background + border are set in updateLayer() so they re-
+        // resolve on dark/light flip — raw `.cgColor` capture at
+        // init-time would freeze in whichever appearance was active
+        // (HANDOFF §2.1, same root cause as ThemedBackgroundView).
 
         let factLabel = NSTextField(wrappingLabelWithString: suggestion.fact.fact)
         factLabel.font = DesignTokens.Typography.body
@@ -154,6 +166,17 @@ final class SuggestionRowView: NSView {
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { nil }
+
+    /// AppKit invokes `updateLayer()` when a layer-backed view needs
+    /// to refresh — including on appearance change (dark/light flip).
+    /// Resolving `.cgColor` inside the override means the color
+    /// picks up the correct effective appearance instead of being
+    /// frozen at construction time.
+    override func updateLayer() {
+        super.updateLayer()
+        layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+        layer?.borderColor = NSColor.separatorColor.cgColor
+    }
 
     @objc private func acceptClicked() { onAccept(suggestion) }
     @objc private func rejectClicked() { onReject(suggestion.fact.id) }

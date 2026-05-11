@@ -77,5 +77,30 @@ func phase4SuggestionsPanelHeightTests() -> TestSuite {
         _ = try expectNotNil(findScrollView(in: panel))
     }
 
+    s.test("scroll view's documentView is flipped so content stacks from the top down") {
+        let panel = SuggestionsPanelBuilder.build(
+            suggestions: (1...7).map { makeSuggestion("fact \($0)") },
+            onAccept: { _ in },
+            onReject: { _ in }
+        )
+        let scroll = try expectNotNil(findScrollView(in: panel))
+        let doc = try expectNotNil(scroll.documentView)
+        try expectTrue(doc.isFlipped)
+    }
+
+    s.test("SuggestionRowView reapplies its background on updateLayer (theme reactivity)") {
+        let row = SuggestionRowView(
+            suggestion: makeSuggestion("x"),
+            onAccept: { _ in },
+            onReject: { _ in }
+        )
+        row.wantsLayer = true
+        row.updateLayer()
+        // The override resolves the dynamic NSColor against the current
+        // effective appearance, so layer.backgroundColor must be set
+        // (and re-set on subsequent calls when the appearance changes).
+        _ = try expectNotNil(row.layer?.backgroundColor)
+    }
+
     return s
 }
