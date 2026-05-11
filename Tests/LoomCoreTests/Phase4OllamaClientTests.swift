@@ -41,11 +41,17 @@ func phase4OllamaClientTests() -> TestSuite {
             model: "gemma4_2b:latest",
             prompt: "p",
             schema: [:],
-            options: OllamaChatOptions()  // defaults: temp 0.3, num_predict 1024, repeat_penalty 1.1
+            options: OllamaChatOptions()  // defaults: temp 0.3, num_predict 2048, repeat_penalty 1.1
         )
         let options = try expectNotNil(body["options"] as? [String: Any])
         try expectEqual(options["temperature"] as? Double, 0.3)
-        try expectEqual(options["num_predict"] as? Int, 1024)
+        // 2048 (not 1024): Ollama's JSON-Schema mode emits empty
+        // content when num_predict cuts off before the schema
+        // accepts a valid completion. The §11/§12 spike's 1024 was
+        // tuned to ~150-word fixture scenes; production scenes
+        // routinely need ~1600 tokens, so 2048 is the new safe
+        // floor. Confirmed live 2026-05-12.
+        try expectEqual(options["num_predict"] as? Int, 2048)
         try expectEqual(options["repeat_penalty"] as? Double, 1.1)
     }
 

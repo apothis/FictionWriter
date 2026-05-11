@@ -18,7 +18,7 @@ func phase4OllamaExtractorLifetimeTests() -> TestSuite {
 
     final class DeferredProvider: OllamaCallProvider {
         var pending: ((Result<String, OllamaError>) -> Void)?
-        func call(prompt: String, schema: [String: Any], completion: @escaping (Result<String, OllamaError>) -> Void) {
+        func call(prompt: String, schema: [String: Any], options: OllamaChatOptions, completion: @escaping (Result<String, OllamaError>) -> Void) {
             pending = completion  // hold the completion; caller flushes later
         }
         func flush(_ result: Result<String, OllamaError>) {

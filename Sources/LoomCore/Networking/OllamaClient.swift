@@ -1,12 +1,25 @@
 import Foundation
 
-/// Sampler options for an Ollama chat call. Extraction defaults match
-/// the spike's `ollamaExtract` in `Tools/LedgerSpike/main.swift`:
+/// Sampler options for an Ollama chat call. Extraction defaults:
 /// temperature 0.3 (deterministic-leaning, not zero — Gemma 4 emits
 /// degenerate outputs at exactly 0 under JSON-Schema constraint),
-/// num_predict 1024 (matches the §11/§12 spike), repeat_penalty 1.1
-/// (load-bearing — see LOOM_LEDGER_SPIKE §9.4 / §10.4 for the
-/// degenerate-loop failure mode this prevents).
+/// num_predict 2048, repeat_penalty 1.1 (load-bearing — see
+/// LOOM_LEDGER_SPIKE §9.4 / §10.4 for the degenerate-loop failure
+/// mode this prevents).
+///
+/// **num_predict 2048 — load-bearing under JSON-Schema mode.**
+/// Ollama's `format`-constrained pipeline buffers tokens until the
+/// schema accepts a valid completion; if `num_predict` cuts off
+/// before that, `done_reason == "length"` and `message.content` is
+/// **empty** (not truncated). The §11/§12 spike used 1024 against
+/// the fixture's ~150-word scenes, but production scenes routinely
+/// hit 300-400 words — gemma4_2b needs ~1600 tokens to close a
+/// 25-fact array for those, so 1024 silently empties out. Confirmed
+/// live 2026-05-12 against a 312-word scene: 1024 → empty content +
+/// `done_reason: length`; 2048 → 25 facts + `done_reason: stop` at
+/// eval_count 1612. See HANDOFF §15.7 sibling — the retry-on-empty
+/// path can't recover this deterministically-empty case (re-firing
+/// with the same options yields the same length-cap).
 public struct OllamaChatOptions: Equatable {
     public var temperature: Double
     public var numPredict: Int
@@ -14,7 +27,7 @@ public struct OllamaChatOptions: Equatable {
 
     public init(
         temperature: Double = 0.3,
-        numPredict: Int = 1024,
+        numPredict: Int = 2048,
         repeatPenalty: Double = 1.1
     ) {
         self.temperature = temperature

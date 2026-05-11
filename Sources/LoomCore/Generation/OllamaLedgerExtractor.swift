@@ -1,13 +1,17 @@
 import Foundation
 
 /// Test-seam between `OllamaLedgerExtractor` and the network: lets
-/// the retry-on-empty behaviour be pinned without an HTTP round-trip.
-/// Production: `OllamaClient` conforms; tests inject a stub that
-/// returns canned `Result<String, OllamaError>` sequences.
+/// the retry-on-empty + scene-aware budget behaviour be pinned
+/// without an HTTP round-trip. Production: `OllamaClient` conforms;
+/// tests inject a stub that returns canned
+/// `Result<String, OllamaError>` sequences and records the
+/// `OllamaChatOptions` it was called with so the auto-budget plumbing
+/// is observable.
 public protocol OllamaCallProvider {
     func call(
         prompt: String,
         schema: [String: Any],
+        options: OllamaChatOptions,
         completion: @escaping (Result<String, OllamaError>) -> Void
     )
 }
@@ -16,9 +20,10 @@ extension OllamaClient: OllamaCallProvider {
     public func call(
         prompt: String,
         schema: [String: Any],
+        options: OllamaChatOptions,
         completion: @escaping (Result<String, OllamaError>) -> Void
     ) {
-        self.extract(prompt: prompt, schema: schema, completion: completion)
+        self.extract(prompt: prompt, schema: schema, options: options, completion: completion)
     }
 }
 
@@ -36,15 +41,19 @@ extension OllamaClient: OllamaCallProvider {
 /// `unknown` is derived from per-character scene-exposure at query
 /// time, `mistaken` is manual-authoring).
 ///
-/// Retry behaviour: on an empty `message.content` response (the
-/// model hit immediate-EOS under JSON-Schema constraint — sampling
-/// or transient cold-load roll), retry the same call once before
-/// surfacing the failure. Empirically rare (~1 in 10 calls on
-/// gemma4_2b at temperature 0.3 in live testing) but visible to the
-/// user when it happens because they get zero suggestions instead
-/// of seven. Transport failures (`OllamaError.transport`, `.http`,
-/// `.noBody`, etc.) are NOT retried — those need higher-level
-/// intervention.
+/// Retry behaviour: on an empty `message.content` response, retry
+/// once with `num_predict` doubled before surfacing the failure.
+/// Empty content happens for two reasons under JSON-Schema mode:
+/// (a) sampling / cold-load roll where the model hits immediate
+/// EOS — rare, fixed by any retry; (b) `num_predict` cut the
+/// schema-constrained buffer off before it closed, producing
+/// `done_reason: length` with empty content (deterministic — same
+/// call yields the same empty result, so the retry MUST bump the
+/// budget to recover). The doubled-budget retry covers both cases
+/// in one shot. The first-attempt budget is scaled per-scene by
+/// `budgetForSceneWords(_:)`. Transport failures
+/// (`OllamaError.transport`, `.http`, `.noBody`, etc.) are NOT
+/// retried — those need higher-level intervention.
 public final class OllamaLedgerExtractor: LedgerExtractor {
     private let provider: OllamaCallProvider
 
@@ -60,6 +69,18 @@ public final class OllamaLedgerExtractor: LedgerExtractor {
         self.init(provider: OllamaClient(baseURL: baseURL, model: model))
     }
 
+    /// Scene-aware `num_predict` budget — the model emits ~1 fact
+    /// per ~14 scene-words at the §3.3 "be thorough" framing, each
+    /// fact serialising to ~70 tokens of JSON, so the call needs
+    /// roughly `8 * sceneWords` tokens of headroom to close the
+    /// array. Floor `2048` covers short scenes (the live-verified
+    /// safe minimum from 2026-05-12); cap `8192` keeps a runaway
+    /// scene from monopolising the extractor.
+    public static func budgetForSceneWords(_ wordCount: Int) -> Int {
+        let scaled = wordCount * 8
+        return min(8192, max(2048, scaled))
+    }
+
     public func extract(
         scenePose: String,
         characters: [LedgerExtraction.CharacterRef],
@@ -73,12 +94,22 @@ public final class OllamaLedgerExtractor: LedgerExtractor {
             certainties: [.asserted],
             characters: characters
         )
-        callWithRetry(prompt: prompt, schema: schema, attemptsRemaining: 1, completion: completion)
+        let initialOptions = OllamaChatOptions(
+            numPredict: Self.budgetForSceneWords(WordCount.count(scenePose))
+        )
+        callWithRetry(
+            prompt: prompt,
+            schema: schema,
+            options: initialOptions,
+            attemptsRemaining: 1,
+            completion: completion
+        )
     }
 
     private func callWithRetry(
         prompt: String,
         schema: [String: Any],
+        options: OllamaChatOptions,
         attemptsRemaining: Int,
         completion: @escaping (Result<[LedgerExtraction.ExtractedFact], Error>) -> Void
     ) {
@@ -93,14 +124,26 @@ public final class OllamaLedgerExtractor: LedgerExtractor {
         // Strong capture keeps self alive exactly as long as the
         // URLSession callback retains this closure, which is the
         // window we need.
-        provider.call(prompt: prompt, schema: schema) { result in
+        provider.call(prompt: prompt, schema: schema, options: options) { result in
             switch result {
             case .success(let raw):
                 if raw.isEmpty, attemptsRemaining > 0 {
-                    DebugLog.shared.write("[ledger] empty extraction response — retrying once")
+                    // Empty content: either a transient sampling
+                    // roll OR a deterministic num_predict cap. The
+                    // retry doubles the budget so the cap case
+                    // recovers; transient rolls also get a fresh
+                    // sample.
+                    let bumped = min(8192, options.numPredict * 2)
+                    let retryOptions = OllamaChatOptions(
+                        temperature: options.temperature,
+                        numPredict: bumped,
+                        repeatPenalty: options.repeatPenalty
+                    )
+                    DebugLog.shared.write("[ledger] empty extraction response — retrying with num_predict=\(bumped)")
                     self.callWithRetry(
                         prompt: prompt,
                         schema: schema,
+                        options: retryOptions,
                         attemptsRemaining: attemptsRemaining - 1,
                         completion: completion
                     )
