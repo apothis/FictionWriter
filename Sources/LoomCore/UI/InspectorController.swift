@@ -450,6 +450,16 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
         reload()
     }
 
+    /// Phase 2 #11 — total mentions of an entity across all scenes
+    /// in the current project. Reads from a freshly-built MentionIndex
+    /// each call (Phase 2 scope; if the manuscript gets large the
+    /// caller can cache across reloads).
+    public func mentionCount(for ref: BibleEntityRef) -> Int {
+        MentionIndex
+            .build(for: session.project, scenes: session.scenes)
+            .totalCount(for: ref.id)
+    }
+
     /// Phase 2 #7 — sets the injection mode on the currently-selected
     /// entity. Routed from the detail editor's mode pill.
     public func setInjectionMode(_ mode: InjectionMode) {
@@ -564,6 +574,7 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
         let editor = BibleDetailEditor(
             ref: sel,
             session: session,
+            mentionCount: mentionCount(for: sel),
             onChanged: { [weak self] in self?.saveIndicator.flash() },
             onDelete: { [weak self] in self?.deleteSelected() },
             onInjectionModeChanged: { [weak self] mode in self?.setInjectionMode(mode) }
@@ -660,6 +671,7 @@ private final class BibleDetailEditor {
     init(
         ref: BibleEntityRef,
         session: ProjectSession,
+        mentionCount: Int,
         onChanged: @escaping () -> Void,
         onDelete: @escaping () -> Void,
         onInjectionModeChanged: @escaping (InjectionMode) -> Void
@@ -727,7 +739,10 @@ private final class BibleDetailEditor {
 
         // Inject-mode row sits between the name field and the
         // description: "Inject: [Constant | Keyed]". The pill is the
-        // user-facing affordance for Phase 2 #7.
+        // user-facing affordance for Phase 2 #7. Phase 2 #11 appends
+        // the mention-count caption on the trailing edge of the same
+        // row — "N mentions" reads as the entity's importance at a
+        // glance; the sparkline-bar version is a follow-on iteration.
         let modeRow = NSStackView()
         modeRow.translatesAutoresizingMaskIntoConstraints = false
         modeRow.orientation = .horizontal
@@ -736,9 +751,13 @@ private final class BibleDetailEditor {
         let modeLabel = NSTextField(labelWithString: "Inject:")
         modeLabel.font = DesignTokens.Typography.subheadline
         modeLabel.textColor = DesignTokens.Foreground.secondary
+        let mentionCaption = NSTextField(labelWithString: mentionCount == 1 ? "1 mention" : "\(mentionCount) mentions")
+        mentionCaption.font = DesignTokens.Typography.caption1
+        mentionCaption.textColor = DesignTokens.Foreground.tertiary
         modeRow.addArrangedSubview(modeLabel)
         modeRow.addArrangedSubview(modePopup)
-        modeRow.addArrangedSubview(NSView())   // trailing spacer
+        modeRow.addArrangedSubview(NSView())   // spacer
+        modeRow.addArrangedSubview(mentionCaption)
 
         container.addSubview(name)
         container.addSubview(modeRow)
