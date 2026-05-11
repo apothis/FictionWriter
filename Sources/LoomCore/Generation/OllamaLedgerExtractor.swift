@@ -82,8 +82,18 @@ public final class OllamaLedgerExtractor: LedgerExtractor {
         attemptsRemaining: Int,
         completion: @escaping (Result<[LedgerExtraction.ExtractedFact], Error>) -> Void
     ) {
-        provider.call(prompt: prompt, schema: schema) { [weak self] result in
-            guard let self = self else { return }
+        // STRONG self capture is load-bearing. The coordinator's
+        // extractorProvider closure constructs a fresh
+        // OllamaLedgerExtractor per fire and assigns it to a local
+        // that goes out of scope when fire() returns. With a weak
+        // capture here, the URLSession callback fired into a
+        // deallocated self, the `guard let self` bailed, and the
+        // coordinator's onExtractionComplete never ran — silently
+        // dropping the result (Phase4OllamaExtractorLifetimeTests).
+        // Strong capture keeps self alive exactly as long as the
+        // URLSession callback retains this closure, which is the
+        // window we need.
+        provider.call(prompt: prompt, schema: schema) { result in
             switch result {
             case .success(let raw):
                 if raw.isEmpty, attemptsRemaining > 0 {

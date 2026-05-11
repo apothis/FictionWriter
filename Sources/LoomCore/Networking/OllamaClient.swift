@@ -142,20 +142,26 @@ public final class OllamaClient {
             return
         }
         req.httpBody = data
+        let started = Date()
         let task = session.dataTask(with: req) { respData, resp, err in
+            let elapsed = -started.timeIntervalSinceNow
             if let err = err {
+                DebugLog.shared.write("[ollama] dataTask err after \(String(format: "%.1f", elapsed))s: \(err.localizedDescription)")
                 completion(.failure(.transport(err.localizedDescription)))
                 return
             }
             if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
                 let body = respData.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+                DebugLog.shared.write("[ollama] dataTask http \(http.statusCode) after \(String(format: "%.1f", elapsed))s")
                 completion(.failure(.http(http.statusCode, body)))
                 return
             }
             guard let respData = respData else {
+                DebugLog.shared.write("[ollama] dataTask no body after \(String(format: "%.1f", elapsed))s")
                 completion(.failure(.noBody))
                 return
             }
+            DebugLog.shared.write("[ollama] dataTask ok in \(String(format: "%.1f", elapsed))s bytes=\(respData.count)")
             do {
                 let content = try OllamaClient.parseChatResponseContent(from: respData)
                 completion(.success(content))
