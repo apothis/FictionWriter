@@ -1,21 +1,22 @@
 import AppKit
 
-/// Servers tab in the Settings window. Lists configured kobold
-/// profiles with Add / Remove / Set Default buttons. Mutations
-/// round-trip through `AppState.updateSettings(_:)` which both
-/// persists to `settings.json` and refreshes the
+/// Servers tab in the Settings window. Lists configured backend
+/// profiles with Add / Remove / Set Default / Set as Extractor
+/// buttons. Mutations round-trip through `AppState.updateSettings(_:)`
+/// which both persists to `settings.json` and refreshes the
 /// `KoboldClientRegistry`.
 ///
-/// UI is minimum-viable: an NSTableView of name + URL + a "(default)"
-/// indicator, plus a strip of action buttons. Per-profile edit
-/// happens via a sheet (Phase 2 polish) — initial version edits
-/// inline via the "Add Server…" sheet only.
+/// Phase 4 #7 sub-task 1 added a `ServerKind` discriminator to
+/// support role-routing: the writer (Kobold) drives Continue/Expand/
+/// Rewrite, the extractor (Ollama running gemma4_2b) drives the
+/// post-scene knowledge-ledger side-call.
 public final class ServersTabViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
     public let appState: AppState
     private var tableView: NSTableView!
     private var addButton: NSButton!
     private var removeButton: NSButton!
     private var setDefaultButton: NSButton!
+    private var setExtractorButton: NSButton!
     private var observer: NSObjectProtocol?
 
     public init(appState: AppState) {
@@ -56,14 +57,15 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         addButton = NSButton(title: "Add Server…", target: self, action: #selector(addClicked))
         removeButton = NSButton(title: "Remove", target: self, action: #selector(removeClicked))
         setDefaultButton = NSButton(title: "Set as Default", target: self, action: #selector(setDefaultClicked))
-        for b in [addButton!, removeButton!, setDefaultButton!] {
+        setExtractorButton = NSButton(title: "Set as Extractor", target: self, action: #selector(setExtractorClicked))
+        for b in [addButton!, removeButton!, setDefaultButton!, setExtractorButton!] {
             b.bezelStyle = .rounded
             b.controlSize = .regular
             b.font = DesignTokens.Typography.subheadline
             b.translatesAutoresizingMaskIntoConstraints = false
         }
 
-        let buttonRow = NSStackView(views: [addButton, removeButton, setDefaultButton])
+        let buttonRow = NSStackView(views: [addButton, removeButton, setDefaultButton, setExtractorButton])
         buttonRow.orientation = .horizontal
         buttonRow.spacing = DesignTokens.Spacing.sm
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
@@ -84,52 +86,64 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         refreshButtons()
     }
 
-    // MARK: - Public mutation surface (tested via Phase2SettingsControllerMountTests)
+    // MARK: - Public mutation surface (tested via Phase2/Phase4 wiring suites)
 
-    /// Add a server with the given name and base URL. Validates that
-    /// the name is non-empty (caller is expected to also verify the
-    /// URL parses, since `URL` non-optional input already guarantees
-    /// well-formed). On success: appends to AppSettings.servers,
-    /// auto-promotes to default if the list was previously empty,
-    /// persists via `AppState.updateSettings`.
-    public func addServer(name: String, baseURL: URL) throws {
+    /// Add a server with the given name, base URL, and kind. Defaults
+    /// to `.kobold` so legacy callers (Phase 2 sheet path before the
+    /// Phase 4 #7 kind picker landed) keep working. On success:
+    /// appends to AppSettings.servers, auto-promotes to default if
+    /// the list was previously empty, persists via
+    /// `AppState.updateSettings`, kicks off a kind-aware auto-probe.
+    public func addServer(name: String, baseURL: URL, kind: ServerKind = .kobold) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw ServersTabError.emptyName
         }
         var settings = appState.settings
-        let profile = ServerProfile(name: trimmed, baseURL: baseURL)
+        let profile = ServerProfile(name: trimmed, baseURL: baseURL, kind: kind)
         settings.addServer(profile)
         try appState.updateSettings(settings)
         tableView?.reloadData()
         refreshButtons()
-        // Phase 2 follow-on (HANDOFF §9.2) — kick off an auto-probe so
-        // capabilities + lastProbed populate without waiting for the
-        // user's first generation. Async; failure is silent (the user
-        // can re-probe by hitting Test).
-        autoProbeAsync(profileId: profile.id, baseURL: baseURL)
+        // Phase 2 follow-on (HANDOFF §9.2) — auto-probe so capabilities
+        // + lastProbed populate without waiting for the user's first
+        // generation. Phase 4 #7: route by `kind` (kobold → ServerProbe,
+        // ollama → OllamaProbe). Async; failure is silent.
+        autoProbeAsync(profileId: profile.id, baseURL: baseURL, kind: kind)
     }
 
-    private func autoProbeAsync(profileId: UUID, baseURL: URL) {
-        DebugLog.shared.write("[servers] auto-probe starting: \(baseURL.absoluteString)")
-        ServerProbe.probe(baseURL: baseURL) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                switch result {
-                case .success(let caps):
-                    let updated = AutoProbe.applyResult(
-                        caps,
-                        lastProbed: Date(),
-                        to: profileId,
-                        in: self.appState.settings
-                    )
-                    try? self.appState.updateSettings(updated)
-                    self.tableView?.reloadData()
-                    DebugLog.shared.write("[servers] auto-probe ok: \(caps.modelName ?? "?")")
-                case .failure(let err):
-                    DebugLog.shared.write("[servers] auto-probe failed: \(err)")
+    private func autoProbeAsync(profileId: UUID, baseURL: URL, kind: ServerKind) {
+        DebugLog.shared.write("[servers] auto-probe starting: \(kind.rawValue) \(baseURL.absoluteString)")
+        switch kind {
+        case .kobold:
+            ServerProbe.probe(baseURL: baseURL) { [weak self] result in
+                DispatchQueue.main.async {
+                    self?.applyProbeOutcome(profileId: profileId, result: result.mapError { $0 as Error })
                 }
             }
+        case .ollama:
+            OllamaProbe.probe(baseURL: baseURL) { [weak self] result in
+                DispatchQueue.main.async {
+                    self?.applyProbeOutcome(profileId: profileId, result: result.mapError { $0 as Error })
+                }
+            }
+        }
+    }
+
+    private func applyProbeOutcome(profileId: UUID, result: Result<ServerCapabilities, Error>) {
+        switch result {
+        case .success(let caps):
+            let updated = AutoProbe.applyResult(
+                caps,
+                lastProbed: Date(),
+                to: profileId,
+                in: appState.settings
+            )
+            try? appState.updateSettings(updated)
+            tableView?.reloadData()
+            DebugLog.shared.write("[servers] auto-probe ok: \(caps.modelName ?? "?")")
+        case .failure(let err):
+            DebugLog.shared.write("[servers] auto-probe failed: \(err)")
         }
     }
 
@@ -153,6 +167,20 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         refreshButtons()
     }
 
+    /// Designate the extractor profile. Pass `nil` to clear the role.
+    /// Throws `unknownId` when a non-nil id doesn't match an existing
+    /// server (defensive — the UI only enables the button when a row
+    /// is selected, but a stale id could slip through across windows).
+    public func setExtractor(id: UUID?) throws {
+        var settings = appState.settings
+        guard settings.setExtractor(id: id) else {
+            throw ServersTabError.unknownId
+        }
+        try appState.updateSettings(settings)
+        tableView?.reloadData()
+        refreshButtons()
+    }
+
     public enum ServersTabError: Error {
         case emptyName
         case unknownId
@@ -161,9 +189,6 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
     // MARK: - Button handlers
 
     @objc private func addClicked() {
-        // Phase 2 minimum-viable: show a sheet with name+URL fields.
-        // Defer the sheet implementation to a follow-up; for now
-        // just present an NSAlert with an accessory view.
         presentAddServerSheet()
     }
 
@@ -181,12 +206,24 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         try? setDefault(id: id)
     }
 
+    @objc private func setExtractorClicked() {
+        let row = tableView.selectedRow
+        guard row >= 0, row < appState.settings.servers.count else { return }
+        let profile = appState.settings.servers[row]
+        // If this profile is already the extractor, clicking the button
+        // clears the role (toggle behaviour, matches "Set as Default"'s
+        // implicit clear-on-reassign).
+        if appState.settings.extractorServerId == profile.id {
+            try? setExtractor(id: nil)
+        } else {
+            try? setExtractor(id: profile.id)
+        }
+    }
+
     private func presentAddServerSheet() {
-        // Simple alert-with-accessory pattern (vs a full NSPanel) —
-        // minimum-viable for Phase 2.
         let alert = NSAlert()
         alert.messageText = "Add Server"
-        alert.informativeText = "Name and base URL for the new kobold endpoint."
+        alert.informativeText = "Name, base URL, and kind for the new backend endpoint."
         alert.addButton(withTitle: "Add")
         alert.addButton(withTitle: "Cancel")
 
@@ -195,17 +232,36 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         stack.alignment = .leading
         stack.spacing = DesignTokens.Spacing.sm
         stack.translatesAutoresizingMaskIntoConstraints = false
+
         let nameField = NSTextField()
         nameField.placeholderString = "Name (e.g. \"Home\")"
         nameField.translatesAutoresizingMaskIntoConstraints = false
+
         let urlField = NSTextField()
         urlField.placeholderString = "http://192.168.1.201:5001"
         urlField.translatesAutoresizingMaskIntoConstraints = false
+
+        // Kind picker — segmented control, Kobold default. Switching
+        // updates the URL placeholder so the user sees the Ollama
+        // default port (11434) without typing.
+        let kindPicker = NSSegmentedControl(labels: ["Kobold (writer)", "Ollama (extractor)"], trackingMode: .selectOne, target: nil, action: nil)
+        kindPicker.translatesAutoresizingMaskIntoConstraints = false
+        kindPicker.selectedSegment = 0
+        kindPicker.target = self
+        kindPicker.action = #selector(kindPickerChanged(_:))
+        // Tag the URL field so the action handler can find it.
+        urlField.tag = 99
+        // Stash the kindPicker as accessible via tag too.
+        kindPicker.tag = 98
+
         stack.addArrangedSubview(nameField)
         stack.addArrangedSubview(urlField)
-        nameField.widthAnchor.constraint(equalToConstant: 300).isActive = true
-        urlField.widthAnchor.constraint(equalToConstant: 300).isActive = true
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 60))
+        stack.addArrangedSubview(kindPicker)
+        nameField.widthAnchor.constraint(equalToConstant: 320).isActive = true
+        urlField.widthAnchor.constraint(equalToConstant: 320).isActive = true
+        kindPicker.widthAnchor.constraint(equalToConstant: 320).isActive = true
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 100))
         container.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: container.topAnchor),
@@ -219,7 +275,21 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
             guard let url = URL(string: urlField.stringValue) else { return }
-            try? self?.addServer(name: nameField.stringValue, baseURL: url)
+            let kind: ServerKind = kindPicker.selectedSegment == 1 ? .ollama : .kobold
+            try? self?.addServer(name: nameField.stringValue, baseURL: url, kind: kind)
+        }
+    }
+
+    @objc private func kindPickerChanged(_ sender: NSSegmentedControl) {
+        // Walk siblings to find the URL field by tag and update the
+        // placeholder for the user's convenience.
+        guard let parent = sender.superview else { return }
+        for v in parent.subviews where v.tag == 99 {
+            if let tf = v as? NSTextField {
+                tf.placeholderString = sender.selectedSegment == 1
+                    ? "http://localhost:11434"
+                    : "http://192.168.1.201:5001"
+            }
         }
     }
 
@@ -227,6 +297,16 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         let hasSelection = tableView.selectedRow >= 0
         removeButton.isEnabled = hasSelection
         setDefaultButton.isEnabled = hasSelection
+        setExtractorButton.isEnabled = hasSelection
+        // Update the extractor button's label so the toggle behaviour
+        // is visible: "Set as Extractor" / "Clear Extractor".
+        let row = tableView.selectedRow
+        if row >= 0, row < appState.settings.servers.count,
+           appState.settings.servers[row].id == appState.settings.extractorServerId {
+            setExtractorButton.title = "Clear Extractor"
+        } else {
+            setExtractorButton.title = "Set as Extractor"
+        }
     }
 
     // MARK: - NSTableViewDataSource / Delegate
@@ -254,8 +334,13 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         }()
         let profile = appState.settings.servers[row]
         let isDefault = (profile.id == appState.settings.defaultServerId)
-        let suffix = isDefault ? "  (default)" : ""
-        cell.textField?.stringValue = "\(profile.name) — \(profile.baseURL.absoluteString)\(suffix)"
+        let isExtractor = (profile.id == appState.settings.extractorServerId)
+        var roleTags: [String] = []
+        if isDefault { roleTags.append("writer") }
+        if isExtractor { roleTags.append("extractor") }
+        let suffix = roleTags.isEmpty ? "" : "  (\(roleTags.joined(separator: ", ")))"
+        let kindTag = profile.kind == .ollama ? " [Ollama]" : ""
+        cell.textField?.stringValue = "\(profile.name)\(kindTag) — \(profile.baseURL.absoluteString)\(suffix)"
         return cell
     }
 

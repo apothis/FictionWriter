@@ -15,16 +15,30 @@ public struct ServerCapabilities: Codable, Equatable {
     }
 }
 
-/// A single configured kobold endpoint. Loom Phase 1 has no per-role
-/// routing (RPClient's general / summarizer / extractor / embeddings
-/// split is irrelevant here — Continue + Expand both use the project's
-/// chosen profile, falling back to AppSettings.defaultServerId, falling
-/// back to localhost). Phase 2+ may add roles when side-call work
-/// (rolling summary, fact extraction) lands.
+/// What backend shape a `ServerProfile` speaks. Phase 4 #7's role-
+/// routed extractor (LOOM_LEDGER_SPIKE.md §11–§12) introduced the
+/// second backend: KoboldCpp for the writer, Ollama for the ledger
+/// extractor. Forward-load contract: pre-Phase-4 settings.json
+/// bundles have no `kind` field on profiles and must decode as
+/// `.kobold` (see ServerProfile.init(from:)).
+public enum ServerKind: String, Codable {
+    case kobold
+    case ollama
+}
+
+/// A single configured backend endpoint. Phase 1 was kobold-only;
+/// Phase 4 #7 adds `.ollama` so a single `AppSettings.servers` list
+/// can carry both the writer (KoboldCpp) and the extractor
+/// (Ollama running gemma4_2b in the production design). Role
+/// assignment lives on `AppSettings` (`defaultServerId` for the
+/// writer, `extractorServerId` for the extractor); `kind` here is
+/// the wire-protocol discriminator the network layer reads to pick
+/// `/api/v1/generate` (kobold) vs `/api/chat` (ollama).
 public struct ServerProfile: Codable, Equatable, Identifiable {
     public let id: UUID
     public var name: String
     public var baseURL: URL
+    public var kind: ServerKind
     public var capabilities: ServerCapabilities?
     public var lastProbed: Date?
 
@@ -32,13 +46,25 @@ public struct ServerProfile: Codable, Equatable, Identifiable {
         id: UUID = UUID(),
         name: String,
         baseURL: URL,
+        kind: ServerKind = .kobold,
         capabilities: ServerCapabilities? = nil,
         lastProbed: Date? = nil
     ) {
         self.id = id
         self.name = name
         self.baseURL = baseURL
+        self.kind = kind
         self.capabilities = capabilities
         self.lastProbed = lastProbed
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.baseURL = try c.decode(URL.self, forKey: .baseURL)
+        self.kind = try c.decodeIfPresent(ServerKind.self, forKey: .kind) ?? .kobold
+        self.capabilities = try c.decodeIfPresent(ServerCapabilities.self, forKey: .capabilities)
+        self.lastProbed = try c.decodeIfPresent(Date.self, forKey: .lastProbed)
     }
 }
