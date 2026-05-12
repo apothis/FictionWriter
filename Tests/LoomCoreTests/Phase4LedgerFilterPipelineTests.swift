@@ -18,7 +18,7 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
 
     s.test("empty suggestions complete immediately with [] and never call embed") {
         let embedder = DeferredStubEmbedder()
-        var result: [LedgerSuggestion]?
+        var result: LedgerFilterPipelineResult?
         LedgerFilterPipeline.apply(
             embedder: embedder,
             suggestions: [],
@@ -26,7 +26,10 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             sceneSentences: ["whatever"]
         ) { result = $0 }
         try expectNotNil(result)
-        try expectEqual(result?.count, 0)
+        try expectEqual(result?.suggestions.count, 0)
+        try expectEqual(result?.dedupDropped, 0)
+        try expectEqual(result?.evidenceDropped, 0)
+        try expectEqual(result?.leakageDropped, 0)
         try expectNil(embedder.stored)
     }
 
@@ -70,7 +73,7 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             fact: KnownFact(fact: "Mia drank wine", certainty: .asserted),
             evidenceQuote: ""
         )
-        var result: [LedgerSuggestion]?
+        var result: LedgerFilterPipelineResult?
         LedgerFilterPipeline.apply(
             embedder: embedder,
             suggestions: [suggestion],
@@ -79,8 +82,12 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
         ) { result = $0 }
 
         embedder.flush(.failure(NSError(domain: "test", code: 1)))
-        try expectEqual(result?.count, 1)
-        try expectEqual(result?.first?.fact.fact, "Mia drank wine")
+        try expectEqual(result?.suggestions.count, 1)
+        try expectEqual(result?.suggestions.first?.fact.fact, "Mia drank wine")
+        // Fail-soft path returns the input list with all zero drops.
+        try expectEqual(result?.dedupDropped, 0)
+        try expectEqual(result?.evidenceDropped, 0)
+        try expectEqual(result?.leakageDropped, 0)
     }
 
     s.test("embed size mismatch → fail-soft (returns input list)") {
@@ -91,7 +98,7 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             fact: KnownFact(fact: "Mia drank wine", certainty: .asserted),
             evidenceQuote: ""
         )
-        var result: [LedgerSuggestion]?
+        var result: LedgerFilterPipelineResult?
         LedgerFilterPipeline.apply(
             embedder: embedder,
             suggestions: [suggestion],
@@ -102,7 +109,7 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
         // Server returned the wrong number of vectors — pipeline should
         // not assume positional alignment and must fail open.
         embedder.flush(.success([]))
-        try expectEqual(result?.count, 1)
+        try expectEqual(result?.suggestions.count, 1)
     }
 
     s.test("dedup filter fires under the pipeline") {
@@ -113,7 +120,7 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             fact: KnownFact(fact: "Mia drank wine", certainty: .asserted),
             evidenceQuote: ""
         )
-        var result: [LedgerSuggestion]?
+        var result: LedgerFilterPipelineResult?
         LedgerFilterPipeline.apply(
             embedder: embedder,
             suggestions: [suggestion],
@@ -135,7 +142,10 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             }
         }
         embedder.flush(.success(vectors))
-        try expectEqual(result?.count, 0)
+        try expectEqual(result?.suggestions.count, 0)
+        try expectEqual(result?.dedupDropped, 1)
+        try expectEqual(result?.evidenceDropped, 0)
+        try expectEqual(result?.leakageDropped, 0)
     }
 
     s.test("evidence-quote validation fires under the pipeline (drops hallucinated quote)") {
@@ -146,7 +156,7 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             fact: KnownFact(fact: "Mia drank wine", certainty: .asserted),
             evidenceQuote: "Mia hallucinated quote"
         )
-        var result: [LedgerSuggestion]?
+        var result: LedgerFilterPipelineResult?
         LedgerFilterPipeline.apply(
             embedder: embedder,
             suggestions: [suggestion],
@@ -167,7 +177,10 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             }
         }
         embedder.flush(.success(vectors))
-        try expectEqual(result?.count, 0)
+        try expectEqual(result?.suggestions.count, 0)
+        try expectEqual(result?.dedupDropped, 0)
+        try expectEqual(result?.evidenceDropped, 1)
+        try expectEqual(result?.leakageDropped, 0)
     }
 
     s.test("prompt-leakage filter fires under the pipeline") {
@@ -180,7 +193,7 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             fact: KnownFact(fact: leakedText, certainty: .asserted),
             evidenceQuote: ""
         )
-        var result: [LedgerSuggestion]?
+        var result: LedgerFilterPipelineResult?
         LedgerFilterPipeline.apply(
             embedder: embedder,
             suggestions: [suggestion],
@@ -199,7 +212,10 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             }
         }
         embedder.flush(.success(vectors))
-        try expectEqual(result?.count, 0)
+        try expectEqual(result?.suggestions.count, 0)
+        try expectEqual(result?.dedupDropped, 0)
+        try expectEqual(result?.evidenceDropped, 0)
+        try expectEqual(result?.leakageDropped, 1)
     }
 
     s.test("happy path: nothing matches → all suggestions pass through") {
@@ -215,7 +231,7 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             fact: KnownFact(fact: "Mia opened the door", certainty: .asserted),
             evidenceQuote: "Mia opened the door"
         )
-        var result: [LedgerSuggestion]?
+        var result: LedgerFilterPipelineResult?
         LedgerFilterPipeline.apply(
             embedder: embedder,
             suggestions: [s1, s2],
@@ -244,7 +260,10 @@ func phase4LedgerFilterPipelineTests() -> TestSuite {
             }
         }
         embedder.flush(.success(vectors))
-        try expectEqual(result?.count, 2)
+        try expectEqual(result?.suggestions.count, 2)
+        try expectEqual(result?.dedupDropped, 0)
+        try expectEqual(result?.evidenceDropped, 0)
+        try expectEqual(result?.leakageDropped, 0)
     }
 
     return s

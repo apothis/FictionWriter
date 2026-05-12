@@ -21,6 +21,36 @@ import Foundation
 /// 1. Embed call errors out (network failure, server cold, etc.).
 /// 2. Embed returns a vector array whose length doesn't match the
 ///    requested text array (positional alignment broken).
+///
+/// The result carries per-filter drop counts so AppState can log a
+/// breakdown — without this, `filter-dropped=K/N` in the log is
+/// opaque about which of the three filters did the work, making
+/// behaviour diagnosis on live runs (where the same prose can
+/// produce 1 drop one day and 16 the next due to extractor sampling
+/// variance) impossible without re-runs.
+public struct LedgerFilterPipelineResult: Equatable {
+    /// Survivors after all three filters.
+    public let suggestions: [LedgerSuggestion]
+    /// How many suggestions the dedup filter removed.
+    public let dedupDropped: Int
+    /// How many the evidence-quote validation removed (post-dedup).
+    public let evidenceDropped: Int
+    /// How many the prompt-leakage filter removed (post-evidence).
+    public let leakageDropped: Int
+
+    public init(
+        suggestions: [LedgerSuggestion],
+        dedupDropped: Int,
+        evidenceDropped: Int,
+        leakageDropped: Int
+    ) {
+        self.suggestions = suggestions
+        self.dedupDropped = dedupDropped
+        self.evidenceDropped = evidenceDropped
+        self.leakageDropped = leakageDropped
+    }
+}
+
 public enum LedgerFilterPipeline {
 
     public static func apply(
@@ -28,10 +58,12 @@ public enum LedgerFilterPipeline {
         suggestions: [LedgerSuggestion],
         existingFactsByCharacter: [UUID: [String]],
         sceneSentences: [String],
-        completion: @escaping ([LedgerSuggestion]) -> Void
+        completion: @escaping (LedgerFilterPipelineResult) -> Void
     ) {
         guard !suggestions.isEmpty else {
-            completion([])
+            completion(LedgerFilterPipelineResult(
+                suggestions: [], dedupDropped: 0, evidenceDropped: 0, leakageDropped: 0
+            ))
             return
         }
 
@@ -55,10 +87,17 @@ public enum LedgerFilterPipeline {
         embedder.embed(texts: textArray) { result in
             switch result {
             case .failure:
-                completion(suggestions)
+                // Fail-soft: input list, no drops.
+                completion(LedgerFilterPipelineResult(
+                    suggestions: suggestions,
+                    dedupDropped: 0, evidenceDropped: 0, leakageDropped: 0
+                ))
             case .success(let vectors):
                 guard vectors.count == textArray.count else {
-                    completion(suggestions)
+                    completion(LedgerFilterPipelineResult(
+                        suggestions: suggestions,
+                        dedupDropped: 0, evidenceDropped: 0, leakageDropped: 0
+                    ))
                     return
                 }
                 let embeddings = Dictionary(uniqueKeysWithValues: zip(textArray, vectors))
@@ -83,7 +122,12 @@ public enum LedgerFilterPipeline {
                 } else {
                     final = postEvidence
                 }
-                completion(final)
+                completion(LedgerFilterPipelineResult(
+                    suggestions: final,
+                    dedupDropped: suggestions.count - postDedup.count,
+                    evidenceDropped: postDedup.count - postEvidence.count,
+                    leakageDropped: postEvidence.count - final.count
+                ))
             }
         }
     }

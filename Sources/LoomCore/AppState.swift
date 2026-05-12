@@ -233,7 +233,9 @@ public final class AppState {
                     sceneId: sceneId,
                     extractedCount: extracted.count,
                     droppedByDiff: droppedByDiff,
-                    droppedByFilters: 0
+                    dedupDropped: 0,
+                    evidenceDropped: 0,
+                    leakageDropped: 0
                 )
                 return
             }
@@ -248,19 +250,20 @@ public final class AppState {
                 suggestions: suggestions,
                 existingFactsByCharacter: existingFactsByCharacter,
                 sceneSentences: sceneSentences
-            ) { [weak self] filtered in
+            ) { [weak self] result in
                 // The pipeline may invoke this on the URLSession queue;
                 // hop to main before touching the suggestions queue +
                 // posting the notification.
                 DispatchQueue.main.async {
                     guard let self = self else { return }
-                    let droppedByFilters = suggestions.count - filtered.count
                     self.commitSuggestions(
-                        filtered,
+                        result.suggestions,
                         sceneId: sceneId,
                         extractedCount: extracted.count,
                         droppedByDiff: droppedByDiff,
-                        droppedByFilters: droppedByFilters
+                        dedupDropped: result.dedupDropped,
+                        evidenceDropped: result.evidenceDropped,
+                        leakageDropped: result.leakageDropped
                     )
                 }
             }
@@ -292,10 +295,14 @@ public final class AppState {
         sceneId: UUID,
         extractedCount: Int,
         droppedByDiff: Int,
-        droppedByFilters: Int
+        dedupDropped: Int,
+        evidenceDropped: Int,
+        leakageDropped: Int
     ) {
+        let totalFilterDropped = dedupDropped + evidenceDropped + leakageDropped
+        let filterBreakdown = "dedup=\(dedupDropped) evidence=\(evidenceDropped) leakage=\(leakageDropped)"
         guard !suggestions.isEmpty else {
-            DebugLog.shared.write("[ledger] all candidates filtered out for scene=\(sceneId) extracted=\(extractedCount) diff-dropped=\(droppedByDiff) filter-dropped=\(droppedByFilters)")
+            DebugLog.shared.write("[ledger] all candidates filtered out for scene=\(sceneId) extracted=\(extractedCount) diff-dropped=\(droppedByDiff) filter-dropped=\(totalFilterDropped) {\(filterBreakdown)}")
             return
         }
         ledgerSuggestionsQueue.add(suggestions)
@@ -308,7 +315,7 @@ public final class AppState {
             }
             return parts.joined(separator: " ")
         }()
-        DebugLog.shared.write("[ledger] queued \(suggestions.count) suggestions for scene=\(sceneId) breakdown={\(perCharacterBreakdown)} diff-dropped=\(droppedByDiff) filter-dropped=\(droppedByFilters)/\(extractedCount)")
+        DebugLog.shared.write("[ledger] queued \(suggestions.count) suggestions for scene=\(sceneId) breakdown={\(perCharacterBreakdown)} diff-dropped=\(droppedByDiff) filter-dropped=\(totalFilterDropped)/\(extractedCount) {\(filterBreakdown)}")
         NotificationCenter.default.post(
             name: Self.ledgerSuggestionsDidChangeNotification,
             object: self
