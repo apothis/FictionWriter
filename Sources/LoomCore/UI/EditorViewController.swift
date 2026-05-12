@@ -140,7 +140,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         tray.translatesAutoresizingMaskIntoConstraints = false
         tray.onContinueClicked = { [weak self] in self?.handleContinue() }
         tray.onExpandClicked = { [weak self] in self?.handleExpand() }
-        tray.onRewriteClicked = { [weak self] in self?.handleRewrite() }
+        tray.onRewriteSubModeChosen = { [weak self] choice in self?.handleRewriteSubMode(choice) }
         // Acceptance buttons live in the tray itself, swapping in for
         // Continue/Expand when the post-generation acceptance window
         // opens. The previously-attempted NSTitlebarAccessoryViewController
@@ -684,26 +684,51 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         guard let value = textView.selectedRanges.first as? NSValue else { return }
         let selection = value.rangeValue
         guard selection.length > 0 else { return }
-        runSelectionReplacingGeneration(mode: .expand, selection: selection)
+        let typed = trayView.instructionText
+        runSelectionReplacingGeneration(
+            mode: .expand,
+            selection: selection,
+            perCallInstruction: typed.isEmpty ? nil : typed
+        )
     }
 
-    private func handleRewrite() {
-        // Same mechanics as Expand — delete the selection from the
-        // text view, keep it in the session for PromptBuilder to
-        // read as the source passage, stream the new prose into the
-        // gap. Only the mode + system prompt differ.
+    /// Phase 4 §14.1 #6 — the tray's Rewrite button now pops a
+    /// sub-mode picker (Voice / Tense presets / Length presets /
+    /// Generic); this handler resolves the chosen
+    /// `RewriteSubModeChoice` into a mode + per-call instruction and
+    /// fires the shared selection-replacing path.
+    private func handleRewriteSubMode(_ choice: RewriteSubModeChoice) {
         guard !coordinator.isGenerating else { return }
         guard let value = textView.selectedRanges.first as? NSValue else { return }
         let selection = value.rangeValue
         guard selection.length > 0 else { return }
-        runSelectionReplacingGeneration(mode: .rewrite, selection: selection)
+        let descriptor: String?
+        if choice.usesTrayInstruction {
+            let typed = trayView.instructionText
+            descriptor = typed.isEmpty ? nil : typed
+        } else {
+            descriptor = choice.descriptor
+        }
+        runSelectionReplacingGeneration(
+            mode: choice.mode,
+            selection: selection,
+            perCallInstruction: descriptor
+        )
     }
 
-    /// Shared mechanics for selection-replacing modes (Expand, Rewrite):
-    /// stash the original selection text+range for the redo path,
-    /// delete the selection from the text view (keeping it in the
-    /// session for PromptBuilder), and start the coordinator.
-    private func runSelectionReplacingGeneration(mode: GenerationMode, selection: NSRange) {
+    /// Shared mechanics for selection-replacing modes (Expand,
+    /// Rewrite, RewriteVoice, RewriteTense, RewriteLength): stash
+    /// the original selection text+range for the redo path, delete
+    /// the selection from the text view (keeping it in the session
+    /// for PromptBuilder), and start the coordinator. The caller
+    /// resolves the `perCallInstruction` — for Expand + generic
+    /// Rewrite + Voice it's the tray's typed text; for Tense + Length
+    /// presets it's the fixed descriptor from the picker.
+    private func runSelectionReplacingGeneration(
+        mode: GenerationMode,
+        selection: NSRange,
+        perCallInstruction: String?
+    ) {
         let nsString = textView.string as NSString
         let safeRange = NSRange(
             location: max(0, min(selection.location, nsString.length)),
@@ -721,13 +746,12 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
 
         lastInvokedMode = mode
         textView.isEditable = false
-        let instruction = trayView.instructionText
-        lastPerCallInstruction = instruction
+        lastPerCallInstruction = perCallInstruction ?? ""
         coordinator.start(
             mode: mode,
             cursorOffset: selection.location,
             selectionRange: selection,
-            perCallInstruction: instruction.isEmpty ? nil : instruction
+            perCallInstruction: perCallInstruction
         )
     }
 

@@ -21,7 +21,13 @@ import AppKit
 public final class GenerationTrayView: NSView {
     public var onContinueClicked: (() -> Void)?
     public var onExpandClicked: (() -> Void)?
-    public var onRewriteClicked: (() -> Void)?
+    /// Phase 4 §14.1 #6 — replaces `onRewriteClicked`. Clicking the
+    /// Rewrite button now pops a sub-mode picker (Voice / Tense
+    /// presets / Length presets / Generic); the chosen
+    /// `RewriteSubModeChoice` arrives here and the controller routes
+    /// it through `runSelectionReplacingGeneration` with the
+    /// resolved descriptor.
+    public var onRewriteSubModeChosen: ((RewriteSubModeChoice) -> Void)?
     /// Acceptance-mode click handlers. The tray swaps its visible
     /// button row to Accept / Reject / Keep & Redo when generation
     /// finishes.
@@ -227,7 +233,7 @@ public final class GenerationTrayView: NSView {
         critiqueButton.isEnabled = false
         brainstormButton.toolTip = "Brainstorm — Phase 4"
         critiqueButton.toolTip = "Critique — Phase 4"
-        rewriteButton.toolTip = "Rewrite — reshape the selected passage"
+        rewriteButton.toolTip = "Rewrite — voice / tense / length / generic (pick from menu)"
 
         historyDisclosureButton.target = self
         historyDisclosureButton.action = #selector(toggleHistory)
@@ -315,8 +321,31 @@ public final class GenerationTrayView: NSView {
     }
 
     @objc private func rewriteClicked() {
-        DebugLog.shared.write("[gen] tray: rewrite clicked")
-        onRewriteClicked?()
+        DebugLog.shared.write("[gen] tray: rewrite clicked (sub-mode picker)")
+        let menu = NSMenu()
+        var lastMode: GenerationMode? = nil
+        for choice in RewriteSubModeMenuBuilder.choices {
+            if let prev = lastMode, prev != choice.mode {
+                menu.addItem(.separator())
+            }
+            lastMode = choice.mode
+            let item = NSMenuItem(
+                title: choice.title,
+                action: #selector(rewriteSubModeItemClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = choice
+            menu.addItem(item)
+        }
+        let origin = NSPoint(x: 0, y: rewriteButton.bounds.height + 4)
+        menu.popUp(positioning: nil, at: origin, in: rewriteButton)
+    }
+
+    @objc private func rewriteSubModeItemClicked(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? RewriteSubModeChoice else { return }
+        DebugLog.shared.write("[gen] tray: rewrite sub-mode chosen mode=\(choice.mode.rawValue) descriptor=\(choice.descriptor ?? "<tray>")")
+        onRewriteSubModeChosen?(choice)
     }
 
     @objc private func acceptClicked() {
