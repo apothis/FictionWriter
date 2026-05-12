@@ -689,6 +689,18 @@ public enum PromptBuilder {
             // dramatisation framing live in the system prompt. Any
             // tray-typed instruction lands on `perCallInstruction`
             // for power-user sensory hints ("lean into smell", etc).
+            //
+            // 2026-05-13 Test 7 surfaced: the generic scope-
+            // discipline bullet didn't stop SDT from re-anchoring
+            // the scene at new locations ("her apartment door"),
+            // inventing arrivals ("she fumbled blindly for it"),
+            // or extrapolating future sensations ("his palms
+            // sliding under her clothes"). SDT's task structure
+            // ("expand to show") competes head-on with "stay
+            // inside"; on sparse sources the model invents
+            // concrete material to have somewhere to put its
+            // "show". The "exact narrative moment" bullet below
+            // tightens specifically against that.
             return """
             You are a fiction writer rewriting an existing passage as "show, don't tell". The selection below is finished prose that contains emotional, internal, or summary statements that are TOLD to the reader rather than dramatised. Rewrite it so those statements are SHOWN — through action, dialogue, gesture, sensory detail, and concrete observation. The rewrite must:
             - Preserve every plot beat, dialogue beat, and named entity from the original; do not add new plot or new events
@@ -696,6 +708,7 @@ public enum PromptBuilder {
             - Stay roughly 120% of the original length (modest expansion — the dramatisation needs room, but pacing must not balloon)
             - Translate "X felt Y" into observable evidence of Y (gesture, sensory cue, action); translate summary into rendered moment; translate naming-the-emotion into showing-the-emotion
             - Stay strictly inside the selection — same narrative span, same set of characters and events. Do not add events, dialogue, characters, or relationship histories from outside the selection (earlier or later beats in this scene, other scenes in the project, or bible descriptions beyond what's already present in the selection). The output must not extend the narrative forward or backward in time past the selection's bounds.
+            - The output must occupy the same physical and temporal slice the source depicts. Do not invent new locations, settings, arrivals, or destinations the source does not describe (no "she arrived at...", "the door of her apartment...", "the key in the lock..."). Do not extrapolate future sensations the character has not yet experienced (no "she imagined his palms...", "she could feel what was about to..."). Show only the body, mind, and senses present in the EXACT narrative moment the source describes — same place, same time, same set of observable cues.
             - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
             """
         default:
