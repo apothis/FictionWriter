@@ -19,12 +19,26 @@ public struct RewriteSubModeChoice: Equatable {
     /// instead (with empty-string mapping to nil). Used by Voice,
     /// whose target descriptor is freeform and authored at call time.
     public let usesTrayInstruction: Bool
+    /// For rewritePOV entries: the target bible-character id. The
+    /// controller resolves this at click time, calls
+    /// `LedgerKnowledge.compute(...)` against the current scene,
+    /// formats the result through `RewritePOVDescriptor.build(...)`,
+    /// and fires with that structured descriptor. Other modes carry
+    /// nil — the picker tests pin that default.
+    public let povCharacterId: UUID?
 
-    public init(title: String, mode: GenerationMode, descriptor: String?, usesTrayInstruction: Bool = false) {
+    public init(
+        title: String,
+        mode: GenerationMode,
+        descriptor: String?,
+        usesTrayInstruction: Bool = false,
+        povCharacterId: UUID? = nil
+    ) {
         self.title = title
         self.mode = mode
         self.descriptor = descriptor
         self.usesTrayInstruction = usesTrayInstruction
+        self.povCharacterId = povCharacterId
     }
 }
 
@@ -36,7 +50,11 @@ public struct RewriteSubModeChoice: Equatable {
 /// LOOM_NSFW.md §3 content-neutrality directive holds: this menu
 /// shapes the *form* of the rewrite, never gates the content.
 public enum RewriteSubModeMenuBuilder {
-    public static let choices: [RewriteSubModeChoice] = [
+    /// The Voice/Tense/Length cluster — same shape regardless of
+    /// bible state. Separated out so the picker can slot dynamic
+    /// POV entries between this group and the generic-rewrite
+    /// suffix (Phase 4 §14.1 #8).
+    private static let staticPrefix: [RewriteSubModeChoice] = [
         RewriteSubModeChoice(
             title: "Voice — use instruction field",
             mode: .rewriteVoice,
@@ -49,6 +67,35 @@ public enum RewriteSubModeMenuBuilder {
         RewriteSubModeChoice(title: "Length — 80% (tightened)", mode: .rewriteLength, descriptor: "80%"),
         RewriteSubModeChoice(title: "Length — 120% (expanded)", mode: .rewriteLength, descriptor: "120%"),
         RewriteSubModeChoice(title: "Length — 150% (longer)", mode: .rewriteLength, descriptor: "150%"),
+    ]
+
+    /// Generic escape hatch — always the last entry.
+    private static let staticSuffix: [RewriteSubModeChoice] = [
         RewriteSubModeChoice(title: "Generic rewrite", mode: .rewrite, descriptor: nil),
     ]
+
+    /// Static choice list when no bible characters are available
+    /// (or the caller doesn't need POV entries). Backwards-compatible
+    /// with the pre-#8 API.
+    public static let choices: [RewriteSubModeChoice] = staticPrefix + staticSuffix
+
+    /// Phase 4 §14.1 #8 — full picker list including one
+    /// `.rewritePOV` entry per bible character, slotted between the
+    /// Length presets and the generic escape hatch. POV entries
+    /// carry `povCharacterId` only; the descriptor (with
+    /// KNOWLEDGE_LEDGER_HINT bullets) is computed at click time by
+    /// the controller via `LedgerKnowledge.compute` +
+    /// `RewritePOVDescriptor.build`.
+    public static func choices(povCharacters: [Character]) -> [RewriteSubModeChoice] {
+        let povEntries = povCharacters.map { character in
+            RewriteSubModeChoice(
+                title: "POV — \(character.name)",
+                mode: .rewritePOV,
+                descriptor: nil,
+                usesTrayInstruction: false,
+                povCharacterId: character.id
+            )
+        }
+        return staticPrefix + povEntries + staticSuffix
+    }
 }

@@ -23,11 +23,20 @@ public final class GenerationTrayView: NSView {
     public var onExpandClicked: (() -> Void)?
     /// Phase 4 §14.1 #6 — replaces `onRewriteClicked`. Clicking the
     /// Rewrite button now pops a sub-mode picker (Voice / Tense
-    /// presets / Length presets / Generic); the chosen
-    /// `RewriteSubModeChoice` arrives here and the controller routes
-    /// it through `runSelectionReplacingGeneration` with the
-    /// resolved descriptor.
+    /// presets / Length presets / Generic, plus dynamic POV entries
+    /// from §14.1 #8); the chosen `RewriteSubModeChoice` arrives
+    /// here and the controller routes it through
+    /// `runSelectionReplacingGeneration` with the resolved
+    /// descriptor.
     public var onRewriteSubModeChosen: ((RewriteSubModeChoice) -> Void)?
+
+    /// Phase 4 §14.1 #8 — bible characters to surface as POV
+    /// entries in the Rewrite picker. Closure-based so the tray
+    /// pulls live state at menu-build time without having to
+    /// re-pass on every bible mutation. `nil` (or empty return)
+    /// means "no POV entries" — the menu still surfaces Voice /
+    /// Tense / Length / Generic.
+    public var rewritePOVCharactersProvider: (() -> [Character])?
     /// Acceptance-mode click handlers. The tray swaps its visible
     /// button row to Accept / Reject / Keep & Redo when generation
     /// finishes.
@@ -322,9 +331,10 @@ public final class GenerationTrayView: NSView {
 
     @objc private func rewriteClicked() {
         DebugLog.shared.write("[gen] tray: rewrite clicked (sub-mode picker)")
+        let povCharacters = rewritePOVCharactersProvider?() ?? []
         let menu = NSMenu()
         var lastMode: GenerationMode? = nil
-        for choice in RewriteSubModeMenuBuilder.choices {
+        for choice in RewriteSubModeMenuBuilder.choices(povCharacters: povCharacters) {
             if let prev = lastMode, prev != choice.mode {
                 menu.addItem(.separator())
             }

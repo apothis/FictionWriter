@@ -72,5 +72,56 @@ func phase4RewriteSubModePickerTests() -> TestSuite {
         }
     }
 
+    // MARK: - Dynamic POV choices (Phase 4 §14.1 #8)
+
+    s.test("choices(povCharacters:) with empty list returns the same as static .choices") {
+        let withEmpty = RewriteSubModeMenuBuilder.choices(povCharacters: [])
+        try expectEqual(withEmpty, RewriteSubModeMenuBuilder.choices)
+    }
+
+    s.test("choices(povCharacters:) inserts one POV entry per character BETWEEN Length and Generic") {
+        let iris = Character.empty(name: "Iris")
+        let daniel = Character.empty(name: "Daniel")
+        let combined = RewriteSubModeMenuBuilder.choices(povCharacters: [iris, daniel])
+        let modes = combined.map(\.mode)
+        try expectEqual(modes, [
+            .rewriteVoice,
+            .rewriteTense, .rewriteTense,
+            .rewriteLength, .rewriteLength, .rewriteLength, .rewriteLength,
+            .rewritePOV, .rewritePOV,
+            .rewrite,
+        ])
+    }
+
+    s.test("POV choices carry the source character's id + name") {
+        let iris = Character.empty(name: "Iris")
+        let daniel = Character.empty(name: "Daniel")
+        let combined = RewriteSubModeMenuBuilder.choices(povCharacters: [iris, daniel])
+        let povs = combined.filter { $0.mode == .rewritePOV }
+        try expectEqual(povs[0].povCharacterId, iris.id)
+        try expectEqual(povs[1].povCharacterId, daniel.id)
+        try expectTrue(povs[0].title.contains("Iris"),
+            "POV menu label should include the character name; got: \(povs[0].title)")
+        try expectTrue(povs[1].title.contains("Daniel"))
+    }
+
+    s.test("POV choices do NOT use the tray instruction field as descriptor") {
+        let iris = Character.empty(name: "Iris")
+        let combined = RewriteSubModeMenuBuilder.choices(povCharacters: [iris])
+        let pov = try expectNotNil(combined.first { $0.mode == .rewritePOV })
+        // The descriptor is computed at click time by the controller
+        // (lookup character + LedgerKnowledge.compute +
+        // RewritePOVDescriptor.build); the static choice itself just
+        // carries the target character id.
+        try expectFalse(pov.usesTrayInstruction)
+        try expectNil(pov.descriptor)
+    }
+
+    s.test("static RewriteSubModeChoice.povCharacterId defaults to nil for non-POV entries") {
+        for choice in RewriteSubModeMenuBuilder.choices where choice.mode != .rewritePOV {
+            try expectNil(choice.povCharacterId)
+        }
+    }
+
     return s
 }

@@ -141,6 +141,9 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         tray.onContinueClicked = { [weak self] in self?.handleContinue() }
         tray.onExpandClicked = { [weak self] in self?.handleExpand() }
         tray.onRewriteSubModeChosen = { [weak self] choice in self?.handleRewriteSubMode(choice) }
+        tray.rewritePOVCharactersProvider = { [weak self] in
+            self?.session.project.bible.characters ?? []
+        }
         // Acceptance buttons live in the tray itself, swapping in for
         // Continue/Expand when the post-generation acceptance window
         // opens. The previously-attempted NSTitlebarAccessoryViewController
@@ -702,18 +705,58 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         guard let value = textView.selectedRanges.first as? NSValue else { return }
         let selection = value.rangeValue
         guard selection.length > 0 else { return }
-        let descriptor: String?
-        if choice.usesTrayInstruction {
-            let typed = trayView.instructionText
-            descriptor = typed.isEmpty ? nil : typed
-        } else {
-            descriptor = choice.descriptor
-        }
+        let descriptor: String? = resolvedDescriptor(for: choice)
         runSelectionReplacingGeneration(
             mode: choice.mode,
             selection: selection,
             perCallInstruction: descriptor
         )
+    }
+
+    /// Phase 4 §14.1 #6 + #8 — resolves the `perCallInstruction`
+    /// string for a sub-mode pick. Voice pulls the tray instruction
+    /// field; Tense + Length presets use the fixed descriptor; POV
+    /// (§14.1 #8) looks up the target character and computes the
+    /// structured descriptor from `LedgerKnowledge.compute` so the
+    /// model sees the KNOWS / DOES NOT KNOW bullets it needs to
+    /// avoid inventing things the new POV character couldn't know.
+    /// Anything the user typed into the tray instruction field on
+    /// top is appended (POV power-user override for person /
+    /// limited).
+    private func resolvedDescriptor(for choice: RewriteSubModeChoice) -> String? {
+        if choice.usesTrayInstruction {
+            let typed = trayView.instructionText
+            return typed.isEmpty ? nil : typed
+        }
+        if choice.mode == .rewritePOV, let povId = choice.povCharacterId {
+            let bible = session.project.bible
+            guard let character = bible.characters.first(where: { $0.id == povId }) else {
+                DebugLog.shared.write("[gen] tray: rewritePOV stale character id=\(povId); falling back to nil descriptor")
+                return nil
+            }
+            let knowledge: LedgerKnowledge.Result
+            if let sceneId = session.currentSceneId {
+                knowledge = LedgerKnowledge.compute(
+                    characterId: character.id,
+                    asOfSceneId: sceneId,
+                    in: session.project,
+                    scenes: session.scenes
+                )
+            } else {
+                knowledge = LedgerKnowledge.Result(knows: [], unknowns: [])
+            }
+            var descriptor = RewritePOVDescriptor.build(
+                targetName: character.name,
+                knowledge: knowledge
+            )
+            let typed = trayView.instructionText
+            if !typed.isEmpty {
+                descriptor += "\n\n" + typed
+            }
+            DebugLog.shared.write("[gen] tray: rewritePOV target=\(character.name) knows=\(knowledge.knows.count) unknowns=\(knowledge.unknowns.count)")
+            return descriptor
+        }
+        return choice.descriptor
     }
 
     /// Shared mechanics for selection-replacing modes (Expand,
