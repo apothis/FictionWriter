@@ -611,6 +611,7 @@ public enum PromptBuilder {
             - Preserves every beat and every named entity from the original (do not skip, do not invent)
             - Matches the voice/tense/POV of the surrounding manuscript
             - Roughly matches the original length (±25%); do not summarise or balloon
+            - Stays strictly inside the selection — same narrative span, same set of characters and events. Do not add events, dialogue, characters, or relationship histories from outside the selection (earlier or later beats in this scene, other scenes in the project, or bible descriptions beyond what's already present in the selection). The output must not extend the narrative forward or backward in time past the selection's bounds.
             - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
             """
         case .rewriteVoice:
@@ -623,6 +624,7 @@ public enum PromptBuilder {
             - Preserve every plot beat, dialogue beat, and named entity from the original (do not skip, do not invent events)
             - Match the manuscript's tense and POV exactly
             - Stay roughly the same length as the original (±20%); do not summarise or balloon
+            - Stay strictly inside the selection — same narrative span, same set of characters and events. Do not add events, dialogue, characters, or relationship histories from outside the selection (earlier or later beats in this scene, other scenes in the project, or bible descriptions beyond what's already present in the selection). The output must not extend the narrative forward or backward in time past the selection's bounds.
             - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
             """
         case .rewriteTense:
@@ -647,6 +649,7 @@ public enum PromptBuilder {
             - Match the manuscript's voice and POV exactly
             - Stay roughly the same length as the original (±20%); do not summarise or balloon
             - Keep dialogue verbatim where natural; only adjust speech tags + interiority for tense consistency
+            - Stay strictly inside the selection — same narrative span, same set of characters and events. Do not add events, dialogue, characters, or relationship histories from outside the selection (earlier or later beats in this scene, other scenes in the project, or bible descriptions beyond what's already present in the selection). The output must not extend the narrative forward or backward in time past the selection's bounds.
             - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
             """
         case .rewriteLength:
@@ -658,6 +661,7 @@ public enum PromptBuilder {
             - Preserve every plot beat, dialogue beat, and named entity from the original (do not skip, do not invent events)
             - Match the manuscript's voice, tense, and POV exactly
             - Adjust through expanded sensory detail and interiority (when growing) OR tightened phrasing and trimmed transitions (when shrinking) — never by changing what happens
+            - Stay strictly inside the selection — same narrative span, same set of characters and events. Do not add events, dialogue, characters, or relationship histories from outside the selection (earlier or later beats in this scene, other scenes in the project, or bible descriptions beyond what's already present in the selection). The output must not extend the narrative forward or backward in time past the selection's bounds.
             - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
             """
         case .rewritePOV:
@@ -676,6 +680,7 @@ public enum PromptBuilder {
             - Match the manuscript's voice and tense exactly; only the POV character changes
             - Stay roughly the same length as the original (±20%); do not summarise or balloon
             - Adjust interiority so the new POV character only registers what they could plausibly know, see, or feel — do not invent thoughts, knowledge, or perceptions the character has not been exposed to (the per-call instruction below lists what they know and don't know as of this scene)
+            - Stay strictly inside the selection — same narrative span, same set of characters and events. Do not add events, dialogue, characters, or relationship histories from outside the selection (earlier or later beats in this scene, other scenes in the project, or bible descriptions beyond what's already present in the selection). The output must not extend the narrative forward or backward in time past the selection's bounds.
             - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
             """
         case .showDontTell:
@@ -690,6 +695,7 @@ public enum PromptBuilder {
             - Match the manuscript's voice, tense, and POV exactly
             - Stay roughly 120% of the original length (modest expansion — the dramatisation needs room, but pacing must not balloon)
             - Translate "X felt Y" into observable evidence of Y (gesture, sensory cue, action); translate summary into rendered moment; translate naming-the-emotion into showing-the-emotion
+            - Stay strictly inside the selection — same narrative span, same set of characters and events. Do not add events, dialogue, characters, or relationship histories from outside the selection (earlier or later beats in this scene, other scenes in the project, or bible descriptions beyond what's already present in the selection). The output must not extend the narrative forward or backward in time past the selection's bounds.
             - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
             """
         default:
