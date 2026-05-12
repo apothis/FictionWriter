@@ -44,6 +44,7 @@ let suites: [TestSuite] = [
     phase2BibleEntityMutationsTests(),
     phase2BibleViewModelTests(),
     phase2BibleInspectorMountTests(),
+    phase2BibleInspectorResponderPreservationTests(),
     phase2NarrativeStyleTests(),
     phase2ProjectSettingsPickersTests(),
     phase2InjectionModeTests(),
