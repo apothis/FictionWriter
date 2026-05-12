@@ -625,6 +625,30 @@ public enum PromptBuilder {
             - Stay roughly the same length as the original (±20%); do not summarise or balloon
             - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
             """
+        case .rewriteTense:
+            // Phase 4 §14.1 #6 / LOOM_GENERATION_MODES.md §4.2.
+            // Target-tense descriptor ("past" / "present" / freeform)
+            // rides on `perCallInstruction`; system prompt only commits
+            // to what kind of rewrite this is.
+            return """
+            You are a fiction writer rewriting an existing passage in a different tense. The selection below is finished prose. Rewrite it in the target tense supplied by the author, while preserving everything else about the passage. The rewrite must:
+            - Preserve every plot beat, dialogue beat, and named entity from the original (do not skip, do not invent events)
+            - Match the manuscript's voice and POV exactly
+            - Stay roughly the same length as the original (±20%); do not summarise or balloon
+            - Keep dialogue verbatim where natural; only adjust speech tags + interiority for tense consistency
+            - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
+            """
+        case .rewriteLength:
+            // Phase 4 §14.1 #6 / LOOM_GENERATION_MODES.md §4.4.
+            // Target-length descriptor ("50%" / "80%" / "120%" / "150%"
+            // / freeform) rides on `perCallInstruction`.
+            return """
+            You are a fiction writer rewriting an existing passage at a different length. The selection below is finished prose. Rewrite it at the target length supplied by the author, preserving everything else about the passage. The rewrite must:
+            - Preserve every plot beat, dialogue beat, and named entity from the original (do not skip, do not invent events)
+            - Match the manuscript's voice, tense, and POV exactly
+            - Adjust through expanded sensory detail and interiority (when growing) OR tightened phrasing and trimmed transitions (when shrinking) — never by changing what happens
+            - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
+            """
         default:
             // Phase 4+ modes; PromptBuilder still produces something
             // sensible if invoked early.
@@ -659,6 +683,18 @@ public enum PromptBuilder {
             // just frames the task and the passage.
             guard let selection = selectionText(in: context) else { return "" }
             return "Passage to rewrite in a new voice:\n\(selection)\n\n—— Output the rewritten passage only, in the target voice. No preface, no commentary, no quotation marks around it."
+        case .rewriteTense:
+            // Phase 4 §14.1 #6. Target-tense descriptor rides on
+            // `perCallInstruction`; mode instruction frames the task
+            // and the passage.
+            guard let selection = selectionText(in: context) else { return "" }
+            return "Passage to rewrite in a new tense:\n\(selection)\n\n—— Output the rewritten passage only, in the target tense. No preface, no commentary, no quotation marks around it."
+        case .rewriteLength:
+            // Phase 4 §14.1 #6. Target-length descriptor rides on
+            // `perCallInstruction`; mode instruction frames the task
+            // and the passage.
+            guard let selection = selectionText(in: context) else { return "" }
+            return "Passage to rewrite at a new length:\n\(selection)\n\n—— Output the rewritten passage only, at the target length. No preface, no commentary, no quotation marks around it."
         default:
             return ""
         }

@@ -31,7 +31,13 @@ public enum GenerationModeAvailability {
             // Phase 4 §14.1 #1 — voice rewrite. Selection-replace
             // shape, same enable rule as generic .rewrite.
             return state.hasSelection
-        case .rewriteTense, .rewritePOV, .rewriteLength,
+        case .rewriteTense, .rewriteLength:
+            // Phase 4 §14.1 #6 — tense + length rewrites. Both
+            // selection-replace; descriptor (target tense / target
+            // length) rides on `PromptContext.perCallInstruction`,
+            // populated by the sub-mode picker UI.
+            return state.hasSelection
+        case .rewritePOV,
              .showDontTell, .brainstorm, .critique, .bridge, .describe, .nameSuggest:
             return false
         }
