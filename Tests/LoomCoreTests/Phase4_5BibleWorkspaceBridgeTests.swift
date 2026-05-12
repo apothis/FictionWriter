@@ -111,6 +111,8 @@ func phase4_5BibleWorkspaceBridgeTests() -> TestSuite {
             try expectEqual(decodedId, id)
             try expectEqual(patch.name, "Daniel")
             try expectNil(patch.description)
+        default:
+            try expect(false, "expected .patchCharacter")
         }
     }
 
@@ -126,6 +128,8 @@ func phase4_5BibleWorkspaceBridgeTests() -> TestSuite {
         switch intent {
         case .patchCharacter(_, let patch):
             try expectEqual(patch, CharacterPatch())
+        default:
+            try expect(false, "expected .patchCharacter")
         }
     }
 
@@ -161,6 +165,57 @@ func phase4_5BibleWorkspaceBridgeTests() -> TestSuite {
         let json = String(data: data, encoding: .utf8) ?? ""
         try expectTrue(json.contains("\"kind\":\"patchCharacter\""),
             "encoded intent must use a `kind` discriminator; got: \(json)")
+    }
+
+    // MARK: - Session 3 intent cases (Phase 4.5 §7)
+
+    s.test("decodeIntent on patchLorebookEntry yields the expected case") {
+        let id = UUID()
+        let json = """
+        {"kind":"patchLorebookEntry","id":"\(id.uuidString)","patch":{"name":"scenario:other"}}
+        """
+        let intent = try BibleWorkspaceBridge.decodeIntent(Data(json.utf8))
+        switch intent {
+        case .patchLorebookEntry(let decodedId, let patch):
+            try expectEqual(decodedId, id)
+            try expectEqual(patch.name, "scenario:other")
+        default:
+            try expect(false, "expected .patchLorebookEntry")
+        }
+    }
+
+    s.test("decodeIntent on addLorebookEntry yields the expected case") {
+        let json = "{\"kind\":\"addLorebookEntry\",\"name\":\"new entry\"}"
+        let intent = try BibleWorkspaceBridge.decodeIntent(Data(json.utf8))
+        switch intent {
+        case .addLorebookEntry(let name):
+            try expectEqual(name, "new entry")
+        default:
+            try expect(false, "expected .addLorebookEntry")
+        }
+    }
+
+    s.test("decodeIntent on deleteLorebookEntry yields the expected case") {
+        let id = UUID()
+        let json = "{\"kind\":\"deleteLorebookEntry\",\"id\":\"\(id.uuidString)\"}"
+        let intent = try BibleWorkspaceBridge.decodeIntent(Data(json.utf8))
+        switch intent {
+        case .deleteLorebookEntry(let decodedId):
+            try expectEqual(decodedId, id)
+        default:
+            try expect(false, "expected .deleteLorebookEntry")
+        }
+    }
+
+    s.test("patchLorebookEntry round-trips through encode/decode") {
+        let id = UUID()
+        let intent = BibleWorkspaceIntent.patchLorebookEntry(
+            id: id,
+            patch: LorebookEntryPatch(content: "X", enabled: false, priority: 99)
+        )
+        let data = try JSONEncoder().encode(intent)
+        let decoded = try BibleWorkspaceBridge.decodeIntent(data)
+        try expectEqual(decoded, intent)
     }
 
     return s

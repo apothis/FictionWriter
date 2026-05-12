@@ -65,13 +65,19 @@ public enum BibleWorkspaceBridge {
 /// what `web/bible-workspace/src/bridge.ts` builds.
 public enum BibleWorkspaceIntent: Codable, Equatable {
     case patchCharacter(id: UUID, patch: CharacterPatch)
+    case patchLorebookEntry(id: UUID, patch: LorebookEntryPatch)
+    case addLorebookEntry(name: String)
+    case deleteLorebookEntry(id: UUID)
 
     private enum CodingKeys: String, CodingKey {
-        case kind, id, patch
+        case kind, id, patch, name
     }
 
     private enum Kind: String {
         case patchCharacter
+        case patchLorebookEntry
+        case addLorebookEntry
+        case deleteLorebookEntry
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -81,6 +87,16 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             try c.encode(Kind.patchCharacter.rawValue, forKey: .kind)
             try c.encode(id, forKey: .id)
             try c.encode(patch, forKey: .patch)
+        case .patchLorebookEntry(let id, let patch):
+            try c.encode(Kind.patchLorebookEntry.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+            try c.encode(patch, forKey: .patch)
+        case .addLorebookEntry(let name):
+            try c.encode(Kind.addLorebookEntry.rawValue, forKey: .kind)
+            try c.encode(name, forKey: .name)
+        case .deleteLorebookEntry(let id):
+            try c.encode(Kind.deleteLorebookEntry.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
         }
     }
 
@@ -100,6 +116,16 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             let id = try c.decode(UUID.self, forKey: .id)
             let patch = try c.decode(CharacterPatch.self, forKey: .patch)
             self = .patchCharacter(id: id, patch: patch)
+        case .patchLorebookEntry:
+            let id = try c.decode(UUID.self, forKey: .id)
+            let patch = try c.decode(LorebookEntryPatch.self, forKey: .patch)
+            self = .patchLorebookEntry(id: id, patch: patch)
+        case .addLorebookEntry:
+            let name = try c.decode(String.self, forKey: .name)
+            self = .addLorebookEntry(name: name)
+        case .deleteLorebookEntry:
+            let id = try c.decode(UUID.self, forKey: .id)
+            self = .deleteLorebookEntry(id: id)
         }
     }
 }

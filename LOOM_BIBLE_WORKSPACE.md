@@ -709,3 +709,33 @@ The three fixes together are non-obvious — debug shim (now removed but documen
 - `intent.patchLorebookEntry` dispatcher.
 - React `LorebookEditor` form with the 11 LorebookEntry fields including the conditional render for `depth` when `positionMode == .depthN`.
 - Affordance for adding/removing lorebook entries entirely.
+
+### Session 3 — 2026-05-12
+
+**Landed**: full lorebook entry editor (all 13 fields, not the 4 the v1 inspector covers). Add + Delete + Patch intent path. Conditional `depth` render. Live-smoke verified against fresh entries + Sphiratrioth pack entries.
+
+**Tests**: +19 TestKit (15 `LorebookEntryPatch` covering apply-to semantics + JSON round-trip; 4 new `BibleWorkspaceIntent` cases). 848/848 → 867/867.
+
+**Code shipped:**
+
+*Swift side:*
+- `Sources/LoomCore/Models/LorebookEntryPatch.swift` — every `LorebookEntry` field as `Optional`; `apply(to:)` mirrors `CharacterPatch.apply`.
+- `Sources/LoomCore/UI/BibleWorkspaceBridge.swift` extended: `BibleWorkspaceIntent` enum gains three cases — `.patchLorebookEntry(id:, patch:)`, `.addLorebookEntry(name:)`, `.deleteLorebookEntry(id:)`. Manual Codable conformance extends with corresponding kind values.
+- `Sources/LoomCore/UI/BibleWorkspaceWindowController.swift` — dispatch switch covers all four new cases; `lorebookPatchFieldSummary` mirrors the character-side logger.
+
+*React side:*
+- `src/components/ui/NumericField.tsx` — handles the "backspace can't clear the 0" quirk that the naive `parseInt(value) || 0` pattern produces. Holds local string state; only emits numeric values when the parse succeeds; resyncs from prop only when the external value diverges from the parsed text. Used for `depth`, `priority`, `weight`, `maxRecentScenesScanned`.
+- `src/views/LorebookEditor.tsx` — full editor form. Sections: Identity (name, activation mode, enabled checkbox), Content (textarea), Keyed triggers (primary keys + secondary keys + scan budget), Placement (position mode + conditional depth + priority), Sphiratrioth pattern (group, weight, sticky).
+- `src/App.tsx` — `Selection` union extended with `{ kind: "lorebook"; id }`; new `onAddLorebookEntry` + `onSelectLorebookEntry` callbacks. Add-entry creates with `"Entry N"` default name (matches AppKit inspector pattern; window.prompt no-ops in WKWebView without a UIDelegate, and the default-name flow is better UX anyway — no modal interruption).
+- `src/views/EntityList.tsx` — lorebook section gains a `+ Add entry` link in its header; lorebook rows are now clickable buttons.
+- `src/types.ts` — `LorebookEntryPatch` interface mirrors the Swift type.
+
+**Live-smoke verified**: add a new entry → renames in editor → activation mode dropdown swaps → enabled toggle → conditional depth field appears when positionMode=depthN → priority/weight numeric edits cleanly (the NumericField fix) → keys + secondary keys add/remove → group + sticky toggles → delete returns to list with entry gone. Sphiratrioth pack's existing kink_outcome group entries edit correctly (group + weight + sticky all round-trip).
+
+**Known limit**: nullable scalars (depth, group, weight) treat 0/empty as "set to 0/empty" rather than "clear back to nil". A "clear field" affordance would need a separate intent or a sentinel value in the patch. Not pressing — the JSON-decoder behaviour on the Swift side preserves existing nil if the field is absent in the patch, so untouched optionals round-trip correctly.
+
+**Carry forward to Session 4** (Accepted-facts examiner):
+- `ProjectSession.removeKnownFact(characterId:sceneId:factId:)` + tests (mutate, no-op on stale ids, mark dirty).
+- `BibleWorkspaceIntent.deleteKnownFact(characterId:, sceneId:, factId:)`.
+- React view: tabs on the character editor (or a separate route) for "Description" / "Facts" with the facts list grouped by scene + delete affordance.
+- Snapshot `SceneSummary` already supports the scene-title rendering — no new bridge changes needed there.

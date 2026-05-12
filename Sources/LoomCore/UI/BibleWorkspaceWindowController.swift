@@ -231,7 +231,41 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             character = patch.apply(to: character)
             session.updateCharacter(character)
             DebugLog.shared.write("[workspace] patchCharacter applied id=\(id) fields=\(patchFieldSummary(patch))")
+        case .patchLorebookEntry(let id, let patch):
+            guard var entry = session.project.bible.lorebook.first(where: { $0.id == id }) else {
+                DebugLog.shared.write("[workspace] patchLorebookEntry ignored — stale id=\(id)")
+                return
+            }
+            entry = patch.apply(to: entry)
+            session.updateLorebookEntry(entry)
+            DebugLog.shared.write("[workspace] patchLorebookEntry applied id=\(id) fields=\(lorebookPatchFieldSummary(patch))")
+        case .addLorebookEntry(let name):
+            let entry = session.addLorebookEntry(name: name)
+            DebugLog.shared.write("[workspace] addLorebookEntry id=\(entry.id) name=\(name)")
+        case .deleteLorebookEntry(let id):
+            session.deleteLorebookEntry(id: id)
+            DebugLog.shared.write("[workspace] deleteLorebookEntry id=\(id)")
         }
+    }
+
+    /// Compact log-friendly summary of which lorebook-patch fields
+    /// were non-nil.
+    private func lorebookPatchFieldSummary(_ patch: LorebookEntryPatch) -> String {
+        var fields: [String] = []
+        if patch.name != nil { fields.append("name") }
+        if patch.content != nil { fields.append("content") }
+        if patch.activationMode != nil { fields.append("activationMode") }
+        if patch.keys != nil { fields.append("keys") }
+        if patch.secondaryKeys != nil { fields.append("secondaryKeys") }
+        if patch.enabled != nil { fields.append("enabled") }
+        if patch.priority != nil { fields.append("priority") }
+        if patch.positionMode != nil { fields.append("positionMode") }
+        if patch.depth != nil { fields.append("depth") }
+        if patch.maxRecentScenesScanned != nil { fields.append("maxRecentScenesScanned") }
+        if patch.group != nil { fields.append("group") }
+        if patch.weight != nil { fields.append("weight") }
+        if patch.sticky != nil { fields.append("sticky") }
+        return fields.isEmpty ? "<empty>" : fields.joined(separator: ",")
     }
 
     /// Compact log-friendly summary of which patch fields were

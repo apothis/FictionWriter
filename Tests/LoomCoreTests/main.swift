@@ -125,6 +125,7 @@ let suites: [TestSuite] = [
     phase4_5BibleWorkspaceSnapshotTests(),
     phase4_5BibleWorkspaceBridgeTests(),
     phase4_5CharacterPatchTests(),
+    phase4_5LorebookEntryPatchTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

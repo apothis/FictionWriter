@@ -112,3 +112,21 @@ export interface CharacterPatch {
   customFields?: CharacterCustomField[];
   injectionMode?: "constant" | "keyed";
 }
+
+// Mirrors LorebookEntryPatch.swift — every field optional. Same
+// semantics as CharacterPatch: undefined = leave alone, array = replace.
+export interface LorebookEntryPatch {
+  name?: string;
+  content?: string;
+  activationMode?: "constant" | "keyed" | "vectorised";
+  keys?: string[];
+  secondaryKeys?: string[];
+  enabled?: boolean;
+  priority?: number;
+  positionMode?: "top" | "bottom" | "depthN";
+  depth?: number;
+  maxRecentScenesScanned?: number;
+  group?: string;
+  weight?: number;
+  sticky?: boolean;
+}

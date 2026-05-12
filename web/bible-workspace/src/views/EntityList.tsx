@@ -13,9 +13,16 @@ import { cn } from "../lib/cn";
 interface Props {
   snapshot: BibleWorkspaceSnapshot;
   onSelectCharacter: (id: string) => void;
+  onSelectLorebookEntry: (id: string) => void;
+  onAddLorebookEntry: () => void;
 }
 
-export function EntityList({ snapshot, onSelectCharacter }: Props) {
+export function EntityList({
+  snapshot,
+  onSelectCharacter,
+  onSelectLorebookEntry,
+  onAddLorebookEntry,
+}: Props) {
   return (
     <div className="flex h-full flex-col">
       <Header snapshot={snapshot} />
@@ -36,12 +43,28 @@ export function EntityList({ snapshot, onSelectCharacter }: Props) {
             ))
           )}
         </Section>
-        <Section title="Lorebook" count={snapshot.lorebook.length}>
+        <Section
+          title="Lorebook"
+          count={snapshot.lorebook.length}
+          headerAction={
+            <button
+              type="button"
+              onClick={onAddLorebookEntry}
+              className="text-xs text-loom-accent hover:underline"
+            >
+              + Add entry
+            </button>
+          }
+        >
           {snapshot.lorebook.length === 0 ? (
             <EmptyRow text="No lorebook entries yet." />
           ) : (
             snapshot.lorebook.map((entry) => (
-              <LorebookRow key={entry.id} entry={entry} />
+              <LorebookRow
+                key={entry.id}
+                entry={entry}
+                onClick={() => onSelectLorebookEntry(entry.id)}
+              />
             ))
           )}
         </Section>
@@ -77,10 +100,12 @@ function Header({ snapshot }: { snapshot: BibleWorkspaceSnapshot }) {
 function Section({
   title,
   count,
+  headerAction,
   children,
 }: {
   title: string;
   count: number;
+  headerAction?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -89,7 +114,10 @@ function Section({
         <h2 className="text-xs font-medium uppercase tracking-wider text-loom-fg-secondary">
           {title}
         </h2>
-        <span className="text-xs text-loom-fg-tertiary">{count}</span>
+        <div className="flex items-baseline gap-3">
+          {headerAction}
+          <span className="text-xs text-loom-fg-tertiary">{count}</span>
+        </div>
       </div>
       <div className="px-3 pb-3">{children}</div>
     </section>
@@ -149,9 +177,19 @@ function CharacterRow({
   );
 }
 
-function LorebookRow({ entry }: { entry: LorebookEntry }) {
+function LorebookRow({
+  entry,
+  onClick,
+}: {
+  entry: LorebookEntry;
+  onClick: () => void;
+}) {
   return (
-    <div className="group rounded-lg px-3 py-2.5 hover:bg-loom-bg-elevated">
+    <button
+      type="button"
+      onClick={onClick}
+      className="group block w-full cursor-pointer rounded-lg px-3 py-2.5 text-left hover:bg-loom-bg-elevated focus:bg-loom-bg-elevated focus:outline-none focus:ring-1 focus:ring-loom-accent"
+    >
       <div className="flex items-baseline justify-between gap-3">
         <span className="truncate text-sm font-medium text-loom-fg">
           {entry.name || "(unnamed entry)"}
@@ -186,7 +224,7 @@ function LorebookRow({ entry }: { entry: LorebookEntry }) {
           {entry.content}
         </p>
       )}
-    </div>
+    </button>
   );
 }
 
