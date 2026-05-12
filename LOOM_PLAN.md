@@ -30,6 +30,7 @@ A **local-LLM-powered fiction-writing app for macOS**, built on the same kobold 
 | L2 | Story Bible v1 (Characters + Settings + basic Timeline; injection into prompts) | ✅ landed 2026-05-11 (+Phase 2.5 polish: @-popover, mention sparkline bar, hover preview) — see [`HANDOFF.md`](HANDOFF.md) §11 + §12 | 2 | [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md), [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) |
 | L3 | Hierarchical structure + navigation (Project tree → Parts → Chapters → Scenes; Corkboard view; word counts) | ✅ §A–§F landed 2026-05-11 — see [`HANDOFF.md`](HANDOFF.md) §13 | 3 | [`HANDOFF.md`](HANDOFF.md) §13 |
 | L4 | Generation-mode expansion (Rewrite sub-modes, Show-don't-tell, Brainstorm, Critique, Bridge, Roll-Outcome); per-mode prompt templates; knowledge-state-per-character extraction; NSFW polish (Continue-from-refusal, Sphiratrioth pack) | 🚧 in flight — see [`HANDOFF.md`](HANDOFF.md) §15 + [`LOOM_LEDGER_SPIKE.md`](LOOM_LEDGER_SPIKE.md). Landed: rewriteVoice + rewriteTense + rewriteLength + rewritePOV + show-don't-tell prompt layers + a coherent Rewrite sub-mode picker UI (Voice/Tense/Length/POV-per-character/SDT/Generic) with the POV path threading `LedgerKnowledge.compute` through `RewritePOVDescriptor.build` to fill the §4.3 KNOWLEDGE_LEDGER_HINT slot, Lorebook section in the Bible inspector (rename / edit content / edit keys / flip Constant↔Keyed), Continue-from-refusal, Sphiratrioth pack, Roll-Outcome action, knowledge-ledger feasibility spike (5 rounds), **knowledge-ledger pipeline #7 sub-tasks 1–8 shipped end-to-end** (Ollama role-routed extractor, debounced post-scene side-call, diff-vs-existing, Suggestions panel UI, bible persistence, scene-exposure-based `unknown` derivation, `[KNOWLEDGE-LEDGER]` prompt layer, sidebar "Set POV" submenu, §10.5 production filters — embedding dedup + evidence-quote validation + prompt-leakage). Live verified 2026-05-11 evening: paste prose → ~30s → suggestions queue populates with per-character breakdown. Phase 4 #7 is feature-complete; remaining gaps (extractor coverage variance + NSFW pressure-test) are Phase 4.x deferred. | 4 | [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md), [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md), [`LOOM_NSFW.md`](LOOM_NSFW.md), [`LOOM_LEDGER_SPIKE.md`](LOOM_LEDGER_SPIKE.md) |
+| L4.5 | **Bible Workspace** — dedicated second NSWindow for entity management. Closes the cramped-side-pane UX surfaced during 2026-05-13 live testing. Houses: full character editors (more fields + more space than the current inspector strip); **accepted-facts examiner** (per-character KNOWS list grouped by scene, with delete-back-to-suggestion affordance — fills the Phase 4 #7 gap where accepted ledger facts are invisible after acceptance); Lorebook power-user fields (priority / group / weight / sticky / positionMode / depth / secondaryKeys / enabled — deferred from §14.1 #10 v1); a coherent home for the suggestions queue review surface. Side-pane inspector stays for always-visible mode/inject pills; the workspace window opens on demand (menu bar + keyboard shortcut). Lands BEFORE Phase 5 so RAG-for-style's reference-text management UI surfaces in the new architecture rather than retrofitting later. | pending | 4.5 | TBD |
 | L5 | Style ingestion (RAG-for-style; chunk reference texts; embed via RPClient embeddings server; per-scene-type retrieval) | pending | 5 | TBD; cross-references [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §O.4 |
 | L5b | Canon-brief storage on Bible entities; user-paste fandom canon ingestion (re-uses L5 pipeline) | pending | 5.b | [`LOOM_FANFIC.md`](LOOM_FANFIC.md) §3.2 |
 | L5c | Fanfic Mode — Project kind, ATTG header, Ship/AU/Trope schemas, bundled trope library, fandom templates, fanfic-specific generation modes | pending | 5.c | [`LOOM_FANFIC.md`](LOOM_FANFIC.md) §9 |
@@ -140,6 +141,24 @@ Rewrite (with sub-modes: voice / tense / POV / length / formality), Show-don't-t
 - Each new scene's prose is post-processed by a side-call extractor (RPClient's `summarizer` role server, like RPClient Phase 4[V2_PLAN] §2.4).
 - Extractor produces character-fact tuples: `(character, fact, scene, certainty)`.
 - At generation time, the model is told what the speaking character does and doesn't yet know.
+
+### Phase 4.5 — Bible Workspace (dedicated entity-management window)
+Phase 4's knowledge-ledger work shipped the data flow (extract → suggest → accept → persist → render-in-prompt) but exposed two UX gaps under live testing 2026-05-13:
+
+- No surface displays the **accepted** ledger facts back to the user. Once a suggestion is accepted, it persists onto `Character.knownFactsBySceneId` and feeds the `[KNOWLEDGE-LEDGER]` prompt layer, but disappears from the visible inspector. The user can't audit what their POV character "knows" without `jq`-ing `project.json`.
+- The Lorebook editor (§14.1 #10 v1) covers only 4 of 11 `LorebookEntry` fields; power-user knobs (priority, group, weight, sticky, positionMode, depth, secondaryKeys, enabled) deferred because the side-pane is already cramped at 4 fields.
+
+The right shape is a **second NSWindow** ("Bible Workspace") dedicated to entity management. Opens on demand, houses:
+
+- Full character editor — more fields, more space, room to grow (relationships, canon-brief, custom fields, etc.).
+- Per-character **Accepted-facts examiner** — KNOWS list grouped by sceneId with fact text + certainty pill + a delete affordance (undo an accepted fact).
+- Suggestions-queue review surface (the per-character chip moves here too, freeing the side-pane).
+- Lorebook full editor (all 11 fields, position/depth/group pickers, sticky toggle, etc.).
+- Future: factions, timeline events, style sheets (Phase 5+ entity types).
+
+Side-pane inspector stays for always-visible mode + inject-pill workflow. The workspace window is for **deep editing**, not for the always-glanceable summary.
+
+Landing this BEFORE Phase 5 means style ingestion's reference-text management UI surfaces in the new architecture from day one rather than retrofitting later.
 
 ### Phase 5 — Style ingestion (RAG-for-style)
 Chunk reference texts, embed via RPClient embeddings server (the existing per-role server architecture covers this), retrieve relevant style exemplars per generation. **Per-scene-type retrieval** (action / dialogue / interiority / description) is the differentiator vs SillyTavern's generic vectorised lorebook.
