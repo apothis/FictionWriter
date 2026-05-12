@@ -44,7 +44,7 @@ func phase4_5BibleWorkspaceSnapshotTests() -> TestSuite {
         let factId = UUID()
         let snap = BibleWorkspaceSnapshot(
             projectTitle: "Test Novel",
-            characters: [Character(id: charId, name: "Iris", description: "Tired woman.")],
+            characters: [SnapshotCharacter(from: Character(id: charId, name: "Iris", description: "Tired woman."))],
             lorebook: [LorebookEntry(name: "scenario:kink", content: "weighted thing", keys: ["kink"])],
             scenes: [SceneSummary(id: sceneId, title: "Opening")],
             suggestions: [
@@ -143,7 +143,7 @@ func phase4_5BibleWorkspaceSnapshotTests() -> TestSuite {
         project.bible.lorebook = [lore]
         let snap = BibleWorkspaceSnapshot.build(project: project, scenes: [:], suggestionsQueue: LedgerSuggestionsQueue())
         try expectEqual(snap.projectTitle, "My Novel")
-        try expectEqual(snap.characters, [iris, daniel])
+        try expectEqual(snap.characters, [SnapshotCharacter(from: iris), SnapshotCharacter(from: daniel)])
         try expectEqual(snap.lorebook, [lore])
     }
 
@@ -213,6 +213,41 @@ func phase4_5BibleWorkspaceSnapshotTests() -> TestSuite {
         ])
         let snap = BibleWorkspaceSnapshot.build(project: project, scenes: [:], suggestionsQueue: queue)
         try expectEqual(snap.suggestions[0].factId, factId)
+    }
+
+    s.test("snapshot character knownFactsBySceneId encodes as a JSON object (string keys), not a flat array") {
+        // Regression: Swift JSONEncoder serializes [UUID: V]
+        // dictionaries as flat key/value arrays — the JS bridge
+        // expects an object indexable by string scene-id. The
+        // SnapshotCharacter projection re-keys before encoding.
+        let sceneId = UUID()
+        let factId = UUID()
+        var iris = Character(name: "Iris")
+        iris.knownFactsBySceneId[sceneId] = [
+            KnownFact(id: factId, fact: "has a scar", sourceSceneId: sceneId, certainty: .asserted),
+        ]
+        let snap = BibleWorkspaceSnapshot(
+            projectTitle: "Test",
+            characters: [SnapshotCharacter(from: iris)],
+            lorebook: [],
+            scenes: [],
+            suggestions: []
+        )
+        let data = try JSONEncoder().encode(snap)
+        let json = String(data: data, encoding: .utf8) ?? ""
+        // The string-keyed dict must serialize as `{"<uuid>": [...]}`
+        // — both the wrapper braces around the scene-id key and the
+        // facts array must be present in that order.
+        try expectTrue(
+            json.contains("\"knownFactsBySceneId\":{\"\(sceneId.uuidString)\":"),
+            "expected object-form dict keyed by scene UUID string; got: \(json)"
+        )
+        // Negative check: the flat-array form would look like
+        // `"knownFactsBySceneId":["uuid","[...]"]` — absent here.
+        try expectFalse(
+            json.contains("\"knownFactsBySceneId\":["),
+            "knownFactsBySceneId must not serialize as a JSON array; got: \(json)"
+        )
     }
 
     s.test("build is stable across repeated calls on unchanged inputs (snapshot equality)") {

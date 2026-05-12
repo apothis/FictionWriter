@@ -46,8 +46,17 @@ export function App() {
       <CharacterEditor
         character={character}
         allCharacters={snapshot.characters}
+        scenes={snapshot.scenes}
         dispatchPatch={(patch: CharacterPatch) =>
           postIntent({ kind: "patchCharacter", id: character.id, patch })
+        }
+        onDeleteFact={(sceneId: string, factId: string) =>
+          postIntent({
+            kind: "deleteKnownFact",
+            characterId: character.id,
+            sceneId,
+            factId,
+          })
         }
         onBack={() => setSelection(null)}
       />

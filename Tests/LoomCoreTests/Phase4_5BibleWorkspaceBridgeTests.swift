@@ -43,11 +43,11 @@ func phase4_5BibleWorkspaceBridgeTests() -> TestSuite {
         let charId = UUID()
         let snap = BibleWorkspaceSnapshot(
             projectTitle: "Quoted",
-            characters: [Character(
+            characters: [SnapshotCharacter(from: Character(
                 id: charId,
                 name: "Iris O'Brien",
                 description: "She said \"hello\" and walked away.\nNew line."
-            )],
+            ))],
             lorebook: [LorebookEntry(name: "rule:dialogue", content: "use straight quotes", keys: ["dialogue"])],
             scenes: [],
             suggestions: []
@@ -212,6 +212,37 @@ func phase4_5BibleWorkspaceBridgeTests() -> TestSuite {
         let intent = BibleWorkspaceIntent.patchLorebookEntry(
             id: id,
             patch: LorebookEntryPatch(content: "X", enabled: false, priority: 99)
+        )
+        let data = try JSONEncoder().encode(intent)
+        let decoded = try BibleWorkspaceBridge.decodeIntent(data)
+        try expectEqual(decoded, intent)
+    }
+
+    // MARK: - Session 4 intent (Phase 4.5 §7) — accepted-facts examiner
+
+    s.test("decodeIntent on deleteKnownFact yields the expected case") {
+        let charId = UUID()
+        let sceneId = UUID()
+        let factId = UUID()
+        let json = """
+        {"kind":"deleteKnownFact","characterId":"\(charId.uuidString)","sceneId":"\(sceneId.uuidString)","factId":"\(factId.uuidString)"}
+        """
+        let intent = try BibleWorkspaceBridge.decodeIntent(Data(json.utf8))
+        switch intent {
+        case .deleteKnownFact(let cId, let sId, let fId):
+            try expectEqual(cId, charId)
+            try expectEqual(sId, sceneId)
+            try expectEqual(fId, factId)
+        default:
+            try expect(false, "expected .deleteKnownFact")
+        }
+    }
+
+    s.test("deleteKnownFact intent round-trips through encode/decode") {
+        let intent = BibleWorkspaceIntent.deleteKnownFact(
+            characterId: UUID(),
+            sceneId: UUID(),
+            factId: UUID()
         )
         let data = try JSONEncoder().encode(intent)
         let decoded = try BibleWorkspaceBridge.decodeIntent(data)

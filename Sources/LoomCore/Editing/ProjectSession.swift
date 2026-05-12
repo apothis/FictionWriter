@@ -172,6 +172,28 @@ public final class ProjectSession {
         DebugLog.shared.write("[bible] deleteCharacter id=\(id)")
     }
 
+    /// Phase 4.5 Session 4 — remove a single accepted ledger fact
+    /// from a character's per-scene bucket. Closes the §15.9 audit
+    /// gap (facts were invisible + unremovable post-acceptance).
+    /// No-op (and no notification) if any of characterId / sceneId
+    /// / factId is stale; cleans up an empty per-scene bucket so
+    /// the dict doesn't accumulate empty keys over time.
+    public func removeKnownFact(characterId: UUID, sceneId: UUID, factId: UUID) {
+        guard let charIdx = project.bible.characters.firstIndex(where: { $0.id == characterId }) else { return }
+        var character = project.bible.characters[charIdx]
+        guard var bucket = character.knownFactsBySceneId[sceneId] else { return }
+        guard let factIdx = bucket.firstIndex(where: { $0.id == factId }) else { return }
+        bucket.remove(at: factIdx)
+        if bucket.isEmpty {
+            character.knownFactsBySceneId.removeValue(forKey: sceneId)
+        } else {
+            character.knownFactsBySceneId[sceneId] = bucket
+        }
+        project.bible.characters[charIdx] = character
+        markChanged()
+        DebugLog.shared.write("[bible] removeKnownFact character=\(characterId) scene=\(sceneId) fact=\(factId)")
+    }
+
     // MARK: - Bible mutations (Phase 2 #5: settings + objects)
 
     @discardableResult

@@ -245,6 +245,9 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         case .deleteLorebookEntry(let id):
             session.deleteLorebookEntry(id: id)
             DebugLog.shared.write("[workspace] deleteLorebookEntry id=\(id)")
+        case .deleteKnownFact(let characterId, let sceneId, let factId):
+            session.removeKnownFact(characterId: characterId, sceneId: sceneId, factId: factId)
+            DebugLog.shared.write("[workspace] deleteKnownFact character=\(characterId) scene=\(sceneId) fact=\(factId)")
         }
     }
 

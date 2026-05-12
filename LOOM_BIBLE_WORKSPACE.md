@@ -739,3 +739,32 @@ The three fixes together are non-obvious — debug shim (now removed but documen
 - `BibleWorkspaceIntent.deleteKnownFact(characterId:, sceneId:, factId:)`.
 - React view: tabs on the character editor (or a separate route) for "Description" / "Facts" with the facts list grouped by scene + delete affordance.
 - Snapshot `SceneSummary` already supports the scene-title rendering — no new bridge changes needed there.
+
+### Session 4 — 2026-05-13
+
+**Landed**: accepted-facts examiner. Closes the §15.9 audit gap — facts accepted from the ledger suggestions queue are now visible (grouped by source scene) and removable from the workspace. Live-smoke verified end-to-end (accept a suggestion → it surfaces in the Facts tab under its source scene → delete it → gone from `Character.knownFactsBySceneId`, would be re-suggested on next extraction of the same scene).
+
+**Tests**: +10 TestKit (7 `removeKnownFact` covering mutate-by-id, scene-bucket cleanup on empty, stale-id no-ops at each level, dirty + notification side effects; 2 `BibleWorkspaceIntent.deleteKnownFact` Codable; 1 regression test pinning the `knownFactsBySceneId` JSON-object encoding). 867/867 → 877/877.
+
+**Code shipped:**
+
+*Swift side:*
+- `Sources/LoomCore/Editing/ProjectSession.swift` — `removeKnownFact(characterId:sceneId:factId:)`: triple-guard against stale ids, empty-bucket cleanup so the dict doesn't accumulate empty keys, `markChanged()` + `[bible] removeKnownFact` debug log.
+- `Sources/LoomCore/UI/BibleWorkspaceBridge.swift` — `BibleWorkspaceIntent` gains `.deleteKnownFact(characterId:, sceneId:, factId:)`; Codable encode/decode extended with three new coding keys (characterId / sceneId / factId).
+- `Sources/LoomCore/UI/BibleWorkspaceWindowController.swift` — dispatch covers `.deleteKnownFact`.
+- `Sources/LoomCore/Models/BibleWorkspaceSnapshot.swift` — **load-bearing fix surfaced this session**: introduced `SnapshotCharacter` projection. The on-disk `Character.knownFactsBySceneId: [UUID: [KnownFact]]` serializes as a flat JSON array (`[uuid, [facts], uuid, [facts]]`) under default `JSONEncoder` settings — JSON-object form only fires for `String`/`Int`-keyed dicts. The web side's TS type expected `Record<string, KnownFact[]>`, so iterating + indexing broke and triggered a censored "Script error. @ ?:?:?" message (cross-origin error sanitization on file://). The projection re-keys to `[String: [KnownFact]]` for the bridge payload; the on-disk `Project.json` shape stays untouched.
+
+*React side:*
+- `src/components/ui/Tabs.tsx` — tiny segmented-button primitive. Controlled (`value` / `onChange`) so we can swap to a richer shadcn Tabs later without API churn.
+- `src/views/FactsExaminer.tsx` — per-character KNOWS list grouped by source scene (manuscript order from the snapshot's `scenes[]`; orphaned-scene group catches facts whose sourceSceneId is no longer present). Per-fact: certainty pill (asserted / suspected / unknown / mistaken with distinct color-tinted styles) + body text + ✕ delete button. Empty-state explains where facts come from.
+- `src/views/CharacterEditor.tsx` — header now hosts a `<Tabs>` between Fields and Accepted facts (with fact count). Tab-switch state resets on character.id change but persists across snapshot pushes for the same character.
+- `src/App.tsx` — CharacterEditor wiring extended with `scenes` + `onDeleteFact(sceneId, factId)` → dispatches `deleteKnownFact` intent.
+
+**Design call**: skipped the shadcn `<AlertDialog>` confirm-before-delete (plan §7 deliverable #3). Pragmatic decision — facts are ledger-extracted from the source scene, so a mistaken delete is recoverable by re-extracting (vs lorebook entries which are unique authored content). If this becomes a footgun in practice, a confirmation dialog is a small follow-on.
+
+**File:// + cross-origin gotcha pinned**: when WKWebView treats the loaded HTML/JS as cross-origin (which it always does for file:// under default sandbox), `window.error` events get sanitized to `"Script error. @ ?:?:?"` with no source info. Means our inline diagnostic shim sees nothing useful even when there's a real exception. For Session 4+ debugging, Safari Web Inspector (Develop → \<machine\> → Bible Workspace; isInspectable is on) is the canonical path. Worth a follow-up to either inject a more permissive sandbox or wrap React's render in an in-bundle try/catch.
+
+**Carry forward to Session 5** (Suggestions queue review surface):
+- React `SuggestionsQueue` view — cross-character pending-suggestions list with inline accept/reject buttons. The snapshot's `suggestions[]` already carries the flat-projected `PendingSuggestion` shape with `factId`, so no new Swift type changes needed.
+- New intents `.acceptSuggestion(factId)` + `.rejectSuggestion(factId)` (or maybe wrap the existing `LedgerSuggestionAcceptor.accept(suggestion)` flow).
+- Side-pane inspector: shrink the per-character suggestions chip to a link that opens the workspace's Suggestions surface (per LOOM_BIBLE_WORKSPACE.md §7 Session 5 deliverable #3).

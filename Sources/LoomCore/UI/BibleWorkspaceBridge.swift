@@ -68,9 +68,10 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     case patchLorebookEntry(id: UUID, patch: LorebookEntryPatch)
     case addLorebookEntry(name: String)
     case deleteLorebookEntry(id: UUID)
+    case deleteKnownFact(characterId: UUID, sceneId: UUID, factId: UUID)
 
     private enum CodingKeys: String, CodingKey {
-        case kind, id, patch, name
+        case kind, id, patch, name, characterId, sceneId, factId
     }
 
     private enum Kind: String {
@@ -78,6 +79,7 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case patchLorebookEntry
         case addLorebookEntry
         case deleteLorebookEntry
+        case deleteKnownFact
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -97,6 +99,11 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .deleteLorebookEntry(let id):
             try c.encode(Kind.deleteLorebookEntry.rawValue, forKey: .kind)
             try c.encode(id, forKey: .id)
+        case .deleteKnownFact(let characterId, let sceneId, let factId):
+            try c.encode(Kind.deleteKnownFact.rawValue, forKey: .kind)
+            try c.encode(characterId, forKey: .characterId)
+            try c.encode(sceneId, forKey: .sceneId)
+            try c.encode(factId, forKey: .factId)
         }
     }
 
@@ -126,6 +133,11 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .deleteLorebookEntry:
             let id = try c.decode(UUID.self, forKey: .id)
             self = .deleteLorebookEntry(id: id)
+        case .deleteKnownFact:
+            let characterId = try c.decode(UUID.self, forKey: .characterId)
+            let sceneId = try c.decode(UUID.self, forKey: .sceneId)
+            let factId = try c.decode(UUID.self, forKey: .factId)
+            self = .deleteKnownFact(characterId: characterId, sceneId: sceneId, factId: factId)
         }
     }
 }

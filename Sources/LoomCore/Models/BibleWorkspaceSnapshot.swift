@@ -14,14 +14,14 @@ import Foundation
 /// and persistence flow.
 public struct BibleWorkspaceSnapshot: Codable, Equatable {
     public let projectTitle: String
-    public let characters: [Character]
+    public let characters: [SnapshotCharacter]
     public let lorebook: [LorebookEntry]
     public let scenes: [SceneSummary]
     public let suggestions: [PendingSuggestion]
 
     public init(
         projectTitle: String,
-        characters: [Character],
+        characters: [SnapshotCharacter],
         lorebook: [LorebookEntry],
         scenes: [SceneSummary],
         suggestions: [PendingSuggestion]
@@ -63,11 +63,66 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         }
         return BibleWorkspaceSnapshot(
             projectTitle: project.title,
-            characters: project.bible.characters,
+            characters: project.bible.characters.map(SnapshotCharacter.init(from:)),
             lorebook: project.bible.lorebook,
             scenes: sceneSummaries,
             suggestions: pending
         )
+    }
+}
+
+/// Bridge-specific projection of `Character`. The on-disk Codable
+/// shape of `Character` encodes `knownFactsBySceneId: [UUID: [KnownFact]]`
+/// as a flat JSON array (`[uuid, [facts], uuid, [facts], ...]`) —
+/// `JSONEncoder` only emits JSON-object form for dictionaries with
+/// `String` or `Int` keys. The web side needs an object the JSX can
+/// index by scene-id string, so this projection re-keys the dict to
+/// `[String: [KnownFact]]` before encoding.
+///
+/// Every other field passes through unchanged. Future bridge-only
+/// derived fields (e.g., resolved POV name strings, scene-presence
+/// counts) can land here too without polluting the on-disk schema.
+public struct SnapshotCharacter: Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var aliases: [String]
+    public var role: CharacterRole
+    public var oneLine: String
+    public var description: String
+    public var personality: String
+    public var appearance: String
+    public var voice: String
+    public var goals: String
+    public var relationships: [Relationship]
+    public var avatarPath: String?
+    /// Re-keyed from `[UUID: [KnownFact]]` to `[String: [KnownFact]]`
+    /// so JSONEncoder emits a JS-friendly object (not a flat array).
+    /// The web side's TS type `Character.knownFactsBySceneId` is
+    /// `Record<string, KnownFact[]>`.
+    public var knownFactsBySceneId: [String: [KnownFact]]
+    public var canonBrief: String?
+    public var customFields: [CharacterCustomField]
+    public var injectionMode: InjectionMode
+
+    public init(from character: Character) {
+        self.id = character.id
+        self.name = character.name
+        self.aliases = character.aliases
+        self.role = character.role
+        self.oneLine = character.oneLine
+        self.description = character.description
+        self.personality = character.personality
+        self.appearance = character.appearance
+        self.voice = character.voice
+        self.goals = character.goals
+        self.relationships = character.relationships
+        self.avatarPath = character.avatarPath
+        self.knownFactsBySceneId = Dictionary(
+            uniqueKeysWithValues: character.knownFactsBySceneId.map { ($0.key.uuidString, $0.value) }
+        )
+        self.canonBrief = character.canonBrief
+        self.customFields = character.customFields
+        self.injectionMode = character.injectionMode
     }
 }
 

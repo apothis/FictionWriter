@@ -4,29 +4,34 @@ import type {
   CharacterCustomField,
   CharacterPatch,
   Relationship,
+  SceneSummary,
 } from "../types";
 import { Input } from "../components/ui/Input";
 import { Textarea } from "../components/ui/Textarea";
 import { Select } from "../components/ui/Select";
 import { Button } from "../components/ui/Button";
+import { Tabs } from "../components/ui/Tabs";
 import { useDebouncedCallback } from "../lib/useDebouncedCallback";
+import { FactsExaminer } from "./FactsExaminer";
 
-// Phase 4.5 Session 2 — full character editor. All `Character`
-// fields except `avatarPath` (Session 8+ — deferred per
-// LOOM_BIBLE_WORKSPACE.md §8.4) and `knownFactsBySceneId` (managed
-// via the facts examiner, Session 4).
+// Phase 4.5 Sessions 2 + 4 — full character editor. All `Character`
+// fields surfaced, plus an Accepted Facts tab (Session 4) for the
+// per-scene KNOWS list with delete affordance.
 //
 // State model: local `draft` mirrors the input character; on user
-// edit, `draft` updates immediately (so the input renders the
-// typed value, not the stale snapshot value) AND a debounced
-// intent dispatches to Swift. The reset effect keys on
-// `character.id` only — snapshot pushes that update the SAME
-// character don't clobber in-flight typing.
+// edit, `draft` updates immediately AND a debounced intent
+// dispatches to Swift. The reset effect keys on `character.id`
+// only — snapshot pushes that update the SAME character don't
+// clobber in-flight typing.
+
+type Tab = "fields" | "facts";
 
 interface Props {
   character: Character;
   allCharacters: Character[];
+  scenes: SceneSummary[];
   dispatchPatch: (patch: CharacterPatch) => void;
+  onDeleteFact: (sceneId: string, factId: string) => void;
   onBack: () => void;
 }
 
@@ -34,15 +39,25 @@ const ROLES = ["protagonist", "antagonist", "supporting", "minor", "narrator"];
 const INJECTION_MODES = ["constant", "keyed"] as const;
 const CUSTOM_FIELD_KINDS = ["text", "longText", "number", "boolean", "enum"];
 
-export function CharacterEditor({ character, allCharacters, dispatchPatch, onBack }: Props) {
+export function CharacterEditor({
+  character,
+  allCharacters,
+  scenes,
+  dispatchPatch,
+  onDeleteFact,
+  onBack,
+}: Props) {
   const [draft, setDraft] = useState<Character>(character);
+  const [tab, setTab] = useState<Tab>("fields");
 
-  // Reset draft only when a DIFFERENT character is selected
-  // (intentionally character.id, not the whole character — snapshot
-  // pushes for the same character should not interrupt mid-edit).
+  // Reset draft (and snap back to the fields tab) only when a
+  // DIFFERENT character is selected. Intentionally character.id —
+  // snapshot pushes for the same character should not interrupt
+  // mid-edit nor close the facts tab if the user is on it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     setDraft(character);
+    setTab("fields");
   }, [character.id]);
 
   const send = useDebouncedCallback(
@@ -55,6 +70,11 @@ export function CharacterEditor({ character, allCharacters, dispatchPatch, onBac
     send({ [field]: value as never } as CharacterPatch);
   }
 
+  const factCount = Object.values(character.knownFactsBySceneId).reduce(
+    (sum, facts) => sum + facts.length,
+    0,
+  );
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-loom-border px-6 py-3">
@@ -64,11 +84,26 @@ export function CharacterEditor({ character, allCharacters, dispatchPatch, onBac
         <span className="truncate text-sm font-medium text-loom-fg">
           {draft.name || "(unnamed)"}
         </span>
-        <span className="ml-auto text-[10px] uppercase tracking-wider text-loom-fg-tertiary">
-          Edits autosave
-        </span>
+        <Tabs<Tab>
+          className="ml-auto"
+          tabs={[
+            { value: "fields", label: "Fields" },
+            { value: "facts", label: "Accepted facts", count: factCount },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
       </header>
-      <div className="flex-1 overflow-auto px-6 py-5">
+      {tab === "facts" ? (
+        <div className="flex-1 overflow-auto px-6 py-5">
+          <FactsExaminer
+            character={character}
+            scenes={scenes}
+            onDeleteFact={onDeleteFact}
+          />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-auto px-6 py-5">
         <Section title="Identity">
           <Field label="Name">
             <Input
@@ -175,7 +210,8 @@ export function CharacterEditor({ character, allCharacters, dispatchPatch, onBac
             onChange={(next) => update("customFields", next)}
           />
         </Section>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
