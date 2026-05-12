@@ -62,6 +62,7 @@ public enum EntityAutocomplete {
         case .characters: return project.bible.characters.first { $0.id == ref.id }?.aliases ?? []
         case .settings:   return project.bible.settings.first { $0.id == ref.id }?.aliases ?? []
         case .objects:    return project.bible.objects.first { $0.id == ref.id }?.aliases ?? []
+        case .lorebook:   return []   // lorebook entries aren't @-mention candidates
         }
     }
 }

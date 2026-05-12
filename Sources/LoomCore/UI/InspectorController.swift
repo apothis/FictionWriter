@@ -494,6 +494,10 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
             let next = session.project.bible.objects.count + 1
             let o = session.addObject(name: "Object \(next)")
             ref = BibleEntityRef(category: .objects, id: o.id)
+        case .lorebook:
+            let next = session.project.bible.lorebook.count + 1
+            let e = session.addLorebookEntry(name: "Entry \(next)")
+            ref = BibleEntityRef(category: .lorebook, id: e.id)
         }
         viewModel.setSelection(ref)
         // The session-change observer would also re-render, but it
@@ -510,6 +514,7 @@ public final class BibleInspectorViewController: NSViewController, NSTextViewDel
         case .characters: session.deleteCharacter(id: sel.id)
         case .settings:   session.deleteSetting(id: sel.id)
         case .objects:    session.deleteObject(id: sel.id)
+        case .lorebook:   session.deleteLorebookEntry(id: sel.id)
         }
         viewModel.setSelection(nil)
         reload()
@@ -760,6 +765,9 @@ private final class BibleDetailEditor {
     private let nameField: NSTextField
     private let descriptionView: NSTextView
     private let injectionPicker: NSPopUpButton
+    /// Phase 4 §14.1 #10 — comma-separated keys field, only created
+    /// for `.lorebook` refs. nil for characters/settings/objects.
+    private let keysField: NSTextField?
     private let onChanged: () -> Void
     private let onDelete: () -> Void
     private let onInjectionModeChanged: (InjectionMode) -> Void
@@ -787,7 +795,7 @@ private final class BibleDetailEditor {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
 
-        let (initialName, initialDescription, initialMode) = Self.snapshot(ref: ref, session: session)
+        let (initialName, initialDescription, initialMode, initialKeysCSV) = Self.snapshot(ref: ref, session: session)
 
         let name = NSTextField(string: initialName)
         name.font = DesignTokens.Typography.title2
@@ -833,6 +841,19 @@ private final class BibleDetailEditor {
         descScroll.borderType = .lineBorder
         descScroll.hasVerticalScroller = true
         descScroll.documentView = desc
+
+        // Phase 4 §14.1 #10 — keys row for lorebook entries only.
+        // Sphiratrioth-style keys are comma-separated tokens the
+        // KEYED activation mode matches against recent prose.
+        let keys: NSTextField? = (ref.category == .lorebook) ? {
+            let f = NSTextField(string: initialKeysCSV ?? "")
+            f.font = DesignTokens.Typography.body
+            f.translatesAutoresizingMaskIntoConstraints = false
+            f.placeholderString = "Comma-separated keys (e.g. \"refusal, bias, positive\")"
+            f.bezelStyle = .roundedBezel
+            return f
+        }() : nil
+        self.keysField = keys
 
         let deleteBtn = NSButton(title: "Delete", target: nil, action: nil)
         deleteBtn.bezelStyle = .inline
@@ -885,7 +906,7 @@ private final class BibleDetailEditor {
         container.addSubview(descScroll)
         container.addSubview(deleteBtn)
 
-        NSLayoutConstraint.activate([
+        var constraints: [NSLayoutConstraint] = [
             name.topAnchor.constraint(equalTo: container.topAnchor, constant: DesignTokens.Spacing.md),
             name.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
             deleteBtn.centerYAnchor.constraint(equalTo: name.centerYAnchor),
@@ -899,12 +920,32 @@ private final class BibleDetailEditor {
             suggestionsPanel.topAnchor.constraint(equalTo: modeRow.bottomAnchor, constant: DesignTokens.Spacing.sm),
             suggestionsPanel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
             suggestionsPanel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
+        ]
 
-            descScroll.topAnchor.constraint(equalTo: suggestionsPanel.bottomAnchor, constant: DesignTokens.Spacing.sm),
+        // Splice the lorebook keys row between Suggestions and
+        // Description when present. Non-lorebook entries skip this
+        // row entirely and the description anchors directly to the
+        // suggestions panel as before.
+        let descTopAnchor: NSLayoutYAxisAnchor
+        if let keys = keys {
+            container.addSubview(keys)
+            constraints.append(contentsOf: [
+                keys.topAnchor.constraint(equalTo: suggestionsPanel.bottomAnchor, constant: DesignTokens.Spacing.sm),
+                keys.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
+                keys.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
+            ])
+            descTopAnchor = keys.bottomAnchor
+        } else {
+            descTopAnchor = suggestionsPanel.bottomAnchor
+        }
+
+        constraints.append(contentsOf: [
+            descScroll.topAnchor.constraint(equalTo: descTopAnchor, constant: DesignTokens.Spacing.sm),
             descScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: DesignTokens.Spacing.md),
             descScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -DesignTokens.Spacing.md),
             descScroll.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -DesignTokens.Spacing.md),
         ])
+        NSLayoutConstraint.activate(constraints)
 
         self.view = container
 
@@ -917,6 +958,10 @@ private final class BibleDetailEditor {
         deleteBtn.action = #selector(BibleDetailBridge.deletePressed(_:))
         modePopup.target = bridge
         modePopup.action = #selector(BibleDetailBridge.injectionModeChanged(_:))
+        if let keysField = keysField {
+            keysField.target = bridge
+            keysField.action = #selector(BibleDetailBridge.nameEdited(_:))
+        }
     }
 
     fileprivate func writeBack() {
@@ -938,8 +983,29 @@ private final class BibleDetailEditor {
             o.name = name
             o.description = body
             session.updateObject(o)
+        case .lorebook:
+            // Phase 4 §14.1 #10. Name + content + keys are
+            // user-editable via this surface. Other LorebookEntry
+            // fields (priority, group, weight, sticky, positionMode,
+            // depth, secondaryKeys, enabled) preserve whatever the
+            // entry already has — the sphiratrioth pack sets
+            // sensible defaults and a power-user editor for the
+            // remaining knobs is a Phase 4.x polish slice.
+            guard var e = session.project.bible.lorebook.first(where: { $0.id == ref.id }) else { return }
+            e.name = name
+            e.content = body
+            if let keysField = keysField {
+                e.keys = parseKeysCSV(keysField.stringValue)
+            }
+            session.updateLorebookEntry(e)
         }
         onChanged()
+    }
+
+    private func parseKeysCSV(_ csv: String) -> [String] {
+        csv.split(separator: ",", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     fileprivate func requestDelete() {
@@ -950,22 +1016,36 @@ private final class BibleDetailEditor {
         onInjectionModeChanged(mode)
     }
 
-    private static func snapshot(ref: BibleEntityRef, session: ProjectSession) -> (String, String, InjectionMode) {
+    private static func snapshot(
+        ref: BibleEntityRef,
+        session: ProjectSession
+    ) -> (String, String, InjectionMode, String?) {
         switch ref.category {
         case .characters:
             if let c = session.project.bible.characters.first(where: { $0.id == ref.id }) {
-                return (c.name, c.description, c.injectionMode)
+                return (c.name, c.description, c.injectionMode, nil)
             }
         case .settings:
             if let s = session.project.bible.settings.first(where: { $0.id == ref.id }) {
-                return (s.name, s.description, s.injectionMode)
+                return (s.name, s.description, s.injectionMode, nil)
             }
         case .objects:
             if let o = session.project.bible.objects.first(where: { $0.id == ref.id }) {
-                return (o.name, o.description, o.injectionMode)
+                return (o.name, o.description, o.injectionMode, nil)
+            }
+        case .lorebook:
+            // Phase 4 §14.1 #10. LorebookActivationMode → InjectionMode
+            // mapping for the popup: .vectorised (Phase 5 R&D) falls
+            // back to .keyed for display. The user can't pick
+            // vectorised yet; ProjectSession.setInjectionMode writes
+            // back only .constant or .keyed.
+            if let e = session.project.bible.lorebook.first(where: { $0.id == ref.id }) {
+                let mode: InjectionMode = (e.activationMode == .constant) ? .constant : .keyed
+                let keysCSV = e.keys.joined(separator: ", ")
+                return (e.name, e.content, mode, keysCSV)
             }
         }
-        return ("", "", .constant)
+        return ("", "", .constant, nil)
     }
 }
 
@@ -1016,6 +1096,7 @@ private extension BibleCategory {
         case .characters: return "Characters"
         case .settings:   return "Settings"
         case .objects:    return "Objects"
+        case .lorebook:   return "Lorebook"
         }
     }
 }

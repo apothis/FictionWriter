@@ -542,6 +542,15 @@ public final class ProjectSession {
             guard var o = project.bible.objects.first(where: { $0.id == ref.id }) else { return }
             o.injectionMode = mode
             updateObject(o)
+        case .lorebook:
+            // Phase 4 §14.1 #10. The popup never produces
+            // `.vectorised` (Phase 5 R&D); map InjectionMode 1:1.
+            guard var e = project.bible.lorebook.first(where: { $0.id == ref.id }) else { return }
+            switch mode {
+            case .constant: e.activationMode = .constant
+            case .keyed:    e.activationMode = .keyed
+            }
+            updateLorebookEntry(e)
         }
     }
 

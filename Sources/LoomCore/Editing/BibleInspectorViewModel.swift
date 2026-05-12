@@ -7,6 +7,7 @@ public enum BibleCategory: String, Codable, Equatable, CaseIterable {
     case characters
     case settings
     case objects
+    case lorebook
 }
 
 /// Filter selection above the entity list.
@@ -88,6 +89,7 @@ public final class BibleInspectorViewModel {
         case .characters: return project.bible.characters.count
         case .settings:   return project.bible.settings.count
         case .objects:    return project.bible.objects.count
+        case .lorebook:   return project.bible.lorebook.count
         }
     }
 
@@ -162,6 +164,13 @@ public final class BibleInspectorViewModel {
                     name: $0.name
                 )
             }
+        case .lorebook:
+            return project.bible.lorebook.map {
+                BibleEntityListItem(
+                    ref: BibleEntityRef(category: .lorebook, id: $0.id),
+                    name: $0.name
+                )
+            }
         }
     }
 
@@ -177,6 +186,7 @@ public final class BibleInspectorViewModel {
         case .characters: return "Characters"
         case .settings:   return "Settings"
         case .objects:    return "Objects"
+        case .lorebook:   return "Lorebook"
         }
     }
 }

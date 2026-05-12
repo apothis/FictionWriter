@@ -17,20 +17,22 @@ func phase2BibleViewModelTests() -> TestSuite {
         try expectNil(vm.selection)
     }
 
-    s.test("BibleCategory.allCases is [.characters, .settings, .objects]") {
+    s.test("BibleCategory.allCases is [.characters, .settings, .objects, .lorebook]") {
         // Order matters — drives the list section render order.
-        try expectEqual(BibleCategory.allCases, [.characters, .settings, .objects])
+        // Phase 4 §14.1 #10 added .lorebook as the trailing entry.
+        try expectEqual(BibleCategory.allCases, [.characters, .settings, .objects, .lorebook])
     }
 
     s.test("sections(for:) returns one row per category in .all filter, even when empty") {
         let project = Project.empty(title: "T")
         let vm = BibleInspectorViewModel()
         let sections = vm.sections(for: project)
-        try expectEqual(sections.count, 3)
-        try expectEqual(sections.map(\.category), [.characters, .settings, .objects])
+        try expectEqual(sections.count, 4)
+        try expectEqual(sections.map(\.category), [.characters, .settings, .objects, .lorebook])
         try expectEqual(sections[0].items, [])
         try expectEqual(sections[1].items, [])
         try expectEqual(sections[2].items, [])
+        try expectEqual(sections[3].items, [])
     }
 
     s.test("sections(for:) projects entities into items with name + ref") {
