@@ -37,6 +37,15 @@ public final class GenerationTrayView: NSView {
     /// means "no POV entries" — the menu still surfaces Voice /
     /// Tense / Length / Generic.
     public var rewritePOVCharactersProvider: (() -> [Character])?
+
+    /// Phase 4 §15.9 — closure pulled at Rewrite-menu-build time to
+    /// classify the current selection's narrative tense. Used to
+    /// disable the matching `Tense — past` / `Tense — present` entry
+    /// (the no-op-target guard: both writers reliably invent unrelated
+    /// shifts when asked to rewrite to a tense the source is already
+    /// in). `nil` provider or `.unknown` return → both entries stay
+    /// enabled, picker behaves as before.
+    public var currentSelectionTenseProvider: (() -> SelectionTense)?
     /// Acceptance-mode click handlers. The tray swaps its visible
     /// button row to Accept / Reject / Keep & Redo when generation
     /// finishes.
@@ -261,6 +270,31 @@ public final class GenerationTrayView: NSView {
         // Brainstorm + Critique stay disabled regardless of state.
     }
 
+    /// Phase 4 §15.9 — surface a short transient note in the trailing
+    /// state label and auto-clear after a few seconds. Used by the
+    /// rewriteTense no-op-target guard's click-time short-circuit:
+    /// when the user picks a tense that matches the selection's
+    /// detected tense, we skip the call and tell them why. The
+    /// auto-clear avoids stale messages persisting through the next
+    /// generation. Cleared immediately if a generation starts.
+    public func flashTransientNote(_ message: String, duration: TimeInterval = 4.0) {
+        guard generationState == .idle else { return }
+        transientNoteToken &+= 1
+        let token = transientNoteToken
+        stateLabel.stringValue = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            guard let self = self else { return }
+            if self.transientNoteToken == token && self.generationState == .idle {
+                self.stateLabel.stringValue = ""
+            }
+        }
+    }
+
+    /// Generation-state token bumped on every `flashTransientNote` so
+    /// stale auto-clears (e.g. user flashes a second note before the
+    /// first's delay expires) don't blank a newer message.
+    private var transientNoteToken: UInt = 0
+
     /// Token estimate shown trailing-edge. nil → placeholder dash.
     /// Phase 1.h displays word count as a stand-in (1.i may swap to a
     /// real `/api/extra/tokencount` call once PromptBuilder is wired).
@@ -332,9 +366,17 @@ public final class GenerationTrayView: NSView {
     @objc private func rewriteClicked() {
         DebugLog.shared.write("[gen] tray: rewrite clicked (sub-mode picker)")
         let povCharacters = rewritePOVCharactersProvider?() ?? []
+        let selectionTense = currentSelectionTenseProvider?() ?? .unknown
         let menu = NSMenu()
+        // Disabled entries (rewriteTense no-op guard) need autoenables
+        // off — NSMenu otherwise defers to validateMenuItem on the
+        // target and re-enables our intentionally-disabled rows.
+        menu.autoenablesItems = false
         var lastMode: GenerationMode? = nil
-        for choice in RewriteSubModeMenuBuilder.choices(povCharacters: povCharacters) {
+        for choice in RewriteSubModeMenuBuilder.choices(
+            povCharacters: povCharacters,
+            currentSelectionTense: selectionTense
+        ) {
             if let prev = lastMode, prev != choice.mode {
                 menu.addItem(.separator())
             }
@@ -346,6 +388,10 @@ public final class GenerationTrayView: NSView {
             )
             item.target = self
             item.representedObject = choice
+            if let reason = choice.disabledReason {
+                item.isEnabled = false
+                item.toolTip = reason
+            }
             menu.addItem(item)
         }
         let origin = NSPoint(x: 0, y: rewriteButton.bounds.height + 4)

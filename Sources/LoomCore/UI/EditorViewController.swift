@@ -144,6 +144,9 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         tray.rewritePOVCharactersProvider = { [weak self] in
             self?.session.project.bible.characters ?? []
         }
+        tray.currentSelectionTenseProvider = { [weak self] in
+            self?.currentSelectionTense() ?? .unknown
+        }
         // Acceptance buttons live in the tray itself, swapping in for
         // Continue/Expand when the post-generation acceptance window
         // opens. The previously-attempted NSTitlebarAccessoryViewController
@@ -705,12 +708,48 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         guard let value = textView.selectedRanges.first as? NSValue else { return }
         let selection = value.rangeValue
         guard selection.length > 0 else { return }
+        // Phase 4 §15.9 — rewriteTense no-op-target safety net. The
+        // picker already disables the matching-tense entry when the
+        // heuristic returns a definite verdict, but defend at click
+        // time too: selection may have changed between menu-build and
+        // click, or the heuristic may have shifted from .unknown to a
+        // definite verdict if the menu lingered. Skip the call with a
+        // tray note rather than letting the model invent a shift.
+        if choice.mode == .rewriteTense,
+           let target = choice.descriptor,
+           selectionTenseMatchesTarget(target, in: selection)
+        {
+            DebugLog.shared.write("[gen] tray: rewriteTense skipped — selection already in \(target) tense")
+            trayView.flashTransientNote("Selection already in \(target) tense.")
+            return
+        }
         let descriptor: String? = resolvedDescriptor(for: choice)
         runSelectionReplacingGeneration(
             mode: choice.mode,
             selection: selection,
             perCallInstruction: descriptor
         )
+    }
+
+    /// Phase 4 §15.9 — pull the current selection's text from the
+    /// editor and classify its tense for the rewriteTense guard. nil
+    /// selection or zero-length selection → `.unknown` (caller treats
+    /// as "no guard").
+    private func currentSelectionTense() -> SelectionTense {
+        guard let value = textView.selectedRanges.first as? NSValue else { return .unknown }
+        let selection = value.rangeValue
+        guard selection.length > 0 else { return .unknown }
+        let text = (textView.string as NSString).substring(with: selection)
+        return SelectionTenseHeuristic.classify(text)
+    }
+
+    /// True when the heuristic's verdict for `selection` equals
+    /// `target` ("past" or "present"). `.unknown` never matches —
+    /// when the heuristic abstains, the click goes through.
+    private func selectionTenseMatchesTarget(_ target: String, in selection: NSRange) -> Bool {
+        let text = (textView.string as NSString).substring(with: selection)
+        let verdict = SelectionTenseHeuristic.classify(text)
+        return verdict.rawValue == target
     }
 
     /// Phase 4 §14.1 #6 + #8 — resolves the `perCallInstruction`

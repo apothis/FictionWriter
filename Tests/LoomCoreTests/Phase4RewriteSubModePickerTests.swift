@@ -125,5 +125,48 @@ func phase4RewriteSubModePickerTests() -> TestSuite {
         }
     }
 
+    // MARK: - rewriteTense no-op-target guard (Phase 4 §15.9)
+
+    s.test("default-built choices have nil disabledReason on every entry (no heuristic = no guard)") {
+        for choice in RewriteSubModeMenuBuilder.choices {
+            try expectNil(choice.disabledReason)
+        }
+        for choice in RewriteSubModeMenuBuilder.choices(povCharacters: []) {
+            try expectNil(choice.disabledReason)
+        }
+    }
+
+    s.test("currentSelectionTense=.past disables only the 'Tense — past' entry, with a user-readable reason") {
+        let choices = RewriteSubModeMenuBuilder.choices(povCharacters: [], currentSelectionTense: .past)
+        let past = try expectNotNil(choices.first { $0.mode == .rewriteTense && $0.descriptor == "past" })
+        let present = try expectNotNil(choices.first { $0.mode == .rewriteTense && $0.descriptor == "present" })
+        let reason = try expectNotNil(past.disabledReason)
+        try expectFalse(reason.isEmpty, "disabledReason on the matching-tense entry must carry a non-empty message")
+        try expectNil(present.disabledReason)
+    }
+
+    s.test("currentSelectionTense=.present disables only the 'Tense — present' entry") {
+        let choices = RewriteSubModeMenuBuilder.choices(povCharacters: [], currentSelectionTense: .present)
+        let past = try expectNotNil(choices.first { $0.mode == .rewriteTense && $0.descriptor == "past" })
+        let present = try expectNotNil(choices.first { $0.mode == .rewriteTense && $0.descriptor == "present" })
+        try expectNil(past.disabledReason)
+        try expectNotNil(present.disabledReason)
+    }
+
+    s.test("currentSelectionTense=.unknown leaves both tense entries enabled") {
+        let choices = RewriteSubModeMenuBuilder.choices(povCharacters: [], currentSelectionTense: .unknown)
+        for choice in choices where choice.mode == .rewriteTense {
+            try expectNil(choice.disabledReason)
+        }
+    }
+
+    s.test("the tense guard never disables non-tense entries (Voice / Length / POV / SDT / Generic)") {
+        let iris = Character.empty(name: "Iris")
+        let choices = RewriteSubModeMenuBuilder.choices(povCharacters: [iris], currentSelectionTense: .past)
+        for choice in choices where choice.mode != .rewriteTense {
+            try expectNil(choice.disabledReason)
+        }
+    }
+
     return s
 }

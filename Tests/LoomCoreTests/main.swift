@@ -119,6 +119,7 @@ let suites: [TestSuite] = [
     phase4LorebookCategoryTests(),
     phase4SelectionReplacingTests(),
     phase4RewriteFamilyScopeTests(),
+    phase4SelectionTenseHeuristicTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

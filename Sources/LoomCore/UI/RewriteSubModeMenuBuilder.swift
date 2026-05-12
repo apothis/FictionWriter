@@ -26,19 +26,30 @@ public struct RewriteSubModeChoice: Equatable {
     /// and fires with that structured descriptor. Other modes carry
     /// nil — the picker tests pin that default.
     public let povCharacterId: UUID?
+    /// Phase 4 §15.9 — if non-nil, the AppKit glue renders this entry
+    /// as disabled and shows the reason as a tooltip / subtitle. Used
+    /// by the rewriteTense no-op-target guard: when the heuristic says
+    /// the selection is already in past tense, the "Tense — past"
+    /// entry's `disabledReason` is set to a short user-readable note
+    /// so the picker doesn't even offer the no-op pick. The click
+    /// handler also short-circuits defensively in case `disabledReason`
+    /// is bypassed (autoenables, race against selection change, etc.).
+    public let disabledReason: String?
 
     public init(
         title: String,
         mode: GenerationMode,
         descriptor: String?,
         usesTrayInstruction: Bool = false,
-        povCharacterId: UUID? = nil
+        povCharacterId: UUID? = nil,
+        disabledReason: String? = nil
     ) {
         self.title = title
         self.mode = mode
         self.descriptor = descriptor
         self.usesTrayInstruction = usesTrayInstruction
         self.povCharacterId = povCharacterId
+        self.disabledReason = disabledReason
     }
 }
 
@@ -90,7 +101,16 @@ public enum RewriteSubModeMenuBuilder {
     /// KNOWLEDGE_LEDGER_HINT bullets) is computed at click time by
     /// the controller via `LedgerKnowledge.compute` +
     /// `RewritePOVDescriptor.build`.
-    public static func choices(povCharacters: [Character]) -> [RewriteSubModeChoice] {
+    ///
+    /// Phase 4 §15.9 — when `currentSelectionTense` is `.past` or
+    /// `.present`, the matching `Tense — …` entry is stamped with a
+    /// `disabledReason` so the AppKit glue can render it as a
+    /// disabled menu item. `.unknown` (default) leaves both entries
+    /// enabled and lets the click handler / model handle the call.
+    public static func choices(
+        povCharacters: [Character],
+        currentSelectionTense: SelectionTense = .unknown
+    ) -> [RewriteSubModeChoice] {
         let povEntries = povCharacters.map { character in
             RewriteSubModeChoice(
                 title: "POV — \(character.name)",
@@ -100,6 +120,27 @@ public enum RewriteSubModeMenuBuilder {
                 povCharacterId: character.id
             )
         }
-        return staticPrefix + povEntries + staticSuffix
+        let raw = staticPrefix + povEntries + staticSuffix
+        return raw.map { applyTenseGuard($0, currentSelectionTense: currentSelectionTense) }
+    }
+
+    /// Stamps `disabledReason` on a tense entry whose descriptor
+    /// matches the current selection's classified tense. Other
+    /// entries pass through unchanged.
+    private static func applyTenseGuard(
+        _ choice: RewriteSubModeChoice,
+        currentSelectionTense: SelectionTense
+    ) -> RewriteSubModeChoice {
+        guard choice.mode == .rewriteTense else { return choice }
+        guard currentSelectionTense != .unknown else { return choice }
+        guard let descriptor = choice.descriptor, descriptor == currentSelectionTense.rawValue else { return choice }
+        return RewriteSubModeChoice(
+            title: choice.title,
+            mode: choice.mode,
+            descriptor: choice.descriptor,
+            usesTrayInstruction: choice.usesTrayInstruction,
+            povCharacterId: choice.povCharacterId,
+            disabledReason: "Selection is already in \(descriptor) tense."
+        )
     }
 }
