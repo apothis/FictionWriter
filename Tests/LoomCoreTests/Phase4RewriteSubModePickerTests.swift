@@ -54,13 +54,14 @@ func phase4RewriteSubModePickerTests() -> TestSuite {
         try expectEqual(descriptors, ["50%", "80%", "120%", "150%"])
     }
 
-    s.test("choices total exactly the four mode groups in expected order") {
-        // Voice(1) + Tense(2) + Length(4) + Generic(1) = 8.
+    s.test("choices total exactly the five mode groups in expected order") {
+        // Voice(1) + Tense(2) + Length(4) + SDT(1) + Generic(1) = 9.
         let modes = RewriteSubModeMenuBuilder.choices.map(\.mode)
         try expectEqual(modes, [
             .rewriteVoice,
             .rewriteTense, .rewriteTense,
             .rewriteLength, .rewriteLength, .rewriteLength, .rewriteLength,
+            .showDontTell,
             .rewrite,
         ])
     }
@@ -79,7 +80,7 @@ func phase4RewriteSubModePickerTests() -> TestSuite {
         try expectEqual(withEmpty, RewriteSubModeMenuBuilder.choices)
     }
 
-    s.test("choices(povCharacters:) inserts one POV entry per character BETWEEN Length and Generic") {
+    s.test("choices(povCharacters:) inserts POV entries between Length and the SDT+Generic suffix") {
         let iris = Character.empty(name: "Iris")
         let daniel = Character.empty(name: "Daniel")
         let combined = RewriteSubModeMenuBuilder.choices(povCharacters: [iris, daniel])
@@ -89,6 +90,7 @@ func phase4RewriteSubModePickerTests() -> TestSuite {
             .rewriteTense, .rewriteTense,
             .rewriteLength, .rewriteLength, .rewriteLength, .rewriteLength,
             .rewritePOV, .rewritePOV,
+            .showDontTell,
             .rewrite,
         ])
     }

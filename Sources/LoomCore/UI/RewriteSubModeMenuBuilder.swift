@@ -69,8 +69,12 @@ public enum RewriteSubModeMenuBuilder {
         RewriteSubModeChoice(title: "Length — 150% (longer)", mode: .rewriteLength, descriptor: "150%"),
     ]
 
-    /// Generic escape hatch — always the last entry.
+    /// Show-don't-tell + generic escape hatch — the static tail
+    /// after any dynamic POV entries. SDT goes first so its
+    /// dramatisation feels like a peer of the structural rewrites
+    /// rather than an afterthought below Generic.
     private static let staticSuffix: [RewriteSubModeChoice] = [
+        RewriteSubModeChoice(title: "Show, don't tell (~120% length)", mode: .showDontTell, descriptor: nil),
         RewriteSubModeChoice(title: "Generic rewrite", mode: .rewrite, descriptor: nil),
     ]
 
@@ -81,8 +85,8 @@ public enum RewriteSubModeMenuBuilder {
 
     /// Phase 4 §14.1 #8 — full picker list including one
     /// `.rewritePOV` entry per bible character, slotted between the
-    /// Length presets and the generic escape hatch. POV entries
-    /// carry `povCharacterId` only; the descriptor (with
+    /// Length presets and the show-don't-tell + generic suffix.
+    /// POV entries carry `povCharacterId` only; the descriptor (with
     /// KNOWLEDGE_LEDGER_HINT bullets) is computed at click time by
     /// the controller via `LedgerKnowledge.compute` +
     /// `RewritePOVDescriptor.build`.

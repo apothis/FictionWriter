@@ -35,7 +35,7 @@ public struct PersistedSnapshot: Codable, Equatable {
 public enum SnapshotPolicy {
     public static func shouldSnapshot(beforeMode mode: GenerationMode) -> Bool {
         switch mode {
-        case .rewrite, .rewriteVoice, .rewriteTense, .rewritePOV, .rewriteLength:
+        case .rewrite, .rewriteVoice, .rewriteTense, .rewritePOV, .rewriteLength, .showDontTell:
             return true
         default:
             return false

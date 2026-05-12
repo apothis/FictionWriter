@@ -44,7 +44,14 @@ public enum GenerationModeAvailability {
             // time from `LedgerKnowledge.compute` so the §4.3
             // KNOWLEDGE_LEDGER_HINT slot ships with real data.
             return state.hasSelection
-        case .showDontTell, .brainstorm, .critique, .bridge, .describe, .nameSuggest:
+        case .showDontTell:
+            // Phase 4 §14.1 #9 — show-don't-tell. Selection-replace;
+            // ~120% length target baked into the system prompt
+            // (LOOM_GENERATION_MODES.md §4.5). Power users override
+            // sensory/dramatisation hints via the tray instruction
+            // field on top.
+            return state.hasSelection
+        case .brainstorm, .critique, .bridge, .describe, .nameSuggest:
             return false
         }
     }
