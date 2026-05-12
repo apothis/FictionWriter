@@ -95,6 +95,20 @@ func phase4RewriteSubModePickerTests() -> TestSuite {
         ])
     }
 
+    s.test("POV choice title disambiguates from sidebar 'Set POV' (Phase 4 §15.10)") {
+        // The sidebar's "Set POV" sets Scene.pov (drives Continue's
+        // KNOWLEDGE-LEDGER context). The Rewrite picker's POV target
+        // is independent of Scene.pov — the usual case is a SWAP
+        // (Scene.pov = X, picker target = Y). Live test 2026-05-13
+        // Test 6 showed users assuming the two had to match. Picker
+        // label now reads "Rewrite to <name>'s POV" to make the
+        // operation read as an action, not a setter.
+        let iris = Character.empty(name: "Iris")
+        let combined = RewriteSubModeMenuBuilder.choices(povCharacters: [iris])
+        let pov = try expectNotNil(combined.first { $0.mode == .rewritePOV })
+        try expectEqual(pov.title, "Rewrite to Iris's POV")
+    }
+
     s.test("POV choices carry the source character's id + name") {
         let iris = Character.empty(name: "Iris")
         let daniel = Character.empty(name: "Daniel")

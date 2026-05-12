@@ -113,6 +113,9 @@ public final class SidebarController: NSViewController, NSOutlineViewDataSource,
         let povItem = NSMenuItem(title: "Set POV", action: nil, keyEquivalent: "")
         povItem.tag = Self.setPOVMenuTag
         povItem.submenu = NSMenu(title: "Set POV")
+        // Phase 4 §15.10 — clarify that this is the scene's editorial
+        // POV, distinct from the Rewrite picker's per-call POV target.
+        povItem.toolTip = "Sets this scene's editorial POV (drives Continue's KNOWLEDGE-LEDGER context). Does not affect Rewrite — for that, use the Rewrite menu's “Rewrite to <name>'s POV” entries."
         menu.addItem(povItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Rename", action: #selector(renameSelected), keyEquivalent: ""))

@@ -113,7 +113,12 @@ public enum RewriteSubModeMenuBuilder {
     ) -> [RewriteSubModeChoice] {
         let povEntries = povCharacters.map { character in
             RewriteSubModeChoice(
-                title: "POV — \(character.name)",
+                // Phase 4 §15.10 — phrased as an action ("Rewrite
+                // to X's POV") rather than a setter ("POV — X") to
+                // disambiguate from the sidebar's "Set POV" submenu,
+                // which assigns the scene's editorial POV and is a
+                // distinct operation. See HANDOFF §15.8 entry.
+                title: "Rewrite to \(character.name)'s POV",
                 mode: .rewritePOV,
                 descriptor: nil,
                 usesTrayInstruction: false,
