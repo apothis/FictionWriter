@@ -628,15 +628,21 @@ public enum PromptBuilder {
         case .rewriteTense:
             // Phase 4 §14.1 #6 / LOOM_GENERATION_MODES.md §4.2.
             // Target-tense descriptor ("past" / "present" / freeform)
-            // rides on `perCallInstruction`. The framing avoids "in
-            // a different tense" / "in a new tense" (the 2026-05-13
-            // live test surfaced that those primings make the model
-            // treat the task as a *change-away-from-source*
-            // transformation: past+past target produced present,
-            // present+present target produced future). The fix is
-            // explicit no-op-target handling.
+            // rides on `perCallInstruction`; system prompt only commits
+            // to what kind of rewrite this is.
+            //
+            // The 2026-05-13 live test surfaced that source-tense
+            // = target-tense (no-op-target) confuses the model
+            // (past+past → present; present+present → future). A
+            // prompt-tuning attempt to handle the no-op case
+            // explicitly made the failure WORSE (model entered a
+            // degenerate sampling cascade with synonym-runaway and
+            // meta-commentary leakage). Rolled back. Right fix is
+            // at the picker / handler level — detect the no-op
+            // case and short-circuit before the model is called.
+            // See §15.8 for status.
             return """
-            You are a fiction writer rewriting an existing passage so that every verb is in a target tense. The selection below is finished prose. Rewrite it so every verb is in the target tense supplied by the author. If a verb in the source is already in the target tense, leave it unchanged — the goal is "every verb in target tense", NOT "shift away from the source's current tense". Output the rewritten passage in target tense regardless of what tense the source uses. The rewrite must:
+            You are a fiction writer rewriting an existing passage in a different tense. The selection below is finished prose. Rewrite it in the target tense supplied by the author, while preserving everything else about the passage. The rewrite must:
             - Preserve every plot beat, dialogue beat, and named entity from the original (do not skip, do not invent events)
             - Match the manuscript's voice and POV exactly
             - Stay roughly the same length as the original (±20%); do not summarise or balloon
@@ -723,10 +729,9 @@ public enum PromptBuilder {
         case .rewriteTense:
             // Phase 4 §14.1 #6. Target-tense descriptor rides on
             // `perCallInstruction`; mode instruction frames the task
-            // and the passage. Avoids "new tense" framing for the
-            // same no-op-target reason as the system prompt above.
+            // and the passage.
             guard let selection = selectionText(in: context) else { return "" }
-            return "Passage to rewrite in target tense:\n\(selection)\n\n—— Output the rewritten passage only, with every verb in the target tense (whether or not the source already uses that tense). No preface, no commentary, no quotation marks around it."
+            return "Passage to rewrite in a new tense:\n\(selection)\n\n—— Output the rewritten passage only, in the target tense. No preface, no commentary, no quotation marks around it."
         case .rewriteLength:
             // Phase 4 §14.1 #6. Target-length descriptor rides on
             // `perCallInstruction`; mode instruction frames the task

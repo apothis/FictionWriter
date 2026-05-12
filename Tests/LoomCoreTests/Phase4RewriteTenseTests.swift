@@ -26,28 +26,6 @@ func phase4RewriteTenseTests() -> TestSuite {
 
     // MARK: - System prompt
 
-    s.test("rewriteTense system prompt explicitly handles the no-op-target case") {
-        // 2026-05-13 live test surfaced: when source tense already
-        // matches target, the model invents a different tense shift
-        // (past+past→present; present+present→future). Loophole was
-        // the prompt's "rewrite in a different tense" framing
-        // priming the model to think the task is to *change* tense
-        // rather than *match* a target. The fix is explicit no-op
-        // handling.
-        let result = buildTenseResult(prose: "She walks into the room.", descriptor: nil)
-        let lower = result.systemBlock.lowercased()
-        let mentionsNoOp =
-            lower.contains("regardless of") ||
-            lower.contains("if a verb is already") ||
-            lower.contains("if the passage is already") ||
-            lower.contains("every verb in the target") ||
-            lower.contains("every verb in target")
-        try expectTrue(
-            mentionsNoOp,
-            "rewriteTense system prompt should explicitly handle the no-op case so the model doesn't invent an unrelated tense shift; got: \(result.systemBlock)"
-        )
-    }
-
     s.test("rewriteTense system prompt frames the task as a tense rewrite") {
         let result = buildTenseResult(prose: "She walked into the room.", descriptor: nil)
         try expectTrue(
