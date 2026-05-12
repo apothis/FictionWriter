@@ -649,6 +649,24 @@ public enum PromptBuilder {
             - Adjust through expanded sensory detail and interiority (when growing) OR tightened phrasing and trimmed transitions (when shrinking) — never by changing what happens
             - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
             """
+        case .rewritePOV:
+            // Phase 4 §14.1 #8 / LOOM_GENERATION_MODES.md §4.3.
+            // Target-POV descriptor is the structured hint string
+            // produced by `RewritePOVDescriptor.build(...)` —
+            // includes the target character's name + person + a
+            // KNOWS / DOES NOT KNOW bullet list sourced from
+            // `LedgerKnowledge.compute`. The system prompt commits
+            // to the swap shape; the descriptor on
+            // `perCallInstruction` constrains what the new POV
+            // character has access to.
+            return """
+            You are a fiction writer rewriting an existing passage from a different POV (point of view). The selection below is finished prose. Rewrite it from the target POV supplied by the author. The rewrite must:
+            - Preserve every plot beat, dialogue beat, and named entity from the original (do not skip, do not invent events)
+            - Match the manuscript's voice and tense exactly; only the POV character changes
+            - Stay roughly the same length as the original (±20%); do not summarise or balloon
+            - Adjust interiority so the new POV character only registers what they could plausibly know, see, or feel — do not invent thoughts, knowledge, or perceptions the character has not been exposed to (the per-call instruction below lists what they know and don't know as of this scene)
+            - Does not include meta-commentary, prefaces ("here is the rewrite:"), or markdown headers
+            """
         default:
             // Phase 4+ modes; PromptBuilder still produces something
             // sensible if invoked early.
@@ -695,6 +713,13 @@ public enum PromptBuilder {
             // and the passage.
             guard let selection = selectionText(in: context) else { return "" }
             return "Passage to rewrite at a new length:\n\(selection)\n\n—— Output the rewritten passage only, at the target length. No preface, no commentary, no quotation marks around it."
+        case .rewritePOV:
+            // Phase 4 §14.1 #8. Target-POV descriptor (target name,
+            // person, KNOWS / DOES NOT KNOW buckets) rides on
+            // `perCallInstruction`; mode instruction frames the task
+            // and the passage.
+            guard let selection = selectionText(in: context) else { return "" }
+            return "Passage to rewrite from a new POV:\n\(selection)\n\n—— Output the rewritten passage only, from the target POV. No preface, no commentary, no quotation marks around it."
         default:
             return ""
         }

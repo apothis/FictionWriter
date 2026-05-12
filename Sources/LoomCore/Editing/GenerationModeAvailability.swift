@@ -37,8 +37,14 @@ public enum GenerationModeAvailability {
             // length) rides on `PromptContext.perCallInstruction`,
             // populated by the sub-mode picker UI.
             return state.hasSelection
-        case .rewritePOV,
-             .showDontTell, .brainstorm, .critique, .bridge, .describe, .nameSuggest:
+        case .rewritePOV:
+            // Phase 4 §14.1 #8 — POV rewrite. Selection-replace;
+            // descriptor is the structured POV-hint string from
+            // `RewritePOVDescriptor.build(...)`, computed at click
+            // time from `LedgerKnowledge.compute` so the §4.3
+            // KNOWLEDGE_LEDGER_HINT slot ships with real data.
+            return state.hasSelection
+        case .showDontTell, .brainstorm, .critique, .bridge, .describe, .nameSuggest:
             return false
         }
     }

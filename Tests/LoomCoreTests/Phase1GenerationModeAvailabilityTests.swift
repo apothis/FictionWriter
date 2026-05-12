@@ -48,15 +48,15 @@ func phase1GenerationModeAvailabilityTests() -> TestSuite {
         try expectFalse(GenerationModeAvailability.isEnabled(.rewrite, in: state))
     }
 
-    s.test("remaining Phase 4 modes stay disabled (post-rewriteVoice/Tense/Length)") {
-        // Phase 4 §14.1 #1 shipped .rewriteVoice; §14.1 #6 added
-        // .rewriteTense + .rewriteLength. The rest (rewritePOV,
-        // show-don't-tell, brainstorm, etc.) remain disabled until
-        // their tickets land.
+    s.test("remaining Phase 4 modes stay disabled (post-rewrite-family)") {
+        // Phase 4 §14.1 #1 / #6 / #8 shipped the four rewrite
+        // sub-modes (voice / tense / length / POV). The rest
+        // (show-don't-tell, brainstorm, critique, bridge, describe,
+        // nameSuggest) remain disabled until their tickets land.
         let state = EditorState(hasProse: true, hasSelection: true)
         let enabledModes: Set<GenerationMode> = [
             .continueProse, .expand, .rewrite,
-            .rewriteVoice, .rewriteTense, .rewriteLength,
+            .rewriteVoice, .rewriteTense, .rewriteLength, .rewritePOV,
         ]
         for mode in GenerationMode.allCases where !enabledModes.contains(mode) {
             try expectFalse(
