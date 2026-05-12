@@ -50,5 +50,48 @@ func phase1ThinkBlockStripperTests() -> TestSuite {
         try expectEqual(ThinkBlockStripper.strip(input), "")
     }
 
+    // MARK: - Gemma 4 reasoning format (added 2026-05-13)
+    //
+    // Per https://ai.google.dev/gemma/docs/capabilities/thinking
+    // Gemma 4 uses `<|channel>thought\n[reasoning]<channel|>` for
+    // its CoT output, NOT the `<think>...</think>` Qwen format.
+    // Even when thinking is disabled, the model still emits the
+    // tags with an empty thought block: `<|channel>thought\n
+    // <channel|>[answer]`. Both forms must be stripped.
+
+    s.test("Gemma 4 empty-thought wrapper at start is stripped") {
+        let input = "<|channel>thought\n<channel|>But he speaks anyway, his voice ragged."
+        try expectEqual(ThinkBlockStripper.strip(input), "But he speaks anyway, his voice ragged.")
+    }
+
+    s.test("Gemma 4 filled-thought wrapper at start is stripped") {
+        let input = "<|channel>thought\nThe scene is intimate; I should match the prior voice.\n<channel|>She turned to face him."
+        try expectEqual(ThinkBlockStripper.strip(input), "She turned to face him.")
+    }
+
+    s.test("Gemma 4 thought wrapper spanning multiple lines is stripped") {
+        let input = "<|channel>thought\nFirst, set tone.\nThen, advance plot.\n<channel|>\n\nThe rain began."
+        try expectEqual(ThinkBlockStripper.strip(input), "The rain began.")
+    }
+
+    s.test("Gemma 4 unclosed <|channel> tag is left intact — partial-leak signal preserved") {
+        let input = "<|channel>thought\nunclosed reasoning, then prose"
+        let output = ThinkBlockStripper.strip(input)
+        try expectEqual(output, input)
+    }
+
+    s.test("Gemma 4 entire-thought-only input strips to empty") {
+        let input = "<|channel>thought\n<channel|>"
+        try expectEqual(ThinkBlockStripper.strip(input), "")
+    }
+
+    s.test("mixed Qwen + Gemma tags in the same input both get stripped") {
+        // Unlikely in production (writer model is one family at a
+        // time), but the stripper should be defensive enough to
+        // handle either or both.
+        let input = "<think>qwen thought</think>\n\n<|channel>thought\n<channel|>The actual prose."
+        try expectEqual(ThinkBlockStripper.strip(input), "The actual prose.")
+    }
+
     return s
 }
