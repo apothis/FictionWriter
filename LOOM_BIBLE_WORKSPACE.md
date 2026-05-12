@@ -640,4 +640,36 @@ should be a one-liner suitable for the L4.5 row in
 [`LOOM_PLAN.md`](LOOM_PLAN.md) (so the high-level plan stays
 self-summarizing without re-reading this doc).
 
-_(empty — plan not started)_
+### Session 1 — 2026-05-12
+
+**Landed**: WKWebView shell + bridge + read-only React entity list rendering live from Swift snapshots. Bundle pipeline (Vite/React/TS/Tailwind/Bun → SPM resource → Loom.app) end-to-end.
+
+**Tests**: +17 TestKit on the workspace itself (12 snapshot — Codable round-trip, JSON key shape, builder ordering across characters/scenes/suggestions, fact-id carrying; 5 bridge — encoded-payload shape, U+2028/U+2029 defensive escape, single-line invariant). Plus +3 from the inspector responder side-fix commit. 808/808 → 828/828 over the session.
+
+**Code shipped:**
+- `Sources/LoomCore/Models/BibleWorkspaceSnapshot.swift` — Codable bridge contract + `build(project:scenes:suggestionsQueue:)`. Flat projections (`SceneSummary`, `PendingSuggestion`) so the JS side renders without nested `KnownFact`-shape JSX.
+- `Sources/LoomCore/UI/BibleWorkspaceBridge.swift` — Swift→JS push leg. JSON inlined as JS object literal (subset of JS syntax) inside `window.loom.applySnapshot(...)` call. U+2028/U+2029 defensively escaped.
+- `Sources/LoomCore/UI/BibleWorkspaceWindowController.swift` — AppKit shell, ~200 LOC. Hosts WKWebView; observes `ProjectSession.didChangeNotification` + `didReplaceNotification`; pushes fresh snapshot via `evaluateJavaScript`. Initial push gated on `webView(_:didFinish:)` (the 0.15s `asyncAfter` heuristic raced WKWebView's HTML load and produced empty placeholders). `isInspectable = true` for Safari Web Inspector access.
+- `Sources/LoomCore/AppDelegate.swift` — Bible menu item "Open Bible Workspace…" + ⌘⇧B.
+- `web/bible-workspace/` — Vite + React 18 + TypeScript + Tailwind 3 baseline. `src/types.ts` mirrors Swift Codable shapes; `src/bridge.ts` handles the bidirectional bridge (Session 2 fills in `postIntent`); `src/views/EntityList.tsx` renders characters + lorebook with header strip showing scene + suggestion counts.
+- `scripts/build-bible-workspace.sh` + `build.sh` pre-step — bun-driven build, sync into `Sources/LoomCore/Resources/BibleWorkspace/`, SPM bundles via `.copy("Resources/BibleWorkspace")` on LoomCore.
+
+**file:// loading gotchas burned through** (these are the load-bearing build-script post-transforms):
+1. `crossorigin` attribute on emitted `<script>` / `<link>` tags → WebKit rejects under file://, blank page. Stripped by post-build sed.
+2. `<script type="module">` → ES modules don't reliably execute under file:// in WebKit (no error fires, just silent no-op). Vite reconfigured to emit IIFE format; `type="module"` stripped by post-build sed.
+3. Classic head script with no `defer` → executes during HTML parsing, before `<body><div id="root">` exists, so `document.getElementById("root")` returns null. Post-build sed injects `defer`.
+
+The three fixes together are non-obvious — debug shim (now removed but documented in `web/bible-workspace/index.html`'s remaining error-surface section) was instrumental.
+
+**Side-fix that landed this session**: inspector responder-clobber on per-keystroke writeback. Unrelated to the workspace but surfaced while we had a fresh project open. See commit `d4e4dcb`.
+
+**Carry forward to Session 2:**
+- Bridge JS→Swift intent path (`postIntent` is stubbed; `BibleWorkspaceBridge.swift` only handles outbound today).
+- `CharacterPatch` Codable + apply-patch tests.
+- React full character editor form (RHF + Zod for the 15+ Character fields).
+
+**Status**: Session 1 ✅, sessions 2-5 pending. Exit criteria (§7) all green:
+- Build pipeline didn't fight us catastrophically (some file:// gotchas burned ~30 min, all documented in build script).
+- Snapshot-push latency imperceptible (<50ms).
+- macOS-26 WKWebView quirks surfaced but tractable.
+- React + Tailwind palette renders under Liquid Glass acceptably.

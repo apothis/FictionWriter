@@ -4,6 +4,12 @@ set -e
 APP_NAME="Loom"
 APP_DIR="$APP_NAME.app"
 
+# Phase 4.5 — build the Bible Workspace WKWebView bundle before the
+# Swift compile. SPM bundles its dist/ output as a LoomCore resource
+# (see Package.swift). If bun is missing or the build fails, this
+# bails loud rather than letting Swift produce an incomplete app.
+"$(dirname "$0")/scripts/build-bible-workspace.sh"
+
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 

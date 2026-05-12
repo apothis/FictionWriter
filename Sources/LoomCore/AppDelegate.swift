@@ -202,6 +202,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         rollOutcome.target = self
         rollOutcome.toolTip = "Pick a weighted lorebook group; Loom rolls one outcome and seeds it into the tray's per-call instruction field for the next Continue. (LOOM_NSFW §3.5)"
         bibleMenu.addItem(rollOutcome)
+        bibleMenu.addItem(.separator())
+        let workspace = NSMenuItem(
+            title: "Open Bible Workspace…",
+            action: #selector(openBibleWorkspaceClicked),
+            keyEquivalent: "b")
+        workspace.keyEquivalentModifierMask = [.command, .shift]
+        workspace.target = self
+        workspace.toolTip = "Open the dedicated entity-management window: full character editors, lorebook power-user fields, accepted-facts examiner, suggestions queue. (Phase 4.5 — see LOOM_BIBLE_WORKSPACE.md)"
+        bibleMenu.addItem(workspace)
         bibleMenuItem.submenu = bibleMenu
 
         NSApp.mainMenu = main
@@ -283,6 +292,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             planWindow = PlanWindowController(session: AppState.shared.currentSession)
         }
         planWindow?.showAndActivate()
+    }
+
+    // MARK: - Bible Workspace window (Phase 4.5 — LOOM_BIBLE_WORKSPACE.md)
+
+    private var bibleWorkspaceWindow: BibleWorkspaceWindowController?
+
+    @objc private func openBibleWorkspaceClicked() {
+        if bibleWorkspaceWindow == nil {
+            bibleWorkspaceWindow = BibleWorkspaceWindowController(
+                session: AppState.shared.currentSession,
+                appState: AppState.shared
+            )
+        }
+        bibleWorkspaceWindow?.showAndActivate()
     }
 
     // MARK: - File menu actions

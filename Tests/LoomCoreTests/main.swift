@@ -122,6 +122,8 @@ let suites: [TestSuite] = [
     phase4RewriteFamilyScopeTests(),
     phase4SelectionTenseHeuristicTests(),
     phase4StreamingThinkBlockStripperTests(),
+    phase4_5BibleWorkspaceSnapshotTests(),
+    phase4_5BibleWorkspaceBridgeTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

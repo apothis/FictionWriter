@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Liquid Glass parity — the CSS variables themselves are emitted
+   by the Swift side (BibleWorkspaceWindowController) onto :root.
+   This file only specifies global resets + typography that don't
+   belong in Tailwind utility classes. */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--loom-bg-primary);
+  color: var(--loom-fg-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  height: 100%;
+}
+
+/* Native macOS scrollbars look out of place in a content-dense
+   workspace; let the system render its overlay scrollbars but
+   keep them subtle. */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--loom-border);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--loom-fg-tertiary);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

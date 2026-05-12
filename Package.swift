@@ -21,6 +21,14 @@ let package = Package(
         .target(
             name: "LoomCore",
             path: "Sources/LoomCore",
+            // Phase 4.5 — bundle the Bible Workspace WKWebView assets
+            // (Vite/React build output). `scripts/build-bible-workspace.sh`
+            // syncs `web/bible-workspace/dist/` into this directory
+            // before `swift build`; the dist content is gitignored.
+            // See LOOM_BIBLE_WORKSPACE.md §5.5.
+            resources: [
+                .copy("Resources/BibleWorkspace"),
+            ],
             swiftSettings: [
                 // Enables `@testable import LoomCore` from the test runner
                 // in debug builds. Scoped to debug so release (.app) is

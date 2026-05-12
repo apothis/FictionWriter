@@ -6,3 +6,10 @@ DerivedData/
 *.xcodeproj/
 .DS_Store
 Tools/LedgerSpike/last-run/
+
+# Phase 4.5 Bible Workspace web bundle. Dev source lives in
+# web/bible-workspace/; the build script populates these dirs from
+# dist/ output before swift build.
+web/bible-workspace/node_modules/
+web/bible-workspace/dist/
+Sources/LoomCore/Resources/BibleWorkspace/
