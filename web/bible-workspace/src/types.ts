@@ -88,3 +88,27 @@ export interface BibleWorkspaceSnapshot {
   scenes: SceneSummary[];
   suggestions: PendingSuggestion[];
 }
+
+// Mirrors CharacterPatch.swift — every field optional. The React
+// editor sends only the fields that diverged from the snapshot,
+// keeping intent payloads small and the diff explicit.
+//
+// Collection semantics:
+// - undefined: leave the array unchanged
+// - []: clear it
+// - [x, y]: replace entirely
+export interface CharacterPatch {
+  name?: string;
+  aliases?: string[];
+  role?: string;
+  oneLine?: string;
+  description?: string;
+  personality?: string;
+  appearance?: string;
+  voice?: string;
+  goals?: string;
+  relationships?: Relationship[];
+  canonBrief?: string;
+  customFields?: CharacterCustomField[];
+  injectionMode?: "constant" | "keyed";
+}

@@ -98,5 +98,70 @@ func phase4_5BibleWorkspaceBridgeTests() -> TestSuite {
             "encoded JS must not contain literal newlines (they're escaped to \\n inside the JSON strings)")
     }
 
+    // MARK: - JS → Swift intent decoding (Phase 4.5 Session 2)
+
+    s.test("decodeIntent on patchCharacter JSON yields the expected case") {
+        let id = UUID()
+        let json = """
+        {"kind":"patchCharacter","id":"\(id.uuidString)","patch":{"name":"Daniel"}}
+        """
+        let intent = try BibleWorkspaceBridge.decodeIntent(Data(json.utf8))
+        switch intent {
+        case .patchCharacter(let decodedId, let patch):
+            try expectEqual(decodedId, id)
+            try expectEqual(patch.name, "Daniel")
+            try expectNil(patch.description)
+        }
+    }
+
+    s.test("decodeIntent on patchCharacter accepts an empty patch payload") {
+        // The React side may send a patch with no fields if the user
+        // triggered a save with no diverging fields — should decode
+        // cleanly to a no-op.
+        let id = UUID()
+        let json = """
+        {"kind":"patchCharacter","id":"\(id.uuidString)","patch":{}}
+        """
+        let intent = try BibleWorkspaceBridge.decodeIntent(Data(json.utf8))
+        switch intent {
+        case .patchCharacter(_, let patch):
+            try expectEqual(patch, CharacterPatch())
+        }
+    }
+
+    s.test("decodeIntent on unknown kind throws a decoding error") {
+        let json = "{\"kind\":\"madeUpIntent\",\"foo\":\"bar\"}"
+        try expectThrows {
+            _ = try BibleWorkspaceBridge.decodeIntent(Data(json.utf8))
+        }
+    }
+
+    s.test("decodeIntent on missing kind throws a decoding error") {
+        let json = "{\"id\":\"abc\"}"
+        try expectThrows {
+            _ = try BibleWorkspaceBridge.decodeIntent(Data(json.utf8))
+        }
+    }
+
+    s.test("intent round-trips through encode/decode") {
+        let id = UUID()
+        let intent = BibleWorkspaceIntent.patchCharacter(
+            id: id,
+            patch: CharacterPatch(name: "X", description: "Y", injectionMode: .keyed)
+        )
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(intent)
+        let decoded = try BibleWorkspaceBridge.decodeIntent(data)
+        try expectEqual(decoded, intent)
+    }
+
+    s.test("intent JSON uses a `kind` discriminator (matches JS-side contract)") {
+        let intent = BibleWorkspaceIntent.patchCharacter(id: UUID(), patch: CharacterPatch())
+        let data = try JSONEncoder().encode(intent)
+        let json = String(data: data, encoding: .utf8) ?? ""
+        try expectTrue(json.contains("\"kind\":\"patchCharacter\""),
+            "encoded intent must use a `kind` discriminator; got: \(json)")
+    }
+
     return s
 }

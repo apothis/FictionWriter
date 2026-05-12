@@ -12,9 +12,10 @@ import { cn } from "../lib/cn";
 
 interface Props {
   snapshot: BibleWorkspaceSnapshot;
+  onSelectCharacter: (id: string) => void;
 }
 
-export function EntityList({ snapshot }: Props) {
+export function EntityList({ snapshot, onSelectCharacter }: Props) {
   return (
     <div className="flex h-full flex-col">
       <Header snapshot={snapshot} />
@@ -30,6 +31,7 @@ export function EntityList({ snapshot }: Props) {
                 pendingSuggestions={snapshot.suggestions.filter(
                   (s) => s.characterId === c.id,
                 )}
+                onClick={() => onSelectCharacter(c.id)}
               />
             ))
           )}
@@ -97,16 +99,22 @@ function Section({
 function CharacterRow({
   character,
   pendingSuggestions,
+  onClick,
 }: {
   character: Character;
   pendingSuggestions: PendingSuggestion[];
+  onClick: () => void;
 }) {
   const knownFactCount = Object.values(character.knownFactsBySceneId).reduce(
     (sum, facts) => sum + facts.length,
     0,
   );
   return (
-    <div className="group rounded-lg px-3 py-2.5 hover:bg-loom-bg-elevated">
+    <button
+      type="button"
+      onClick={onClick}
+      className="group block w-full cursor-pointer rounded-lg px-3 py-2.5 text-left hover:bg-loom-bg-elevated focus:bg-loom-bg-elevated focus:outline-none focus:ring-1 focus:ring-loom-accent"
+    >
       <div className="flex items-baseline justify-between gap-3">
         <span className="truncate text-sm font-medium text-loom-fg">
           {character.name || "(unnamed)"}
@@ -137,7 +145,7 @@ function CharacterRow({
           {character.description}
         </p>
       )}
-    </div>
+    </button>
   );
 }
 

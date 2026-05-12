@@ -673,3 +673,39 @@ The three fixes together are non-obvious — debug shim (now removed but documen
 - Snapshot-push latency imperceptible (<50ms).
 - macOS-26 WKWebView quirks surfaced but tractable.
 - React + Tailwind palette renders under Liquid Glass acceptably.
+
+### Session 2 — 2026-05-12
+
+**Landed**: full character editor with every `Character` field, JS→Swift intent path closed end-to-end. Click a character row in the entity list → editor view; field edits dispatch `patchCharacter` intents (debounced 250ms) → `ProjectSession.updateCharacter` → snapshot push back → workspace + main editor inspector stay synchronized.
+
+**Tests**: +20 TestKit (14 `CharacterPatch` covering apply-to semantics, scalar/array/optional field behavior, JSON round-trip with absent keys decoded as nil; 6 `BibleWorkspaceIntent` covering kind-discriminator encoding, decode round-trip, unknown/missing kind errors). 828/828 → 848/848.
+
+**Code shipped:**
+
+*Swift side:*
+- `Sources/LoomCore/Models/CharacterPatch.swift` — every `Character` field as `Optional`. `apply(to: Character) -> Character` writes only non-nil fields. Pure function, fully tested.
+- `Sources/LoomCore/UI/BibleWorkspaceBridge.swift` extended with `decodeIntent(_: Data) -> BibleWorkspaceIntent` + the `BibleWorkspaceIntent` enum itself (currently single case `.patchCharacter`; sessions 3-5 extend with `.patchLorebookEntry`, `.deleteKnownFact`, `.acceptSuggestion`, `.rejectSuggestion`). Wire format uses `kind: String` discriminator + per-case fields (matches JS-side discriminated union convention).
+- `Sources/LoomCore/UI/BibleWorkspaceWindowController.swift` — `userContentController(_:didReceive:)` now decodes intents + dispatches. Decoding errors logged + swallowed (schema-mismatched intents must not crash). `dispatch(_ intent)` looks up the character by id, applies the patch, calls `session.updateCharacter`. The resulting `didChangeNotification` triggers a fresh snapshot push, closing the loop.
+
+*React side:*
+- `src/components/ui/{Input,Textarea,Select,Button}.tsx` — shadcn-style primitives. Copy-paste-into-repo pattern; modify in-place rather than overriding via props. Paired with Liquid Glass CSS variables.
+- `src/lib/useDebouncedCallback.ts` — 30-line hook to collapse rapid-fire dispatches into one delayed invocation. No external dep.
+- `src/views/CharacterEditor.tsx` — full editor form, ~330 LOC. Five sections: Identity (name, oneLine, role, injection mode, aliases), Description (description, personality, appearance, voice, goals), Relationships (per-row target/kind/notes with target picker from other characters), Canon brief, Custom fields (label/value/kind rows). Local-state pattern with reset effect keyed on `character.id` only — snapshot pushes for the same character don't clobber in-flight typing.
+- `src/types.ts` — `CharacterPatch` interface mirroring the Swift type.
+- `src/App.tsx` — top-level routing: `Selection` state switches between EntityList and CharacterEditor. Stale-selection fallback handles the case where the selected character is deleted out of band.
+- `src/views/EntityList.tsx` — character rows become clickable buttons with hover/focus rings; `onSelectCharacter(id)` callback bubbles up to App.
+
+**Design call deferred**: I'd planned RHF + Zod per §4. Reconsidered for Session 2 — the schema has no client-side validation needs (Swift owns validation + dirty tracking), submission is single-field intent dispatch, no multi-step state. Controlled inputs with local draft + debounced dispatch is simpler and adds zero deps. Will adopt RHF + Zod in a later session if/when we hit a use case it actually buys us something (e.g., a "review before submit" flow, or async validation).
+
+**Live-smoke verified**: typed text in personality / appearance / voice / goals / canon brief survives back→re-enter (proving session persistence works for fields the AppKit inspector doesn't surface). Added/removed aliases, added a relationship with a target picker, changed role + injection mode dropdowns. All round-trip through the bridge.
+
+**Known limits**:
+- `avatarPath` not surfaced (deferred per §8.4).
+- `knownFactsBySceneId` not in editor (managed via Session 4's facts examiner).
+- Bridge dispatch is per-field on every keystroke (debounced). For very-long-running edits there's no merge — last patch wins. Not a concern at single-user scale.
+
+**Carry forward to Session 3**:
+- `LorebookEntryPatch` Codable + apply-patch tests (~10 fields).
+- `intent.patchLorebookEntry` dispatcher.
+- React `LorebookEditor` form with the 11 LorebookEntry fields including the conditional render for `depth` when `positionMode == .depthN`.
+- Affordance for adding/removing lorebook entries entirely.

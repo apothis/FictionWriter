@@ -194,9 +194,65 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
-        // Session 2 lands the BibleWorkspaceIntent decoding +
-        // dispatch here. For now: log + drop.
-        DebugLog.shared.write("[workspace] received intent message (Session 1 stub): \(String(describing: message.body))")
+        // The WKScriptMessage body is whatever the JS side passed
+        // to `postMessage(...)`. The JS bridge sends plain objects
+        // (already JSON-compatible). We serialize back to Data via
+        // JSONSerialization and let `BibleWorkspaceBridge.decodeIntent`
+        // parse it. Decoding errors are logged + swallowed —
+        // schema-mismatched intents shouldn't crash the app.
+        let data: Data
+        do {
+            data = try JSONSerialization.data(withJSONObject: message.body, options: [])
+        } catch {
+            DebugLog.shared.write("[workspace] intent message body wasn't JSON-serializable: \(error); body=\(String(describing: message.body))")
+            return
+        }
+        let intent: BibleWorkspaceIntent
+        do {
+            intent = try BibleWorkspaceBridge.decodeIntent(data)
+        } catch {
+            DebugLog.shared.write("[workspace] intent decode failed: \(error); raw=\(String(data: data, encoding: .utf8) ?? "?")")
+            return
+        }
+        dispatch(intent)
+    }
+
+    /// Apply an intent to the underlying `ProjectSession`. Each
+    /// case maps to a single session mutator; the resulting
+    /// `didChangeNotification` triggers a fresh snapshot push back
+    /// to the web side, closing the loop.
+    private func dispatch(_ intent: BibleWorkspaceIntent) {
+        switch intent {
+        case .patchCharacter(let id, let patch):
+            guard var character = session.project.bible.characters.first(where: { $0.id == id }) else {
+                DebugLog.shared.write("[workspace] patchCharacter ignored — stale id=\(id)")
+                return
+            }
+            character = patch.apply(to: character)
+            session.updateCharacter(character)
+            DebugLog.shared.write("[workspace] patchCharacter applied id=\(id) fields=\(patchFieldSummary(patch))")
+        }
+    }
+
+    /// Compact log-friendly summary of which patch fields were
+    /// non-nil — useful when triaging "did the patch include the
+    /// field I expected" without dumping the whole struct.
+    private func patchFieldSummary(_ patch: CharacterPatch) -> String {
+        var fields: [String] = []
+        if patch.name != nil { fields.append("name") }
+        if patch.aliases != nil { fields.append("aliases") }
+        if patch.role != nil { fields.append("role") }
+        if patch.oneLine != nil { fields.append("oneLine") }
+        if patch.description != nil { fields.append("description") }
+        if patch.personality != nil { fields.append("personality") }
+        if patch.appearance != nil { fields.append("appearance") }
+        if patch.voice != nil { fields.append("voice") }
+        if patch.goals != nil { fields.append("goals") }
+        if patch.relationships != nil { fields.append("relationships") }
+        if patch.canonBrief != nil { fields.append("canonBrief") }
+        if patch.customFields != nil { fields.append("customFields") }
+        if patch.injectionMode != nil { fields.append("injectionMode") }
+        return fields.isEmpty ? "<empty>" : fields.joined(separator: ",")
     }
 
     // MARK: - WKNavigationDelegate
