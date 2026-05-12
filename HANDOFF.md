@@ -604,4 +604,57 @@ Cumulative AppKit cost ledger for Phase 4 #7: **~30 min** (suggestions-panel cas
 
 **NSFW strategic anchor — still load-bearing.** The pipeline is content-neutral by design (LOOM_NSFW.md §3), but live-testing on explicit prose hasn't happened yet. The spike numbers (LOOM_LEDGER_SPIKE §11.4 / §12.4) showed 100% recall on the two NSFW fixture scenes; production behaviour should match. The §10.5 filters are all content-neutral by construction — no filter drops a fact for content reasons, only for technical reasons (paraphrase dedup, missing evidence in prose, prompt-text leakage). Phase 4.x should still pressure-test multi-character extraction on a sex scene where both partners have agency (the spike's `03_first_night` is the closest fixture).
 
-**Test count: 697 passing.** 656 (prior session) + 8 (POV picker) + 33 (sub-task 8 filters + pipeline + sentence-splitter + AppState wiring).
+**Test count: 774 passing** (since 2026-05-13 sub-task 8 + #6 picker + #8 POV + #9 SDT + #10 Lorebook + #6 rewriteTense/Length + scope-discipline clause + various §15.8 fixes landed).
+
+### 15.9 Session ledger — 2026-05-13 (Phase 4 §14.1 #6 / #8 / #9 / #10 + live-test session)
+
+**Code shipped (~25 commits):**
+
+- **Phase 4 §14.1 #6 — rewriteTense + rewriteLength prompt layers + the Rewrite sub-mode picker UI.** All four rewrite sub-modes (Voice/Tense/Length/POV) plus generic Rewrite now reachable from one coherent NSMenu pop-up on the tray's Rewrite button.
+- **Phase 4 §14.1 #8 — rewritePOV prompt layer + `RewritePOVDescriptor.build(...)` + per-character POV entries in the picker.** Marries the rewrite family to the Phase 4 #7 knowledge ledger — `LedgerKnowledge.compute(...)` feeds structured KNOWS/DOES NOT KNOW bullets into the descriptor at click time, threading the §4.3 `KNOWLEDGE_LEDGER_HINT` slot live for the first time.
+- **Phase 4 §14.1 #9 — show-don't-tell prompt layer + picker slot.** Snapshot-policy includes the mode for selection-replace recovery.
+- **Phase 4 §14.1 #10 — Lorebook v1 in the Bible inspector.** New `.lorebook` category in `BibleCategory`; full character editor branches on `.lorebook` ref to add a comma-separated keys field; Constant/Keyed activation mode flips via the existing inject popup; sphiratrioth pack is now editable in-app rather than via `bible/lorebook.json`.
+- **Phase 4 #7 follow-ons** that surfaced during live testing:
+  - In-flight guard per scene on the extractor coordinator (the duplicate-side-call bug).
+  - Auto-budget per scene-word-count (`OllamaLedgerExtractor.budgetForSceneWords`) with smart-retry-on-empty doubling `num_predict` (the deterministic length-cap empty-content bug — Ollama's JSON-Schema mode emits empty content if `num_predict` cuts off mid-array).
+  - Per-filter drop logging (`{dedup=N evidence=M leakage=K}` on the `[ledger] queued` line) — needed to diagnose which §10.5 filter is doing the work across runs.
+  - Reject/redo restoration covers the new rewrite sub-modes via `GenerationMode.isSelectionReplacing` predicate (was hard-coded to `.expand || .rewrite`).
+- **ThinkBlockStripper handles Gemma 4 `<|channel>thought\n<channel|>` format** in addition to the Qwen `<think>...</think>` format. Both formats stripped post-finish, both with multi-line bodies and unclosed-tag preservation.
+- **Scope-discipline clause** added to every rewrite-family system prompt (`.rewrite`, `.rewriteVoice`, `.rewriteTense`, `.rewriteLength`, `.rewritePOV`, `.showDontTell`) — *"Stay strictly inside the selection... do not add events, dialogue, characters, or relationship histories from outside the selection... no extension forward or backward in time"*. Addressed three §15.8 Gemma-specific over-contextualization failures (Test 6 tour-rider dialogue pulled forward, Test 7 cross-scene character + relationship invention, Test 7 forward-extension past source bounds). Pilot retest on Test 6 showed the clause cuts the failure rate dramatically (4 of 6 prior failure modes fixed); Test 7 partial improvement (cross-scene leakage gone, forward-extension still present on sparse abstract sources — see §15.8 structural-limit entry).
+
+**Plan changes:** **Phase 4.5 — Bible Workspace** inserted between Phase 4 and Phase 5 in [`LOOM_PLAN.md`](LOOM_PLAN.md). Dedicated second NSWindow for entity management; closes the cramped-side-pane UX gap surfaced during live testing (accepted-facts examiner, full character editor, Lorebook power-user fields, suggestions queue review). Lands BEFORE Phase 5 so RAG-for-style's reference-text management UI ships in the new architecture rather than retrofitting.
+
+**Live testing pass — Qwen3.6-27B vs Gemma 4 31B writer comparison across Tests 1–7:**
+
+Full test plan at [`TEST_PLAN_2026-05-13.md`](TEST_PLAN_2026-05-13.md) (NSFW-focused, includes Iris/Daniel + Marisol/Jamie + Saoirse/Linus fixtures).
+
+| Test | Qwen | Gemma 4 31B | Notes |
+|------|------|-------------|-------|
+| 1 Auto-budget short scene | clean | clean | sanity baseline |
+| 2 Auto-budget long scene (611 words) | clean | clean | same — extractor unchanged, writer not on this path |
+| 3 §10.5 filter behaviour | clean (1/23 dropped) | clean (5/24, all dedup) | per-filter logging added; variance is pure extractor sampling, all 16/25 the morning ran was also pure dedup |
+| 4 POV picker + `[KNOWLEDGE-LEDGER]` layer | clean POV; bruise drifted to "neck" | clean POV; **bruise correctly on collarbone** | Gemma stronger ledger-fact pinning on Continue |
+| 5a rewriteVoice | strong shift, 151% length, correct bruise | strong shift, 165% length, **drifted bruise to "above heart"** | rough tie |
+| 5b rewriteTense (no-op target) | **catastrophic** (tokenization corruption + truncation + entity drift) | **clean** near-verbatim source preservation | **Gemma decisive win** |
+| 5c rewriteLength 120% | verbose paraphrase, 150-185% | **sensory expansion** + interiority, 157% | **Gemma decisive win** |
+| 6 rewritePOV (target=Jamie, 12 KNOWS) | localised beat inversion ("thumb on lip") | **plot invention** + bruise drift + 164% length | Qwen wins (pre-clause); **Gemma fully fixed post-scope-clause** |
+| 7 showDontTell | regression to `felt X` 40% of the time | stronger shows + invented plot + character pulling | Gemma mixed (cross-scene leakage fixed by scope clause; forward-extension is structural limit on sparse sources — §15.8) |
+
+**Strategic verdict:** User has committed to Gemma 4 31B as the preferred writer despite ~5× latency. Gemma's structural reliability + tone-quality + instruction-following on transformative tasks materially exceed Qwen's. Scope-discipline clause closed Gemma's main weakness on rewritePOV; the remaining SDT-on-sparse-sources limit is a model-class issue, not Gemma-specific. Worth a Phase 4.x slice on per-mode sampler tuning to address Qwen's rewriteTense near-copy decode trap — but since Gemma is preferred, this is lower priority.
+
+**§15.8 grew substantially.** Notable new entries:
+- **rewriteTense no-op-target failure mode** (reproducible on both writers; needs picker/handler detection).
+- **Rewrite-family length-anchor drift under verbose descriptors** (both writers, both Voice + Length + SDT).
+- **rewriteTense degenerate near-copy decode** (Qwen-specific; Gemma not affected — confirmed by 5b/5c comparison).
+- **rewritePOV cross-character interiority leak + occasional beat inversion** (both writers; needs prompt-side or pipeline-side fix).
+- **Gemma 4 31B over-contextualization family** (cross-scene character pulling, forward-extension, plot invention from elsewhere) — **mostly fixed by the scope-discipline clause this session**, residual SDT forward-extension is the structural-limit case.
+- **showDontTell on sparse abstract sources is a structural limit** (documented). Targeted negative-example blacklists don't generalise across paraphrase (saved as memory).
+- **Lots of UX gaps** queued: streaming-aware thinking-tag stripper, instruct-template UI override, sidebar Set POV vs Rewrite picker disambiguation, tray instruction-field early-wrap.
+
+**Carried into the next session:**
+
+1. **Tests 8 + 9 still never run on either writer.** Test 8 = Lorebook v1 editor live-test (the UI shipped today, never exercised). Test 9 = cross-cutting NSFW content-neutrality audit (much of it already validated by the running commentary during Tests 1–7, but the full checklist is worth a clean pass).
+2. **rewriteTense no-op-target detection** at the picker/handler — the one structural failure both Qwen and Gemma share. Detect tense in selection, disable matching-tense menu options OR short-circuit at click time.
+3. **Streaming-aware ThinkBlockStripper** — visible UX paper-cut now that user is committed to Gemma (which always emits the channel-thought block).
+4. **Phase 4.5 Bible Workspace** — the bigger UX redesign, multi-session.
+5. **Extractor coverage variance** + **subject-vs-character_id mis-attribution** stay parking-lot; haven't reproduced enough to justify a fix slice yet.
