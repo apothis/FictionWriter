@@ -38,6 +38,26 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// Flipped from .thinking to .streaming on the first emitted token
     /// so the tray's busy indicator reflects "model has begun replying".
     private var firstTokenSeenThisGeneration: Bool = false
+
+    /// Phase 4 §15.10 — streaming-aware thinking-block stripper. The
+    /// post-finish `ThinkBlockStripper.strip` still runs as defence-
+    /// in-depth, but with Gemma 4 31B emitting `<|channel>thought…
+    /// <channel|>` on every generation, the user saw the tags +
+    /// thought body in the editor for ~60–120s before they got
+    /// stripped post-finish. This swallows the tag + body as it
+    /// streams. Reset on didStart.
+    private var streamingThinkStripper = StreamingThinkBlockStripper()
+    /// Cursor offset where the current generation's first visible
+    /// token landed. Captured from the first emit notification so
+    /// subsequent emits compute their insertion point against actual-
+    /// inserted-length rather than the coordinator's raw-token
+    /// offset (which counts tokens we swallowed).
+    private var streamingStartOffset: Int?
+    /// Total length of text actually inserted into the text view for
+    /// the current generation (raw token length minus swallowed
+    /// thinking-block content). Used at finish to reconstruct the
+    /// inserted range for the post-finish strip + acceptance.
+    private var streamingInsertedLength: Int = 0
     /// Suppresses re-entrant text writes when we programmatically swap
     /// the text storage on selection change OR when streamed tokens
     /// land at the cursor — neither should round-trip through
@@ -228,6 +248,9 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.firstTokenSeenThisGeneration = false
+            self?.streamingThinkStripper = StreamingThinkBlockStripper()
+            self?.streamingStartOffset = nil
+            self?.streamingInsertedLength = 0
             self?.trayView.setGenerationState(.thinking)
         }
         generationTokenObserver = NotificationCenter.default.addObserver(
@@ -235,16 +258,30 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             object: coordinator,
             queue: .main
         ) { [weak self] note in
-            guard let token = note.userInfo?["token"] as? String,
+            guard let self = self,
+                  let token = note.userInfo?["token"] as? String,
                   let offset = note.userInfo?["insertionOffset"] as? Int else { return }
-            // First token: flip the busy indicator from "thinking" to
-            // "streaming" so the user knows the model is actively
-            // replying (vs still pre-fill / KV-cache warming).
-            if let self = self, !self.firstTokenSeenThisGeneration {
+            // Capture the cursor position the first time any token
+            // arrives — that's where the inserted range begins
+            // regardless of whether the first tokens were thinking
+            // tags we ended up swallowing.
+            if self.streamingStartOffset == nil {
+                self.streamingStartOffset = offset
+            }
+            let visible = self.streamingThinkStripper.consume(token)
+            guard !visible.isEmpty else { return }
+            // First visible token (post-strip): flip the busy
+            // indicator from "thinking" to "streaming". Holding the
+            // flip until visible prose arrives means the tray says
+            // "Thinking…" while the thinking-block tokens stream
+            // invisibly, which matches what the user expects.
+            if !self.firstTokenSeenThisGeneration {
                 self.firstTokenSeenThisGeneration = true
                 self.trayView.setGenerationState(.streaming)
             }
-            self?.insertGeneratedToken(token, at: offset)
+            let insertAt = (self.streamingStartOffset ?? offset) + self.streamingInsertedLength
+            self.insertGeneratedToken(visible, at: insertAt)
+            self.streamingInsertedLength += (visible as NSString).length
         }
         generationFinishObserver = NotificationCenter.default.addObserver(
             forName: GenerationCoordinator.didFinishNotification,
@@ -862,11 +899,27 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private func handleGenerationFinish() {
         textView.isEditable = true
 
-        // Reconstruct the inserted range from the coordinator's
-        // running offset. We need this BEFORE writing back to the
-        // session so we can strip any <think>...</think> blocks
-        // that leaked past the prefill suppression.
-        let nsLength = (coordinator.insertedText as NSString).length
+        // Phase 4 §15.10 — flush any residue held back by the
+        // streaming stripper (e.g. unclosed thinking block, or a
+        // safe-prefix that was still in flight when the stream
+        // ended). The flushed text is appended at the end of the
+        // already-inserted range so the post-finish strip sees the
+        // complete picture.
+        let residue = streamingThinkStripper.flush()
+        if !residue.isEmpty {
+            let insertAt = (streamingStartOffset ?? 0) + streamingInsertedLength
+            insertGeneratedToken(residue, at: insertAt)
+            streamingInsertedLength += (residue as NSString).length
+        }
+
+        // Reconstruct the inserted range from our streaming tracker,
+        // not the coordinator's offset — the coordinator counts raw
+        // emitted tokens including ones we swallowed inside thinking
+        // blocks; the tracker counts only what landed in the text
+        // view. The post-finish ThinkBlockStripper still runs as
+        // defence-in-depth (handles any edge case the streaming
+        // state machine missed; unclosed leaks would survive both).
+        let nsLength = streamingInsertedLength
         guard nsLength > 0 else {
             if let id = session.currentSceneId {
                 session.updateProse(id: id, prose: textView.string)
@@ -876,7 +929,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             return
         }
         var insertedRange = NSRange(
-            location: coordinator.insertionOffset - nsLength,
+            location: streamingStartOffset ?? (coordinator.insertionOffset - nsLength),
             length: nsLength
         )
         insertedRange = stripThinkBlocks(in: insertedRange)
