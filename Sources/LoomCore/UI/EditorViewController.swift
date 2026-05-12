@@ -981,7 +981,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             // at the same location.
             if let saved = lastSelectionContext,
                let mode = lastInvokedMode,
-               (mode == .expand || mode == .rewrite)
+               mode.isSelectionReplacing
             {
                 reinsertOriginalSelection(saved)
                 DebugLog.shared.write("[editor] reject: restored original selection (mode=\(mode.rawValue))")
@@ -994,7 +994,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             removeRange(range, label: "redo")
             let savedInstruction = lastPerCallInstruction
             let perCall: String? = savedInstruction.isEmpty ? nil : savedInstruction
-            if mode == .expand || mode == .rewrite,
+            if mode.isSelectionReplacing,
                let saved = lastSelectionContext
             {
                 // Re-insert the original passage at the deletion point
