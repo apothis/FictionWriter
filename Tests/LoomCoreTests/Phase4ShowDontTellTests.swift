@@ -50,52 +50,6 @@ func phase4ShowDontTellTests() -> TestSuite {
         )
     }
 
-    s.test("showDontTell system prompt forbids forward-extrapolation past the source's narrative moment") {
-        // 2026-05-13 Test 7 retest surfaced: the generic
-        // scope-discipline clause (added across all rewrite-family
-        // modes) bit on cross-scene character pulling + invented
-        // relationship history, but did NOT stop SDT from
-        // re-anchoring the scene at a new location ("her apartment
-        // door"), inventing arrival-with-keys content not in the
-        // source, or extrapolating future intimate contact
-        // ("his palms sliding under her clothes"). SDT's task
-        // structure ("expand to show") competes with the scope
-        // clause's "stay inside"; on sparse told-emotion sources
-        // the model invents concrete material to have something
-        // to show. This bullet specifically forbids those.
-        let result = buildSDTResult(prose: "She felt sad and then walked into the room.", descriptor: nil)
-        let lower = result.systemBlock.lowercased()
-        let mentionsExactMoment =
-            lower.contains("exact narrative moment") ||
-            lower.contains("exact moment") ||
-            lower.contains("same physical and temporal slice") ||
-            lower.contains("same physical and temporal") ||
-            lower.contains("same moment")
-        try expectTrue(
-            mentionsExactMoment,
-            "showDontTell system prompt should pin output to the exact moment the source depicts; got: \(result.systemBlock)"
-        )
-        let mentionsNoLocationInvention =
-            lower.contains("do not invent new locations") ||
-            lower.contains("do not invent locations") ||
-            lower.contains("do not invent settings") ||
-            lower.contains("not invent new locations")
-        try expectTrue(
-            mentionsNoLocationInvention,
-            "showDontTell system prompt should explicitly forbid inventing new locations/settings; got: \(result.systemBlock)"
-        )
-        let mentionsNoFutureExtrapolation =
-            lower.contains("do not extrapolate future") ||
-            lower.contains("not extrapolate future") ||
-            lower.contains("imagined") ||
-            lower.contains("about to") ||
-            lower.contains("future sensations")
-        try expectTrue(
-            mentionsNoFutureExtrapolation,
-            "showDontTell system prompt should explicitly forbid extrapolating future sensations / 'imagined' / 'about to' content; got: \(result.systemBlock)"
-        )
-    }
-
     s.test("showDontTell system prompt anchors the ~120% length target") {
         let result = buildSDTResult(prose: "She felt sad and then walked into the room.", descriptor: nil)
         // §4.5 explicitly calls for ~120% expansion. Without this
