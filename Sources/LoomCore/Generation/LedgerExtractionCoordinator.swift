@@ -80,6 +80,15 @@ public final class LedgerExtractionCoordinator {
 
     private var baselines: [UUID: Int] = [:]
     private var pendingSceneId: UUID?
+    /// Per-scene in-flight guard (2026-05-13 live-test fix). The 2s
+    /// debounce collapses keystroke bursts BEFORE fire, but once the
+    /// URLSession is off (production extractions take 50–100s), more
+    /// keystrokes inside that window otherwise spawn a concurrent
+    /// fire on the same scene. The user saw this as two identical
+    /// fact sets in the queue on the same scene. Guard is per-scene
+    /// (a different scene in a different state is independent
+    /// content + can extract in parallel without conflict).
+    private var inFlightSceneIds: Set<UUID> = []
 
     public init(
         extractorProvider: @escaping () -> LedgerExtractor?,
@@ -126,6 +135,16 @@ public final class LedgerExtractionCoordinator {
     private func fire() {
         guard let sceneId = pendingSceneId else { return }
         pendingSceneId = nil
+        if inFlightSceneIds.contains(sceneId) {
+            // A previous extraction on this scene is still resolving.
+            // Suppress concurrent fires — the user's typing-burst will
+            // re-trip the threshold after completion (provided the
+            // delta accumulated past the new baseline), and the next
+            // evaluate-flush cycle will fire a fresh extraction
+            // against the latest prose state then.
+            DebugLog.shared.write("[ledger] skipping side-call: extraction already in flight for scene=\(sceneId)")
+            return
+        }
         guard let extractor = extractorProvider() else {
             DebugLog.shared.write("[ledger] skipping side-call: no extractor profile configured")
             return
@@ -136,9 +155,11 @@ public final class LedgerExtractionCoordinator {
         }
         let scenePose = snapshot.prose
         let postWordCount = WordCount.count(scenePose)
+        inFlightSceneIds.insert(sceneId)
         DebugLog.shared.write("[ledger] firing side-call: scene=\(sceneId) words=\(postWordCount) characters=\(snapshot.characters.count)")
         extractor.extract(scenePose: scenePose, characters: snapshot.characters) { [weak self] result in
             guard let self = self else { return }
+            self.inFlightSceneIds.remove(sceneId)
             switch result {
             case .success(let facts):
                 self.baselines[sceneId] = postWordCount

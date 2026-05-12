@@ -206,5 +206,119 @@ func phase4LedgerExtractionCoordinatorTests() -> TestSuite {
         try expectEqual(extractor.calls.count, 0)
     }
 
+    // MARK: - In-flight guard (Phase 4 #7 2026-05-13 live-test fix)
+
+    // Deferred stub for testing the in-flight window. Production
+    // extracts take 50–100 seconds; the existing StubExtractor
+    // completes synchronously inside `extract(...)` and so doesn't
+    // exercise the window where the URLSession is pending. This stub
+    // stores completions for explicit `flush(_:at:)` resolution per
+    // the `feedback_tdd_async_callbacks` memory.
+    final class DeferredStubExtractor: LedgerExtractor {
+        var calls: [(prose: String, characters: [LedgerExtraction.CharacterRef])] = []
+        var pending: [(Result<[LedgerExtraction.ExtractedFact], Error>) -> Void] = []
+        func extract(
+            scenePose: String,
+            characters: [LedgerExtraction.CharacterRef],
+            completion: @escaping (Result<[LedgerExtraction.ExtractedFact], Error>) -> Void
+        ) {
+            calls.append((scenePose, characters))
+            pending.append(completion)
+        }
+        func flushAll(_ result: Result<[LedgerExtraction.ExtractedFact], Error>) {
+            let snapshot = pending
+            pending = []
+            for c in snapshot { c(result) }
+        }
+    }
+
+    s.test("evaluate during an in-flight extraction does NOT fire a second extract on the same scene") {
+        let extractor = DeferredStubExtractor()
+        let sched = ManualScheduler()
+        let coord = makeCoordinator(
+            extractor: extractor, scheduler: sched,
+            sceneProse: sampleProse, characters: sampleCharacters
+        )
+        let sceneId = UUID()
+        // First trip the threshold + flush — extract is now in flight
+        // (completion held by the deferred stub).
+        coord.evaluate(sceneId: sceneId, currentWordCount: 250)
+        sched.flush()
+        try expectEqual(extractor.calls.count, 1)
+        try expectEqual(extractor.pending.count, 1)
+        // While the first extraction is still pending, more typing
+        // re-trips the threshold. The debounced timer fires again —
+        // but the coordinator must NOT start a second concurrent
+        // extract on the same scene.
+        coord.evaluate(sceneId: sceneId, currentWordCount: 500)
+        sched.flush()
+        try expectEqual(extractor.calls.count, 1,
+            "second concurrent extract on the same scene must be suppressed while one is in flight")
+        try expectEqual(extractor.pending.count, 1)
+    }
+
+    s.test("after the in-flight extraction completes, a subsequent evaluate CAN re-fire") {
+        let extractor = DeferredStubExtractor()
+        let sched = ManualScheduler()
+        let coord = makeCoordinator(
+            extractor: extractor, scheduler: sched,
+            sceneProse: sampleProse, characters: sampleCharacters
+        )
+        let sceneId = UUID()
+        coord.evaluate(sceneId: sceneId, currentWordCount: 250)
+        sched.flush()
+        try expectEqual(extractor.calls.count, 1)
+        // Complete the first extraction. The in-flight flag should
+        // clear so the next evaluate can fire normally.
+        extractor.flushAll(.success([]))
+        // Need to overcome the new baseline (which equals the prose's
+        // word count post-success). Trip the threshold from there.
+        let postWordCount = WordCount.count(sampleProse)
+        coord.evaluate(sceneId: sceneId, currentWordCount: postWordCount + 250)
+        sched.flush()
+        try expectEqual(extractor.calls.count, 2)
+    }
+
+    s.test("different scene can fire concurrently with another scene's in-flight extraction") {
+        let extractor = DeferredStubExtractor()
+        let sched = ManualScheduler()
+        let coord = makeCoordinator(
+            extractor: extractor, scheduler: sched,
+            sceneProse: sampleProse, characters: sampleCharacters
+        )
+        let sceneA = UUID()
+        let sceneB = UUID()
+        coord.evaluate(sceneId: sceneA, currentWordCount: 250)
+        sched.flush()
+        try expectEqual(extractor.calls.count, 1)
+        // Scene B is independent — the in-flight guard is per-scene,
+        // not global. User can edit a different scene while another's
+        // extraction is still resolving.
+        coord.evaluate(sceneId: sceneB, currentWordCount: 250)
+        sched.flush()
+        try expectEqual(extractor.calls.count, 2,
+            "in-flight extraction on scene A must not block extraction on scene B")
+    }
+
+    s.test("in-flight failure clears the guard so the next evaluate can re-fire") {
+        let extractor = DeferredStubExtractor()
+        let sched = ManualScheduler()
+        let coord = makeCoordinator(
+            extractor: extractor, scheduler: sched,
+            sceneProse: sampleProse, characters: sampleCharacters
+        )
+        let sceneId = UUID()
+        coord.evaluate(sceneId: sceneId, currentWordCount: 250)
+        sched.flush()
+        try expectEqual(extractor.calls.count, 1)
+        // Fail the in-flight call. Baseline is NOT updated, but the
+        // in-flight guard MUST clear — otherwise a transient failure
+        // permanently wedges the scene.
+        extractor.flushAll(.failure(NSError(domain: "stub", code: 1)))
+        coord.evaluate(sceneId: sceneId, currentWordCount: 250)
+        sched.flush()
+        try expectEqual(extractor.calls.count, 2)
+    }
+
     return s
 }
