@@ -21,6 +21,15 @@ public struct PromptContext {
     /// Empty or nil → no layer added.
     public var perCallInstruction: String?
 
+    /// Style-RAG retrieved exemplars (Phase 5). The caller (typically
+    /// the generation coordinator) runs `RetrievalService.retrieve`
+    /// against the project's reference corpus for the scene-in-progress,
+    /// then passes the top-K StyleExemplars in here. PromptBuilder
+    /// formats them as a [STYLE EXEMPLARS] block in the user message,
+    /// below the cache boundary, just before recent prose so they
+    /// prime the model's voice. Empty (default) → no layer added.
+    public var styleExemplars: [StyleExemplar]
+
     public init(
         mode: GenerationMode,
         project: Project,
@@ -31,7 +40,8 @@ public struct PromptContext {
         modelName: String?,
         contextBudgetTokens: Int,
         replyBudgetTokens: Int,
-        perCallInstruction: String? = nil
+        perCallInstruction: String? = nil,
+        styleExemplars: [StyleExemplar] = []
     ) {
         self.mode = mode
         self.project = project
@@ -43,6 +53,7 @@ public struct PromptContext {
         self.contextBudgetTokens = contextBudgetTokens
         self.replyBudgetTokens = replyBudgetTokens
         self.perCallInstruction = perCallInstruction
+        self.styleExemplars = styleExemplars
     }
 }
 
@@ -400,6 +411,33 @@ public enum PromptBuilder {
                     evictionPriority: 70
                 ))
             }
+        }
+
+        // Phase 5 — Style exemplars layer. Retrieved style-similar
+        // chunks from the project's reference texts (hybrid D + E via
+        // RetrievalService, RRF-merged top-K, per
+        // [LOOM_RAG_SPIKE.md §13.8](../../LOOM_RAG_SPIKE.md)). Below
+        // cache because retrieval is per-call (depends on the scene-
+        // in-progress). Placed before recent-prose so it primes the
+        // model's voice before it sees the user's text. Lower
+        // eviction priority than the bible/knowledge layers — style
+        // is the nice-to-have; under budget pressure drop it first.
+        if !context.styleExemplars.isEmpty {
+            let formatted = StyleExemplarsLayer.format(context.styleExemplars)
+            layers.append(Layer(
+                kind: .fewShotStyleExample,
+                label: "Style exemplars (\(context.styleExemplars.count))",
+                content: formatted,
+                tokens: TokenEstimator.estimate(formatted),
+                aboveCache: false,
+                sourceId: nil,
+                // Lower than bible-keyed (50), lorebook-keyed (40),
+                // knowledge-ledger (70) — style exemplars are
+                // empirically valuable (LOOM_RAG_SPIKE §13.8: hybrid
+                // NDCG@3 0.926) but evictable; the underlying
+                // generation works without them.
+                evictionPriority: 30
+            ))
         }
 
         let trimmedAN = an.trimmingCharacters(in: .whitespacesAndNewlines)
