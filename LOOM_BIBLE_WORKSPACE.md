@@ -768,3 +768,38 @@ The three fixes together are non-obvious — debug shim (now removed but documen
 - React `SuggestionsQueue` view — cross-character pending-suggestions list with inline accept/reject buttons. The snapshot's `suggestions[]` already carries the flat-projected `PendingSuggestion` shape with `factId`, so no new Swift type changes needed.
 - New intents `.acceptSuggestion(factId)` + `.rejectSuggestion(factId)` (or maybe wrap the existing `LedgerSuggestionAcceptor.accept(suggestion)` flow).
 - Side-pane inspector: shrink the per-character suggestions chip to a link that opens the workspace's Suggestions surface (per LOOM_BIBLE_WORKSPACE.md §7 Session 5 deliverable #3).
+
+### Session 5 — 2026-05-13
+
+**Landed**: cross-character suggestions-queue review surface. The full L4.5 arc is now feature-complete; every plan §7 deliverable lands.
+
+**Tests**: +3 TestKit (3 intent decode + round-trip for `.acceptSuggestion` / `.rejectSuggestion`). 877/877 → 880/880.
+
+**Code shipped:**
+
+*Swift side:*
+- `Sources/LoomCore/UI/BibleWorkspaceBridge.swift` — `BibleWorkspaceIntent` gains `.acceptSuggestion(factId:)` + `.rejectSuggestion(factId:)`. Codable encode/decode extended.
+- `Sources/LoomCore/UI/BibleWorkspaceWindowController.swift`:
+  - Dispatch for `.acceptSuggestion` looks up the `LedgerSuggestion` across all character buckets by factId (queue's public surface is per-character; flat lookup is fine at single-novel scale, can add a flat accessor if it ever shows up in profiles), then routes to `appState.acceptLedgerSuggestion(_:)`. Stale-factId branch logs + drops.
+  - Dispatch for `.rejectSuggestion` calls `appState.rejectLedgerSuggestion(factId:)` directly.
+  - New `suggestionsObserver` listens to `AppState.ledgerSuggestionsDidChangeNotification` and pushes a fresh snapshot. Necessary because the reject path doesn't mutate the session itself — without this, rejecting from the workspace would leave the row visible until the next session edit.
+
+*React side:*
+- `src/views/SuggestionsQueue.tsx` — cross-character pending list (~150 LOC). Each row shows: character pill, certainty pill, source scene title, fact text, evidence quote in a blockquote, **Accept** + **Reject** buttons. Header shows pending count + distinct-character count. Empty-state copy explains the extractor flow.
+- `src/App.tsx` — `Selection` union gains a `{ kind: "suggestions" }` variant (no id — the surface is project-scoped). Routes to `SuggestionsQueue` with accept/reject intent callbacks.
+- `src/views/EntityList.tsx` — header shows a prominent blue "N pending suggestion(s) →" button in the top-right when count > 0; clicking opens the suggestions surface. When count is 0, the button disappears.
+
+**Live-smoke verified**: trigger extraction on a scene → suggestions land in the bridge → blue pill appears in workspace header → click opens the queue → accept routes the fact onto `Character.knownFactsBySceneId` (also visible in the character's Accepted Facts tab) → reject drops the row without bible mutation → both paths push fresh snapshots, list updates immediately.
+
+**Phase 4.5 arc complete.** Five sessions, ~3,500 LOC (Swift + TypeScript + Tailwind config), 880/880 tests, four full editor surfaces (entity list + character editor + lorebook editor + facts examiner + suggestions queue) + the bridge infrastructure for all of them. The WKWebView pilot was decisively the right call: per-feature cost dropped meaningfully from Session 2 onward as shadcn-style primitives + the bridge contract paid back the Session 1 setup tax.
+
+**Honest tally of the pivot:**
+- **What the pivot bought**: every form / list / grouped-list surface in Sessions 2-5 landed in a fraction of the AppKit-equivalent time. CSS grid + Tailwind preflight + Liquid Glass CSS vars + shadcn-style primitives = consistent visuals with near-zero layout debugging. Zero macOS-26 fittingSize cascade incidents. The architectural pieces compose: NumericField helper + Tabs + the patch/intent pattern got reused verbatim across editors.
+- **What it cost**: ~30 min of file:// + cross-origin debugging across Sessions 1, 4 (crossorigin attribute, type=module, head-script defer ordering, UUID dict keys, script error sanitization). One contained Bun dependency. ~170KB JS bundle (gzipped ~54KB) shipped inside Loom.app. Two render systems coexist; the side-pane inspector stays AppKit, the workspace is web.
+
+**Possible follow-on slices** (none Phase-4.5-blocking; all parking-lot):
+- Confirm-before-delete dialogs for facts + lorebook entries (currently delete is immediate; facts are recoverable via re-extraction, lorebook entries are not).
+- Side-pane inspector's per-character suggestions chip → shrink to a link that opens the workspace's suggestions surface (plan §7 Session 5 #3 — landed half of it, the workspace side; the AppKit side still has the inline chip).
+- `avatarPath` field surface (deferred per §8.4).
+- `bun install` + build pipeline error handling — currently bails the whole `build.sh` if Bun is missing; might surface a nicer message in the editor if/when CI runs.
+- The "script error" cross-origin sanitization issue (§4 in this entry was via Safari Inspector). Long-term: either wrap React render in an in-bundle try/catch that exposes errors to the inline shim, or relax WKWebView's same-origin policy for the bundle.

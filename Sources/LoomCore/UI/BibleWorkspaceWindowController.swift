@@ -25,6 +25,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
     private let webView: WKWebView
     private var didChangeObserver: NSObjectProtocol?
     private var didReplaceObserver: NSObjectProtocol?
+    private var suggestionsObserver: NSObjectProtocol?
 
     public init(session: ProjectSession, appState: AppState) {
         self.session = session
@@ -92,6 +93,19 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             self.window?.title = "Bible Workspace — \(session.project.title)"
             self.pushSnapshot()
         }
+        // Phase 4.5 Session 5 — the suggestions queue is mutated
+        // through AppState's accept/reject API which posts its own
+        // notification (NOT ProjectSession.didChange). Without this
+        // observer, rejecting a suggestion from the workspace
+        // wouldn't trigger a snapshot push and the row would
+        // linger until the next session edit.
+        suggestionsObserver = NotificationCenter.default.addObserver(
+            forName: AppState.ledgerSuggestionsDidChangeNotification,
+            object: appState,
+            queue: .main
+        ) { [weak self] _ in
+            self?.pushSnapshot()
+        }
     }
 
     @available(*, unavailable) public required init?(coder: NSCoder) { nil }
@@ -99,6 +113,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
     deinit {
         if let o = didChangeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = didReplaceObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = suggestionsObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     // MARK: - Content loading
@@ -248,6 +263,29 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         case .deleteKnownFact(let characterId, let sceneId, let factId):
             session.removeKnownFact(characterId: characterId, sceneId: sceneId, factId: factId)
             DebugLog.shared.write("[workspace] deleteKnownFact character=\(characterId) scene=\(sceneId) fact=\(factId)")
+        case .acceptSuggestion(let factId):
+            // Look up the LedgerSuggestion by factId across all
+            // character buckets. The queue's flat surface
+            // (suggestions(forCharacter:) per id) means we have to
+            // sweep; for working-novel scale (<100 pending
+            // suggestions) this is fine. If it ever becomes hot,
+            // add a flat `all()` accessor.
+            var found: LedgerSuggestion? = nil
+            for character in session.project.bible.characters {
+                if let match = appState.ledgerSuggestionsQueue.suggestions(forCharacter: character.id).first(where: { $0.fact.id == factId }) {
+                    found = match
+                    break
+                }
+            }
+            if let suggestion = found {
+                appState.acceptLedgerSuggestion(suggestion)
+                DebugLog.shared.write("[workspace] acceptSuggestion factId=\(factId)")
+            } else {
+                DebugLog.shared.write("[workspace] acceptSuggestion ignored — stale factId=\(factId)")
+            }
+        case .rejectSuggestion(let factId):
+            appState.rejectLedgerSuggestion(factId: factId)
+            DebugLog.shared.write("[workspace] rejectSuggestion factId=\(factId)")
         }
     }
 

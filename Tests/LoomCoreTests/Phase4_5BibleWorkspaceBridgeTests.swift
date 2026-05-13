@@ -249,5 +249,43 @@ func phase4_5BibleWorkspaceBridgeTests() -> TestSuite {
         try expectEqual(decoded, intent)
     }
 
+    // MARK: - Session 5 intents (Phase 4.5 §7) — suggestions queue
+
+    s.test("decodeIntent on acceptSuggestion yields the expected case") {
+        let factId = UUID()
+        let json = "{\"kind\":\"acceptSuggestion\",\"factId\":\"\(factId.uuidString)\"}"
+        let intent = try BibleWorkspaceBridge.decodeIntent(Data(json.utf8))
+        switch intent {
+        case .acceptSuggestion(let decodedFactId):
+            try expectEqual(decodedFactId, factId)
+        default:
+            try expect(false, "expected .acceptSuggestion")
+        }
+    }
+
+    s.test("decodeIntent on rejectSuggestion yields the expected case") {
+        let factId = UUID()
+        let json = "{\"kind\":\"rejectSuggestion\",\"factId\":\"\(factId.uuidString)\"}"
+        let intent = try BibleWorkspaceBridge.decodeIntent(Data(json.utf8))
+        switch intent {
+        case .rejectSuggestion(let decodedFactId):
+            try expectEqual(decodedFactId, factId)
+        default:
+            try expect(false, "expected .rejectSuggestion")
+        }
+    }
+
+    s.test("acceptSuggestion + rejectSuggestion round-trip through encode/decode") {
+        let factId = UUID()
+        for intent in [
+            BibleWorkspaceIntent.acceptSuggestion(factId: factId),
+            BibleWorkspaceIntent.rejectSuggestion(factId: factId),
+        ] {
+            let data = try JSONEncoder().encode(intent)
+            let decoded = try BibleWorkspaceBridge.decodeIntent(data)
+            try expectEqual(decoded, intent)
+        }
+    }
+
     return s
 }

@@ -15,6 +15,7 @@ interface Props {
   onSelectCharacter: (id: string) => void;
   onSelectLorebookEntry: (id: string) => void;
   onAddLorebookEntry: () => void;
+  onOpenSuggestions: () => void;
 }
 
 export function EntityList({
@@ -22,10 +23,11 @@ export function EntityList({
   onSelectCharacter,
   onSelectLorebookEntry,
   onAddLorebookEntry,
+  onOpenSuggestions,
 }: Props) {
   return (
     <div className="flex h-full flex-col">
-      <Header snapshot={snapshot} />
+      <Header snapshot={snapshot} onOpenSuggestions={onOpenSuggestions} />
       <div className="flex-1 overflow-auto">
         <Section title="Characters" count={snapshot.characters.length}>
           {snapshot.characters.length === 0 ? (
@@ -73,7 +75,14 @@ export function EntityList({
   );
 }
 
-function Header({ snapshot }: { snapshot: BibleWorkspaceSnapshot }) {
+function Header({
+  snapshot,
+  onOpenSuggestions,
+}: {
+  snapshot: BibleWorkspaceSnapshot;
+  onOpenSuggestions: () => void;
+}) {
+  const pendingCount = snapshot.suggestions.length;
   return (
     <div className="flex items-baseline justify-between border-b border-loom-border px-6 py-4">
       <div>
@@ -83,16 +92,17 @@ function Header({ snapshot }: { snapshot: BibleWorkspaceSnapshot }) {
         <p className="mt-0.5 text-xs text-loom-fg-tertiary">
           {snapshot.scenes.length} scene
           {snapshot.scenes.length === 1 ? "" : "s"}
-          {snapshot.suggestions.length > 0 && (
-            <> · {snapshot.suggestions.length} pending suggestion
-              {snapshot.suggestions.length === 1 ? "" : "s"}
-            </>
-          )}
         </p>
       </div>
-      <span className="text-[10px] uppercase tracking-wider text-loom-fg-tertiary">
-        Read-only · Session 1
-      </span>
+      {pendingCount > 0 && (
+        <button
+          type="button"
+          onClick={onOpenSuggestions}
+          className="rounded-md border border-loom-accent/40 bg-loom-accent/10 px-3 py-1.5 text-xs font-medium text-loom-accent hover:bg-loom-accent/20 focus:outline-none focus:ring-1 focus:ring-loom-accent"
+        >
+          {pendingCount} pending suggestion{pendingCount === 1 ? "" : "s"} →
+        </button>
+      )}
     </div>
   );
 }

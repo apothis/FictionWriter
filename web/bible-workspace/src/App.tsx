@@ -8,15 +8,17 @@ import { postIntent, subscribeToSnapshots } from "./bridge";
 import { EntityList } from "./views/EntityList";
 import { CharacterEditor } from "./views/CharacterEditor";
 import { LorebookEditor } from "./views/LorebookEditor";
+import { SuggestionsQueue } from "./views/SuggestionsQueue";
 
-// Top-level routing — extended in Session 3 with a `lorebook`
-// selection kind. The selection shape keeps the same pattern as
-// `character` so future entity types (factions, timeline events,
-// style sheets — per LOOM_BIBLE_WORKSPACE.md §3 future-proofing)
-// slot in cleanly.
+// Top-level routing. Sessions 2-5 extended the Selection union as
+// each editor surface landed. Session 5 adds a top-level
+// `suggestions` kind for the cross-character pending-suggestions
+// view — no id, since the surface lists all pending suggestions
+// across the project.
 type Selection =
   | { kind: "character"; id: string }
   | { kind: "lorebook"; id: string }
+  | { kind: "suggestions" }
   | null;
 
 export function App() {
@@ -37,11 +39,7 @@ export function App() {
 
   if (selection?.kind === "character") {
     const character = snapshot.characters.find((c) => c.id === selection.id);
-    if (!character) {
-      // Stale selection (character deleted out of band) — fall back
-      // to the list rather than rendering a stale empty form.
-      return renderList();
-    }
+    if (!character) return renderList();
     return (
       <CharacterEditor
         character={character}
@@ -65,9 +63,7 @@ export function App() {
 
   if (selection?.kind === "lorebook") {
     const entry = snapshot.lorebook.find((e) => e.id === selection.id);
-    if (!entry) {
-      return renderList();
-    }
+    if (!entry) return renderList();
     return (
       <LorebookEditor
         entry={entry}
@@ -83,6 +79,19 @@ export function App() {
     );
   }
 
+  if (selection?.kind === "suggestions") {
+    return (
+      <SuggestionsQueue
+        suggestions={snapshot.suggestions}
+        characters={snapshot.characters}
+        scenes={snapshot.scenes}
+        onAccept={(factId: string) => postIntent({ kind: "acceptSuggestion", factId })}
+        onReject={(factId: string) => postIntent({ kind: "rejectSuggestion", factId })}
+        onBack={() => setSelection(null)}
+      />
+    );
+  }
+
   return renderList();
 
   function renderList() {
@@ -91,12 +100,8 @@ export function App() {
         snapshot={snapshot!}
         onSelectCharacter={(id) => setSelection({ kind: "character", id })}
         onSelectLorebookEntry={(id) => setSelection({ kind: "lorebook", id })}
+        onOpenSuggestions={() => setSelection({ kind: "suggestions" })}
         onAddLorebookEntry={() => {
-          // Match AppKit inspector's pattern: create with a sequential
-          // default name, user renames in the editor. Skips
-          // window.prompt (which silently no-ops in WKWebView
-          // without a WKUIDelegate) — better UX anyway, no modal
-          // interruption.
           const name = `Entry ${snapshot!.lorebook.length + 1}`;
           postIntent({ kind: "addLorebookEntry", name });
         }}
