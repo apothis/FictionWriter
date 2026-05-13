@@ -167,5 +167,133 @@ func phase5RagRankingMetricsTests() -> TestSuite {
         try expectEqual(ranking, [3, 5, 7])
     }
 
+    // MARK: - reciprocalRankFusion (Phase 5 D + E hybrid merge)
+
+    s.test("RRF on a single ranking is identity (degenerate single-path case)") {
+        let merged = RankingMetrics.reciprocalRankFusion(
+            rankings: [[1, 2, 3, 4]],
+            k: 10
+        )
+        try expectEqual(merged, [1, 2, 3, 4])
+    }
+
+    s.test("RRF on two identical rankings preserves the order") {
+        let merged = RankingMetrics.reciprocalRankFusion(
+            rankings: [[1, 2, 3, 4], [1, 2, 3, 4]],
+            k: 10
+        )
+        try expectEqual(merged, [1, 2, 3, 4])
+    }
+
+    s.test("RRF on two opposite rankings ranks the middle items highest") {
+        // ranking A: [1, 2, 3, 4]    (ranks 0,1,2,3 → 1/10, 1/11, 1/12, 1/13)
+        // ranking B: [4, 3, 2, 1]    (ranks 0,1,2,3 → 4 gets 1/10, 3 gets 1/11, etc)
+        //
+        // total scores:
+        //   1: 1/10 + 1/13 = 0.1769
+        //   2: 1/11 + 1/12 = 0.1742
+        //   3: 1/12 + 1/11 = 0.1742
+        //   4: 1/13 + 1/10 = 0.1769
+        //
+        // 1 + 4 tie, 2 + 3 tie. Tie-break by id ascending: [1, 4, 2, 3].
+        let merged = RankingMetrics.reciprocalRankFusion(
+            rankings: [[1, 2, 3, 4], [4, 3, 2, 1]],
+            k: 10
+        )
+        try expectEqual(merged, [1, 4, 2, 3])
+    }
+
+    s.test("RRF matches the hand-computed score formula 1/(k + rank)") {
+        // 2 paths, 3 items, k=10. Hand-computed scores:
+        // path A:  [10, 20, 30]
+        // path B:  [30, 10, 20]
+        //
+        // scores per item:
+        //   10: 1/(10+0) + 1/(10+1) = 0.1 + 0.0909 = 0.1909
+        //   20: 1/(10+1) + 1/(10+2) = 0.0909 + 0.0833 = 0.1742
+        //   30: 1/(10+2) + 1/(10+0) = 0.0833 + 0.1 = 0.1833
+        //
+        // Order: 10 (0.1909) > 30 (0.1833) > 20 (0.1742) → [10, 30, 20]
+        let merged = RankingMetrics.reciprocalRankFusion(
+            rankings: [[10, 20, 30], [30, 10, 20]],
+            k: 10
+        )
+        try expectEqual(merged, [10, 30, 20])
+    }
+
+    s.test("RRF item appearing in only one ranking gets only that ranking's contribution") {
+        // ranking A: [1, 2, 3]
+        // ranking B: [4]
+        // scores:
+        //   1: 1/(10+0) = 0.1
+        //   2: 1/(10+1) = 0.0909
+        //   3: 1/(10+2) = 0.0833
+        //   4: 1/(10+0) = 0.1
+        // 1 and 4 tie at 0.1; tie-break ascending id → [1, 4, 2, 3]
+        let merged = RankingMetrics.reciprocalRankFusion(
+            rankings: [[1, 2, 3], [4]],
+            k: 10
+        )
+        try expectEqual(merged, [1, 4, 2, 3])
+    }
+
+    s.test("RRF with k=60 (Cormack default) produces different ranking than k=10 on tied edges") {
+        // At k=60 the rank gradient is much flatter:
+        //   ranking A: [1, 2]     (1/(60+0), 1/(60+1))
+        //   ranking B: [2, 1]     (1/(60+0) for 2, 1/(60+1) for 1)
+        //   scores:
+        //     1: 1/60 + 1/61
+        //     2: 1/61 + 1/60
+        //   exact tie → tie-break by id → [1, 2]
+        //
+        // This test exists to pin that k is configurable and the
+        // formula is exact; the §13 production note explains why
+        // Loom uses k=10 over Cormack's 60.
+        let merged = RankingMetrics.reciprocalRankFusion(
+            rankings: [[1, 2], [2, 1]],
+            k: 60
+        )
+        try expectEqual(merged, [1, 2])
+    }
+
+    s.test("RRF with weights honours the per-path weighting") {
+        // Equal weight default behaves the same as no-weights.
+        let equal = RankingMetrics.reciprocalRankFusion(
+            rankings: [[1, 2], [2, 1]],
+            k: 10, weights: [0.5, 0.5]
+        )
+        let unweighted = RankingMetrics.reciprocalRankFusion(
+            rankings: [[1, 2], [2, 1]],
+            k: 10
+        )
+        try expectEqual(equal, unweighted)
+
+        // Asymmetric weight collapses to the higher-weighted ranking.
+        let bias = RankingMetrics.reciprocalRankFusion(
+            rankings: [[1, 2, 3], [3, 2, 1]],
+            k: 10, weights: [1.0, 0.0]
+        )
+        try expectEqual(bias, [1, 2, 3])
+    }
+
+    s.test("RRF returns empty array when given empty rankings") {
+        try expectEqual(
+            RankingMetrics.reciprocalRankFusion(rankings: [], k: 10),
+            []
+        )
+        try expectEqual(
+            RankingMetrics.reciprocalRankFusion(rankings: [[]], k: 10),
+            []
+        )
+    }
+
+    s.test("RRF returns the union of items across all input rankings") {
+        let merged = RankingMetrics.reciprocalRankFusion(
+            rankings: [[1, 2], [3, 4]],
+            k: 10
+        )
+        try expectEqual(Set(merged), Set([1, 2, 3, 4]))
+    }
+
     return s
 }

@@ -80,6 +80,58 @@ public enum RankingMetrics {
             .map { $0.0 }
     }
 
+    /// Reciprocal Rank Fusion — the Phase 5 hybrid merge policy
+    /// (LOOM_PLAN.md §5, scope-lock #4).
+    ///
+    /// Combines multiple per-path rankings into a single merged
+    /// ranking by summing `1 / (k + rank_i)` across each path the
+    /// item appears in. The merged ordering is descending by this
+    /// summed reciprocal-rank score; ties break by ascending item id.
+    ///
+    /// Defaults to `k = 10` rather than Cormack et al. 2009's `k = 60`
+    /// — the original tuning targeted TREC top-1000 deep rankings,
+    /// where a flatter rank gradient is appropriate. Loom retrieves
+    /// the top-3 over a small (~50-chunk) corpus where rank-1 hits
+    /// must dominate; `k = 10` keeps the contribution gap between
+    /// rank-1 and rank-10 wide enough to matter.
+    ///
+    /// `weights` is optional. When provided, each path's contribution
+    /// is multiplied by its weight (weighted-RRF). Must have the same
+    /// count as `rankings`. Pass `nil` for equal weights — the
+    /// Phase 5 default per LOOM_RAG_SPIKE §13 (D and E tie on NDCG
+    /// in the spike fixture; no learned weights to overfit on a
+    /// 16-decision sample).
+    ///
+    /// Items absent from a given path's ranking get zero contribution
+    /// from that path — they only score on the paths they appear in.
+    /// This is the score-blind property that makes RRF preserve E's
+    /// NSFW parity without smearing toward D's distribution.
+    public static func reciprocalRankFusion(
+        rankings: [[Int]],
+        k: Int = 10,
+        weights: [Double]? = nil
+    ) -> [Int] {
+        guard !rankings.isEmpty else { return [] }
+        let w: [Double] = weights ?? Array(repeating: 1.0, count: rankings.count)
+
+        var scores: [Int: Double] = [:]
+        for (pathIdx, ranking) in rankings.enumerated() {
+            let weight = pathIdx < w.count ? w[pathIdx] : 1.0
+            if weight == 0 { continue }
+            for (rank, id) in ranking.enumerated() {
+                let contribution = weight / Double(k + rank)
+                scores[id, default: 0] += contribution
+            }
+        }
+        return scores.keys
+            .sorted { a, b in
+                let sa = scores[a] ?? 0
+                let sb = scores[b] ?? 0
+                if sa != sb { return sa > sb }
+                return a < b
+            }
+    }
+
     /// Kendall's tau-a in [-1, 1]. Both inputs must be permutations
     /// of the same id universe. Returns 0 for trivial cases (length
     /// < 2) and as a defensive guard when the two rankings cover

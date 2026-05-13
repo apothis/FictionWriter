@@ -810,3 +810,45 @@ empirically defensible.
   sentence-length).
 - **Chunk-size sweep.** Defer to Phase 5 production over real
   multi-page reference corpora.
+
+### 13.8 Hybrid validation — RRF k=10 (Phase 5 scope-lock #4)
+
+Reproducible via `swift run RagSpike --hybrid` (no Kobold/Ollama
+calls — runs from the saved `vectors.json` produced by
+`embed_offline.py`). Per-path D + E baselines re-derived from the
+same vectors to keep the comparison apples-to-apples; the hybrid
+merge applies Reciprocal Rank Fusion at `k=10` with equal weights
+over the full 12-excerpt rankings.
+
+| Path                  | NDCG@3 | preference | NSFW hit | SFW hit |
+|-----------------------|--------|------------|----------|---------|
+| D-styledistance       | 0.883  | +0.833     | 0.750    | 1.000   |
+| E-funcword-z          | 0.883  | +0.750     | 1.000    | 0.500   |
+| **Hybrid D+E (RRF)**  | **0.926**  | **+0.917**     | **0.875**    | **1.000**   |
+
+Per-query, the hybrid never under-performs on preference and matches
+the better of D or E on NDCG@3 for three of four queries:
+
+```
+Q101 [S1/T1 NSFW]:  D=1.00  E=0.77  Hybrid=1.00   (recovers D's perfect)
+Q102 [S2/T2 NSFW]:  D=0.77  E=1.00  Hybrid=1.00   (recovers E's perfect)
+Q103 [S3/T1 NSFW]:  D=1.00  E=1.00  Hybrid=1.00   (consensus)
+Q104 [S4/T3 NSFW]:  D=0.77  E=0.77  Hybrid=0.70   (mild regression — id 2 sneaks in at pos 1)
+```
+
+The Q104 regression is small (a non-S4 item lands at rank 2 because
+both D and E rank it in their top-5) and the preference score stays
+unchanged at +0.67. Net: hybrid trades one ordering tweak on one query
+for substantial aggregate improvement.
+
+**NSFW parity is the load-bearing win.** D alone misses 25% of
+same-style NSFW available; the hybrid cuts that to 12.5% while
+preserving D's 100% SFW hit rate. The §3 Reddit-skew concern is
+materially attenuated.
+
+Production scope-lock #4 closes against **RRF k=10 with equal
+weights**. The §10 fallback ladder — convex combination + per-query
+z-score normalisation, then user-tag-driven weight shifts — stays
+available if real-corpus data later shows RRF's rank-only signal
+too coarse; both are trivial extensions of the existing
+`RankingMetrics.reciprocalRankFusion(rankings:k:weights:)` API.

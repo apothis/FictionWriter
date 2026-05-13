@@ -499,6 +499,124 @@ func corpus() -> Int32 {
     return 0
 }
 
+// MARK: - Hybrid retrieval validation (Phase 5 scope-lock #4)
+
+/// Loads D (StyleDistance) + E (function-word z-score) vectors from
+/// Tools/RagSpike/vectors.json, runs both as per-path top-12 rankings,
+/// merges via Reciprocal Rank Fusion (k=10, equal weights — the
+/// scope-lock #4 decision), and scores the hybrid alongside the
+/// individual paths. Behavioural validation that RRF preserves the
+/// §13.1 metrics without smearing toward one embedder.
+func hybrid() -> Int32 {
+    log("=== RagSpike --hybrid (D + E via RRF k=10) ===")
+    guard let fixture = loadFixture() else {
+        log("FATAL: could not load fixture")
+        return 1
+    }
+    guard let payload = loadPythonVectors() else {
+        log("FATAL: Tools/RagSpike/vectors.json missing — run python3 Tools/RagSpike/Python/embed_offline.py first")
+        return 1
+    }
+
+    func vectorsFor(_ pathPrefix: String) -> [Int: EmbeddingVector]? {
+        guard let block = payload.paths.first(where: { $0.path.hasPrefix(pathPrefix) }) else {
+            return nil
+        }
+        var out: [Int: EmbeddingVector] = [:]
+        for (idStr, arr) in block.vectors {
+            if let id = Int(idStr) { out[id] = EmbeddingVector(values: arr) }
+        }
+        return out
+    }
+
+    guard let dVecs = vectorsFor("D-styledistance"),
+          let eVecs = vectorsFor("E-funcword-z") else {
+        log("FATAL: missing D or E in vectors.json")
+        return 1
+    }
+
+    var pathResults: [PathResult] = []
+    pathResults.append(score(pathName: "D-styledistance", model: payload.paths[0].model,
+                              dim: dVecs.values.first?.dim ?? 0,
+                              fixture: fixture, vectors: dVecs))
+    pathResults.append(score(pathName: "E-funcword-z", model: "loom/funcword-z-top150",
+                              dim: eVecs.values.first?.dim ?? 0,
+                              fixture: fixture, vectors: eVecs))
+
+    // Hybrid scoring: for each query, rank under both paths, RRF
+    // merge, score the merged ranking against the same gold.
+    var hybridRankings: [(Int, [Int])] = []
+    var hybridNdcgs: [Double] = []
+    var hybridPrefs: [Double] = []
+    for query in fixture.queries {
+        guard let qD = dVecs[query.id], let qE = eVecs[query.id] else {
+            hybridRankings.append((query.id, []))
+            hybridNdcgs.append(0)
+            hybridPrefs.append(0)
+            continue
+        }
+        let dPairs: [(Int, EmbeddingVector)] = fixture.excerpts.compactMap {
+            guard let v = dVecs[$0.id] else { return nil }; return ($0.id, v)
+        }
+        let ePairs: [(Int, EmbeddingVector)] = fixture.excerpts.compactMap {
+            guard let v = eVecs[$0.id] else { return nil }; return ($0.id, v)
+        }
+        let dRank = RankingMetrics.rankExcerpts(query: qD, excerpts: dPairs)
+        let eRank = RankingMetrics.rankExcerpts(query: qE, excerpts: ePairs)
+        let merged = RankingMetrics.reciprocalRankFusion(
+            rankings: [dRank, eRank],
+            k: 10
+        )
+        hybridRankings.append((query.id, merged))
+
+        let styleMatch = Set(fixture.excerpts.filter { $0.style == query.style }.map { $0.id })
+        let topicMatch = Set(fixture.excerpts.filter { $0.topic == query.topic }.map { $0.id })
+        let ndcg = RankingMetrics.ndcg(at: 3, gold: styleMatch, ranking: merged)
+        let pref = RankingMetrics.styleTopicPreference(
+            top3: Array(merged.prefix(3)),
+            styleMatch: styleMatch,
+            topicMatch: topicMatch
+        )
+        hybridNdcgs.append(ndcg)
+        hybridPrefs.append(pref)
+    }
+    pathResults.append(PathResult(
+        name: "Hybrid D+E (RRF k=10)",
+        model: "loom/hybrid-rrf-k10",
+        dim: 0,
+        rankings: hybridRankings,
+        ndcgs: hybridNdcgs,
+        preferences: hybridPrefs
+    ))
+
+    // Report
+    log("")
+    log("=== Per-path aggregate (mean over 4 queries) ===")
+    log("| Path                     | NDCG@3 | preference | NSFW hit | SFW hit |")
+    log("|--------------------------|--------|------------|----------|---------|")
+    for r in pathResults {
+        let parity = nsfwParity(fixture: fixture, result: r)
+        let nameCol = r.name.padding(toLength: 24, withPad: " ", startingAt: 0)
+        log(String(format: "| %@ | %.3f  | %+.3f     | %.3f    | %.3f   |",
+                   nameCol, mean(r.ndcgs), mean(r.preferences),
+                   parity.nsfwHitRate, parity.sfwHitRate))
+    }
+
+    log("")
+    log("=== Per-query top-3 ===")
+    for (i, q) in fixture.queries.enumerated() {
+        log("Q\(q.id) [\(q.style)/\(q.topic), NSFW=\(q.nsfw ? "Y" : "N")]:")
+        for r in pathResults {
+            let nameCol = r.name.padding(toLength: 24, withPad: " ", startingAt: 0)
+            let top3 = Array(r.rankings[i].1.prefix(3)).map { String($0) }.joined(separator: ",")
+            log(String(format: "  %@ NDCG=%.2f pref=%+.2f top3=[%@]",
+                       nameCol, r.ndcgs[i], r.preferences[i], top3))
+        }
+        log("")
+    }
+    return 0
+}
+
 // MARK: - Funcword-Z Swift port cross-check (LOOM_RAG_SPIKE §13.6 graduation)
 
 /// One-time validation: embed the fixture via the Swift FuncwordZEmbedder
@@ -550,9 +668,12 @@ if args.contains("--smoke") {
     exit(corpus())
 } else if args.contains("--funcword-z-dump") {
     exit(dumpFuncwordZ())
+} else if args.contains("--hybrid") {
+    exit(hybrid())
 } else {
     log("usage: swift run RagSpike --smoke")
     log("       swift run RagSpike --corpus")
+    log("       swift run RagSpike --hybrid           (D+E via RRF — scope-lock #4)")
     log("       swift run RagSpike --funcword-z-dump   (LOOM_MLX_PORT_SPIKE §11 cross-check)")
     log("")
     log("env overrides:")
