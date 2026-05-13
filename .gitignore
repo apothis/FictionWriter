@@ -9,6 +9,7 @@ Tools/LedgerSpike/last-run/
 
 # Phase 5 RAG spike — venv + generated vectors are not committed.
 Tools/RagSpike/vectors.json
+Tools/RagSpike/last-run/
 Tools/RagSpike/Python/.venv/
 Tools/RagSpike/Python/__pycache__/
 

@@ -136,5 +136,36 @@ func phase5RagRankingMetricsTests() -> TestSuite {
         try expectEqual(v, 0.0)
     }
 
+    // MARK: - rankExcerpts (the eval-runner glue)
+
+    s.test("rankExcerpts orders excerpts by cosine similarity to the query (descending)") {
+        // Hand-constructed 2-d vectors: ids 1, 2, 3 along directions
+        // pointing in different parts of the plane; query parallel to id 2.
+        let query = EmbeddingVector(values: [1.0, 0.0])
+        let excerpts: [(Int, EmbeddingVector)] = [
+            (1, EmbeddingVector(values: [0.0, 1.0])),    // cosine 0 (orthogonal)
+            (2, EmbeddingVector(values: [1.0, 0.0])),    // cosine 1 (parallel)
+            (3, EmbeddingVector(values: [0.7, 0.7])),    // cosine ~0.707
+        ]
+        let ranking = RankingMetrics.rankExcerpts(query: query, excerpts: excerpts)
+        try expectEqual(ranking, [2, 3, 1])
+    }
+
+    s.test("rankExcerpts on empty excerpts returns empty") {
+        let query = EmbeddingVector(values: [1.0, 0.0])
+        try expectEqual(RankingMetrics.rankExcerpts(query: query, excerpts: []), [])
+    }
+
+    s.test("rankExcerpts breaks ties deterministically by id (lower id first)") {
+        let query = EmbeddingVector(values: [1.0, 0.0])
+        let excerpts: [(Int, EmbeddingVector)] = [
+            (5, EmbeddingVector(values: [1.0, 0.0])),
+            (3, EmbeddingVector(values: [1.0, 0.0])),
+            (7, EmbeddingVector(values: [1.0, 0.0])),
+        ]
+        let ranking = RankingMetrics.rankExcerpts(query: query, excerpts: excerpts)
+        try expectEqual(ranking, [3, 5, 7])
+    }
+
     return s
 }

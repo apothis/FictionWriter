@@ -228,17 +228,287 @@ func smoke() -> Int32 {
     return fails == 0 ? 0 : 1
 }
 
+// MARK: - Fixture types
+
+struct Fixture: Decodable {
+    let excerpts: [Item]
+    let queries: [Item]
+    struct Item: Decodable {
+        let id: Int
+        let style: String
+        let topic: String
+        let nsfw: Bool
+        let text: String
+    }
+}
+
+func loadFixture() -> Fixture? {
+    let cwd = FileManager.default.currentDirectoryPath
+    let url = URL(fileURLWithPath: cwd).appendingPathComponent("Tests/LoomCoreTests/Fixtures/RagSpike/fixture.json")
+    guard let data = try? Data(contentsOf: url) else { return nil }
+    return try? JSONDecoder().decode(Fixture.self, from: data)
+}
+
+// MARK: - Corpus mode
+
+/// Embed every item via the given path-name + embedder closure.
+/// Returns `[id: EmbeddingVector]`. Skips items where the embedder
+/// returns nil and logs the failure; the caller decides whether to
+/// proceed with a partial result.
+func embedAll(
+    _ items: [Fixture.Item],
+    label: String,
+    embedder: (String) -> EmbeddingVector?
+) -> [Int: EmbeddingVector] {
+    var result: [Int: EmbeddingVector] = [:]
+    for item in items {
+        guard let vec = embedder(item.text) else {
+            log("  [\(label)] FAIL on item \(item.id) (\(item.style)/\(item.topic))")
+            continue
+        }
+        result[item.id] = vec
+    }
+    return result
+}
+
+struct PathResult {
+    let name: String
+    let model: String
+    let dim: Int
+    /// Per-query: (queryId, ranked excerpt ids)
+    let rankings: [(Int, [Int])]
+    /// Per-query NDCG@3 (binary style-match) — same order as rankings.
+    let ndcgs: [Double]
+    /// Per-query style-vs-topic preference — same order.
+    let preferences: [Double]
+}
+
+func score(
+    pathName: String,
+    model: String,
+    dim: Int,
+    fixture: Fixture,
+    vectors: [Int: EmbeddingVector]
+) -> PathResult {
+    var rankings: [(Int, [Int])] = []
+    var ndcgs: [Double] = []
+    var preferences: [Double] = []
+
+    for query in fixture.queries {
+        guard let queryVec = vectors[query.id] else {
+            rankings.append((query.id, []))
+            ndcgs.append(0.0)
+            preferences.append(0.0)
+            continue
+        }
+        let excerptPairs: [(Int, EmbeddingVector)] = fixture.excerpts.compactMap { ex in
+            guard let v = vectors[ex.id] else { return nil }
+            return (ex.id, v)
+        }
+        let ranking = RankingMetrics.rankExcerpts(query: queryVec, excerpts: excerptPairs)
+        rankings.append((query.id, ranking))
+
+        // Gold: same-style excerpts.
+        let styleMatch = Set(fixture.excerpts.filter { $0.style == query.style }.map { $0.id })
+        let topicMatch = Set(fixture.excerpts.filter { $0.topic == query.topic }.map { $0.id })
+
+        let ndcg = RankingMetrics.ndcg(at: 3, gold: styleMatch, ranking: ranking)
+        ndcgs.append(ndcg)
+
+        let top3 = Array(ranking.prefix(3))
+        let pref = RankingMetrics.styleTopicPreference(
+            top3: top3,
+            styleMatch: styleMatch,
+            topicMatch: topicMatch
+        )
+        preferences.append(pref)
+    }
+
+    return PathResult(
+        name: pathName, model: model, dim: dim,
+        rankings: rankings, ndcgs: ndcgs, preferences: preferences
+    )
+}
+
+func mean(_ xs: [Double]) -> Double {
+    guard !xs.isEmpty else { return 0 }
+    return xs.reduce(0, +) / Double(xs.count)
+}
+
+/// NSFW-vs-SFW parity audit (LOOM_RAG_SPIKE §6 S5.5). For each NSFW
+/// query, compute how many of its top-3 same-style hits are NSFW vs
+/// SFW excerpts. A path that systematically deranks NSFW at equivalent
+/// style match is a production-relevant Loom-specific finding.
+func nsfwParity(fixture: Fixture, result: PathResult) -> (nsfwHitRate: Double, sfwHitRate: Double) {
+    // Across queries, count: of the top-3 same-style hits, what
+    // fraction are NSFW vs SFW excerpts? Compares against the
+    // fixture's same-style NSFW/SFW availability.
+    var nsfwHits = 0
+    var sfwHits = 0
+    var nsfwAvailable = 0
+    var sfwAvailable = 0
+    for (i, query) in fixture.queries.enumerated() {
+        let ranking = result.rankings[i].1
+        let top3 = Set(ranking.prefix(3))
+        let sameStyle = fixture.excerpts.filter { $0.style == query.style }
+        for ex in sameStyle {
+            if ex.nsfw { nsfwAvailable += 1 } else { sfwAvailable += 1 }
+            if top3.contains(ex.id) {
+                if ex.nsfw { nsfwHits += 1 } else { sfwHits += 1 }
+            }
+        }
+    }
+    let nsfwRate = nsfwAvailable > 0 ? Double(nsfwHits) / Double(nsfwAvailable) : 0
+    let sfwRate = sfwAvailable > 0 ? Double(sfwHits) / Double(sfwAvailable) : 0
+    return (nsfwRate, sfwRate)
+}
+
+func corpus() -> Int32 {
+    log("=== RagSpike --corpus ===")
+    guard let fixture = loadFixture() else {
+        log("FATAL: could not load fixture")
+        return 1
+    }
+    log("Fixture: \(fixture.excerpts.count) excerpts + \(fixture.queries.count) queries")
+    log("")
+
+    var pathResults: [PathResult] = []
+    let allItems = fixture.excerpts + fixture.queries
+
+    // Path A
+    log("[A] embedding \(allItems.count) items via Kobold nomic...")
+    let aStart = Date()
+    let aVecs = embedAll(allItems, label: "A") { embedKoboldNomic($0) }
+    log("  A: \(aVecs.count) vectors  \(String(format: "%.1fs", Date().timeIntervalSince(aStart)))")
+    pathResults.append(score(
+        pathName: "A-nomic", model: "kobold/nomic-embed-text",
+        dim: aVecs.values.first?.dim ?? 0,
+        fixture: fixture, vectors: aVecs
+    ))
+
+    // Path B (mxbai)
+    log("[B-mxbai] embedding via Ollama mxbai-embed-large...")
+    let bmStart = Date()
+    let bmVecs = embedAll(allItems, label: "B-mxbai") { embedOllama($0, model: ollamaModelMxbai) }
+    log("  B-mxbai: \(bmVecs.count) vectors  \(String(format: "%.1fs", Date().timeIntervalSince(bmStart)))")
+    pathResults.append(score(
+        pathName: "B-mxbai", model: "ollama/mxbai-embed-large",
+        dim: bmVecs.values.first?.dim ?? 0,
+        fixture: fixture, vectors: bmVecs
+    ))
+
+    // Path B (bge)
+    log("[B-bge] embedding via Ollama bge-large...")
+    let bgStart = Date()
+    let bgVecs = embedAll(allItems, label: "B-bge") { embedOllama($0, model: ollamaModelBge) }
+    log("  B-bge: \(bgVecs.count) vectors  \(String(format: "%.1fs", Date().timeIntervalSince(bgStart)))")
+    pathResults.append(score(
+        pathName: "B-bge", model: "ollama/bge-large",
+        dim: bgVecs.values.first?.dim ?? 0,
+        fixture: fixture, vectors: bgVecs
+    ))
+
+    // Path C (descriptor + nomic) — slow, ~6s per item, so warn first.
+    log("[C] descriptor distillation + nomic embed; ~\(allItems.count * 6)s expected...")
+    let cStart = Date()
+    let cVecs = embedAll(allItems, label: "C") { embedDescriptor($0) }
+    log("  C: \(cVecs.count) vectors  \(String(format: "%.1fs", Date().timeIntervalSince(cStart)))")
+    pathResults.append(score(
+        pathName: "C-descriptor", model: "kobold/gemma-4-31B+nomic (GBNF descriptor)",
+        dim: cVecs.values.first?.dim ?? 0,
+        fixture: fixture, vectors: cVecs
+    ))
+
+    // Paths D + E from Python sidecar
+    if let payload = loadPythonVectors() {
+        for p in payload.paths {
+            var vecs: [Int: EmbeddingVector] = [:]
+            for (idStr, arr) in p.vectors {
+                if let id = Int(idStr) {
+                    vecs[id] = EmbeddingVector(values: arr)
+                }
+            }
+            log("[\(p.path)] loaded \(vecs.count) vectors from vectors.json")
+            pathResults.append(score(
+                pathName: p.path, model: p.model, dim: p.dim,
+                fixture: fixture, vectors: vecs
+            ))
+        }
+    } else {
+        log("[D/E] vectors.json missing — run python3 Tools/RagSpike/Python/embed_offline.py first")
+    }
+
+    // Report
+    log("")
+    log("=== Per-path aggregate (mean over 4 queries) ===")
+    log("")
+    log("| Path                     | dim  | NDCG@3 | preference | NSFW hit | SFW hit |")
+    log("|--------------------------|------|--------|------------|----------|---------|")
+    for r in pathResults {
+        let avgNdcg = mean(r.ndcgs)
+        let avgPref = mean(r.preferences)
+        let parity = nsfwParity(fixture: fixture, result: r)
+        let nameCol = r.name.padding(toLength: 24, withPad: " ", startingAt: 0)
+        log(String(format: "| %@ | %4d | %.3f  | %+.3f     | %.3f    | %.3f   |",
+                   nameCol, r.dim, avgNdcg, avgPref, parity.nsfwHitRate, parity.sfwHitRate))
+    }
+
+    log("")
+    log("=== Per-query × per-path breakdown ===")
+    log("")
+    for (i, q) in fixture.queries.enumerated() {
+        log("Q\(q.id) [\(q.style)/\(q.topic), NSFW=\(q.nsfw ? "Y" : "N")]:")
+        for r in pathResults {
+            let nameCol = r.name.padding(toLength: 24, withPad: " ", startingAt: 0)
+            let top3 = Array(r.rankings[i].1.prefix(3)).map { String($0) }.joined(separator: ",")
+            log(String(format: "  %@ NDCG=%.2f  pref=%+.2f  top3=[%@]",
+                       nameCol, r.ndcgs[i], r.preferences[i], top3))
+        }
+        log("")
+    }
+
+    // Save raw rankings to last-run for follow-up analysis
+    let cwd = FileManager.default.currentDirectoryPath
+    let lastRunDir = URL(fileURLWithPath: cwd)
+        .appendingPathComponent("Tools/RagSpike/last-run")
+    try? FileManager.default.createDirectory(at: lastRunDir, withIntermediateDirectories: true)
+
+    // Dump per-path summary as JSON for downstream tooling
+    var dump: [[String: Any]] = []
+    for r in pathResults {
+        let parity = nsfwParity(fixture: fixture, result: r)
+        dump.append([
+            "path": r.name,
+            "model": r.model,
+            "dim": r.dim,
+            "ndcg_mean": mean(r.ndcgs),
+            "preference_mean": mean(r.preferences),
+            "ndcg_per_query": r.ndcgs,
+            "preference_per_query": r.preferences,
+            "rankings": r.rankings.map { ["query_id": $0.0, "ranking": $0.1] },
+            "nsfw_hit_rate": parity.nsfwHitRate,
+            "sfw_hit_rate": parity.sfwHitRate,
+        ])
+    }
+    let dumpURL = lastRunDir.appendingPathComponent("rankings.json")
+    if let data = try? JSONSerialization.data(withJSONObject: dump, options: [.prettyPrinted, .sortedKeys]) {
+        try? data.write(to: dumpURL)
+        log("Wrote \(dumpURL.path)")
+    }
+
+    return 0
+}
+
 // MARK: - Entry
 
 let args = CommandLine.arguments.dropFirst()
 if args.contains("--smoke") {
     exit(smoke())
 } else if args.contains("--corpus") {
-    log("--corpus mode lands in LOOM_RAG_SPIKE §6 S4. Not yet implemented.")
-    exit(2)
+    exit(corpus())
 } else {
     log("usage: swift run RagSpike --smoke")
-    log("       swift run RagSpike --corpus    (not yet implemented; S4)")
+    log("       swift run RagSpike --corpus")
     log("")
     log("env overrides:")
     log("  LOOM_SPIKE_BASE_URL   (default \(koboldURLString))")

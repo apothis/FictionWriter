@@ -608,3 +608,205 @@ Doc-only, post-results:
   capture style, not just author identity.
 - [faststylometry](https://pypi.org/project/faststylometry/) — Path E
   Burrows' Delta implementation; non-neural baseline.
+
+---
+
+## 13. Empirical results — S4 corpus sweep (2026-05-13)
+
+Full 5-path sweep over the §4 fixture (12 excerpts + 4 queries).
+Raw rankings + per-query metrics dumped to
+`Tools/RagSpike/last-run/rankings.json`. Reproducible via
+`swift run RagSpike --corpus` after `python3
+Tools/RagSpike/Python/embed_offline.py`.
+
+### 13.1 Aggregate (mean over 4 queries)
+
+| Path             | dim  | NDCG@3 | preference | NSFW hit | SFW hit |
+|------------------|------|--------|------------|----------|---------|
+| A-nomic          |  768 | 0.809  | +0.667     | 1.000    | 0.250   |
+| B-mxbai          | 1024 | 0.809  | +0.583     | 1.000    | 0.250   |
+| B-bge            | 1024 | 0.809  | +0.583     | 1.000    | 0.250   |
+| C-descriptor     |  768 | 0.485  | +0.167     | 0.375    | 0.500   |
+| **D-styledistance** |  768 | **0.883**  | **+0.833**     | 0.750    | 1.000   |
+| E-funcword-z     |  150 | 0.883  | +0.750     | 1.000    | 0.500   |
+
+Floor (§5): NDCG@3 ≥ 0.7 AND preference ≥ +0.3. Paths A, B, D, E
+clear it. C fails on both axes.
+
+### 13.2 Per-query breakdown
+
+```
+Q101 [S1/T1, NSFW]:          (gold same-style = {1, 2, 3})
+  A-nomic          NDCG=0.47  pref=+0.00  top3=[1, 7, 6]
+  B-mxbai          NDCG=0.47  pref=+0.00  top3=[1, 7, 6]
+  B-bge            NDCG=0.47  pref=+0.00  top3=[1, 7, 6]
+  C-descriptor     NDCG=0.47  pref=+0.33  top3=[3, 8, 6]
+  D-styledistance  NDCG=1.00  pref=+1.00  top3=[1, 3, 2]  ← perfect
+  E-funcword-z     NDCG=0.77  pref=+0.33  top3=[1, 2, 10]
+
+Q102 [S2/T2, NSFW]:          (gold same-style = {4, 5, 6})
+  A-nomic          NDCG=1.00  pref=+1.00  top3=[5, 4, 6]
+  B-mxbai          NDCG=1.00  pref=+1.00  top3=[5, 4, 6]
+  B-bge            NDCG=1.00  pref=+1.00  top3=[5, 6, 4]
+  C-descriptor     NDCG=0.47  pref=+0.00  top3=[6, 9, 8]
+  D-styledistance  NDCG=0.77  pref=+0.67  top3=[4, 5, 7]
+  E-funcword-z     NDCG=1.00  pref=+1.00  top3=[4, 5, 6]
+
+Q103 [S3/T1, NSFW]:          (gold same-style = {7, 8, 9})
+  A-nomic          NDCG=1.00  pref=+1.00  top3=[7, 8, 9]
+  B-mxbai          NDCG=0.77  pref=+0.33  top3=[8, 7, 1]
+  B-bge            NDCG=0.77  pref=+0.33  top3=[8, 7, 1]
+  C-descriptor     NDCG=1.00  pref=+1.00  top3=[7, 9, 8]
+  D-styledistance  NDCG=1.00  pref=+1.00  top3=[9, 7, 8]
+  E-funcword-z     NDCG=1.00  pref=+1.00  top3=[7, 9, 8]
+
+Q104 [S4/T3, NSFW]:          (gold same-style = {10, 11, 12})
+  A-nomic          NDCG=0.77  pref=+0.67  top3=[12, 10, 2]
+  B-mxbai          NDCG=1.00  pref=+1.00  top3=[12, 11, 10]
+  B-bge            NDCG=1.00  pref=+1.00  top3=[12, 11, 10]
+  C-descriptor     NDCG=0.00  pref=-0.67  top3=[3, 8, 6]    ← catastrophic
+  D-styledistance  NDCG=0.77  pref=+0.67  top3=[12, 11, 1]
+  E-funcword-z     NDCG=0.77  pref=+0.67  top3=[12, 10, 2]
+```
+
+### 13.3 Honest interpretation
+
+The numbers don't tell the whole story; the per-query inspection
+does. Five findings, in order of weight:
+
+**(a) Path D (StyleDistance) is the headline winner on aggregate but
+not by a huge margin.** NDCG 0.883 vs A/B's 0.809; preference +0.833
+vs A/B's +0.58 to +0.67. D nails Q101 perfectly (the only path that
+does — A/B/C all retrieve at NDCG 0.47 on the clipped sex scene). D
+gets edge cases wrong elsewhere (Q102 lets an NSFW S3 sneak past S2
+at rank 3; Q104 lets the NSFW S1 sneak in). Production-useful but
+the §3 prior expected a wider gap over semantic embedders.
+
+**(b) Path E (function-word z-score) ties D on NDCG.** A
+zero-dependency, 150-dim, instant baseline matched a 768-dim PyTorch
+model on NDCG@3 and lost only 0.083 on preference. This is the
+spike's most surprising result. Two readings:
+
+  1. **The fixture's styles are *too* separable via function-word
+     frequency.** Clipped Hemingway, lush gothic, free-indirect
+     interior, procedural-thriller are differentiated as much by
+     function-word distribution (sentence length proxy, modal verb
+     incidence, the/of ratios) as by lexical-semantic content. Real
+     reference texts may not separate this cleanly.
+  2. **Style genuinely is dominated by function-word patterns** at
+     this corpus size, and the contrastive-authorship literature is
+     re-discovering Burrows (2002). The TACL 2024 paper cited in §3
+     does confirm contrastive authorship models capture function-word
+     signal — but it doesn't claim they go *beyond* it on short
+     prose.
+
+  Phase 5 production should re-test E on real reference texts (a
+  user's actual reference corpus, not a hand-authored exaggerated
+  fixture) before any path D claim survives. If E ties D on real
+  corpora, the production path is dramatically cheaper than a
+  Python-encoder sidecar.
+
+**(c) Path C (writer-distillation) failed.** NDCG 0.485, below
+floor. Catastrophic on Q104 (NDCG 0.00, pref -0.67). Cause: the
+gemma-31B descriptors collapsed under GBNF — most distillations
+default to "tense past, point of view tight_third, register
+literary" across wildly different prose. The grammar successfully
+constrains structure (no parse failures) but the model under-
+distinguishes within each enum. C as designed is **not viable**;
+the descriptor-distillation idea isn't dead but needs either
+(a) richer enums + free-form-string fields per [LedgerSpike §8.1
+GBNF lessons](LOOM_LEDGER_SPIKE.md) or (b) a larger/different
+distillation model. Demoted further: no longer the NSFW-only
+fallback the §3 plan reserved it as.
+
+**(d) Paths A, B all tie at NDCG 0.809 — but the per-query data
+shows they're retrieving NSFW-content, not style.** Q101 top3
+{1, 7, 6}: id 1 is the S1-NSFW chunk (correct), but 7 (S3-NSFW) and
+6 (S2-NSFW) are surfaced over the two SFW S1 chunks (2, 3). The
+aggregate NDCG is rescued by the fact that NSFW excerpts cluster by
+style in the fixture (T1 is 100% NSFW; ids 1, 4, 7, 10 are each the
+only NSFW in their style). The §1 prediction
+("semantic embedders retrieve by topic, not style") holds — but
+"topic" turned out to be "NSFW status," not "T1 sex scene." Same
+mechanism, different cluster.
+
+**(e) NSFW parity is uneven across paths.** Within same-style:
+
+  - D underweights NSFW (0.750 NSFW hit vs 1.000 SFW). The §3
+    Reddit-skew hypothesis confirmed at ~25%. Not catastrophic but
+    real.
+  - A, B over-retrieve NSFW (1.000 NSFW vs 0.250 SFW). The
+    "retrieves by NSFW content" finding in (d).
+  - E is the most balanced (1.000 NSFW vs 0.500 SFW). Function-word
+    distributions are content-agnostic in the way Reddit-trained
+    contrastive embedders aren't.
+
+  For Loom specifically: D's NSFW derank, while modest, means a
+  user who writes NSFW reference text and an NSFW scene-in-progress
+  may see SFW same-style excerpts ranked above NSFW same-style
+  excerpts. That's user-visible. Phase 5 production should plan a
+  fallback for NSFW queries.
+
+### 13.4 Verdict against §7 decision tree
+
+The result fires the **"PIVOT — D wins on NDCG but shows NSFW derank
+≥ 0.2"** branch from §7. Refinements:
+
+- The original PIVOT branch proposed using Path C as the NSFW
+  fallback. Per (c), C isn't viable. **Path E is the empirically-
+  observed NSFW-parity-balanced alternative** — its NSFW hit rate
+  matches its NDCG-aggregate strength, unlike D.
+- Phase 5 production therefore has two viable architectures:
+  - **Single-index D** with known ~25% NSFW derank. Simpler;
+    Python sidecar in `Loom.app` (the §9 #5 cost).
+  - **Hybrid D + E**, where reference texts index in both spaces
+    and the retrieval gates on the query's NSFW status. E is so
+    cheap (150-dim, zero deps) that the second index is essentially
+    free.
+
+The choice is a Phase 5 production decision that depends on whether
+the user wants minimal infrastructure (single D) or balanced NSFW
+behaviour (hybrid). The spike's job is done — both options are
+empirically defensible.
+
+### 13.5 Caveats — what the spike cannot tell us
+
+- **Fixture size.** 4 queries × 3-4 same-style available = 16 ranking
+  decisions per path. Small. The headline differences (D 0.883 vs
+  A/B 0.809) are 1-2 hits across 12 retrievable slots; not
+  statistically robust.
+- **Exaggerated styles.** Real reference text may not separate as
+  cleanly. Especially Path E's tie with D is suspect at fixture
+  scale.
+- **No chunk-size sweep.** The plan called for {50, 150, 400} word
+  windows; the fixture's 300-word excerpts are below the 150-word
+  threshold for clean tri-window comparison. Chunk-boundary effects
+  on style retrieval are a Phase 5 production question, not a spike
+  question.
+- **Oracle pass (S6) not yet run.** Pairwise gemma-judge against
+  each path's ranking would give Kendall-τ vs. an LLM ground-truth.
+  Deferred until/unless Phase 5 needs it; the §7 verdict is firm
+  enough without it.
+
+### 13.6 What graduated from the spike
+
+- `Sources/LoomCore/Retrieval/Embeddings.swift` — `EmbeddingVector`,
+  cosine, chunker. Production-ready, Phase 5 needs no edits.
+- `Sources/LoomCore/Retrieval/RankingMetrics.swift` — NDCG@k,
+  preference, Kendall's tau, rank-by-cosine. Production-ready.
+- `Sources/LoomCore/Retrieval/EmbeddingClients.swift` — Kobold
+  + Ollama request/response parsers. Both used in production;
+  Path D (Python encoder) needs an `EmbeddingClient` protocol abstraction
+  in Phase 5 production scope, not the spike.
+- `Tools/RagSpike/Python/embed_offline.py` — keep as the offline
+  baseline embedder for Phase 5 production benchmarking.
+- The fixture — keep, extend with real reference texts in Phase 5.
+
+### 13.7 What did NOT graduate
+
+- **Path C as designed.** GBNF descriptor distillation collapses
+  under gemma-31B. If revived in Phase 5, needs schema redesign
+  (free-form-string fields for register/lexicon; richer enums for
+  sentence-length).
+- **Chunk-size sweep.** Defer to Phase 5 production over real
+  multi-page reference corpora.

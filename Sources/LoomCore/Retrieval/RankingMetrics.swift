@@ -61,6 +61,25 @@ public enum RankingMetrics {
         return Double(s - t) / 3.0
     }
 
+    /// Rank a set of (id, vector) excerpts by cosine similarity to a
+    /// query vector, descending. Ties are broken by ascending id so the
+    /// eval-runner's output is deterministic across runs (same fixture
+    /// always produces the same ranking).
+    public static func rankExcerpts(
+        query: EmbeddingVector,
+        excerpts: [(Int, EmbeddingVector)]
+    ) -> [Int] {
+        let scored = excerpts.map { (id, vec) -> (Int, Float) in
+            (id, EmbeddingVector.cosine(query, vec))
+        }
+        return scored
+            .sorted { a, b in
+                if a.1 != b.1 { return a.1 > b.1 }
+                return a.0 < b.0
+            }
+            .map { $0.0 }
+    }
+
     /// Kendall's tau-a in [-1, 1]. Both inputs must be permutations
     /// of the same id universe. Returns 0 for trivial cases (length
     /// < 2) and as a defensive guard when the two rankings cover
