@@ -687,6 +687,38 @@ The user can move along this axis per-scene. Phase 1 ships the Sketch-and-Grow f
 
 Phase 5. Genuinely under-explored.
 
+> **§O.4 update — 2026-05-13.** The "no widely-adopted stylistic
+> embedding model exists" claim in [§L.5](#l-5-rag-fundamentals-chunking--embedding)
+> and §M.5 below is **stale**. The Phase 5 spike ([LOOM_RAG_SPIKE.md](LOOM_RAG_SPIKE.md))
+> ran a 5-path empirical eval and found three viable approaches:
+>
+> 1. **StyleDistance** (Oct 2024, [Patel et al. arXiv:2410.12757](https://arxiv.org/pdf/2410.12757))
+>    — contrastive style embedder trained on SynthSTEL (40 style features)
+>    + Reddit authorship pairs. RoBERTa-base, 768-dim, open-weights,
+>    Apple-Silicon-runnable via sentence-transformers. The spike's NDCG@3
+>    leader (0.883 vs semantic-embedder 0.809). The category does
+>    exist; the literature just hadn't filtered down into RAG
+>    practitioner guides by 2026-05-10.
+> 2. **Wegmann Style-Embedding** (RepL4NLP 2022) — predecessor;
+>    explicit "same topic ≠ same style" training objective.
+> 3. **Burrows' Delta function-word z-score baseline** — 19th-century
+>    stylometric primitive, ~50 LOC of numpy. **Tied StyleDistance on
+>    NDCG@3 in the spike (0.883)** and was the most NSFW-parity-balanced
+>    path. Either the spike fixture's styles separate too cleanly via
+>    function-word frequency, or style genuinely is dominated by
+>    function-word patterns at this corpus size. Phase 5 production
+>    will re-test on real reference texts.
+>
+> Loom's Phase 5 architecture: **D + E hybrid index** (StyleDistance +
+> function-word z-score), reference texts indexed in both spaces, all
+> retrievals merge results from both. The "no stylistic embedder
+> exists" framing was load-bearing for the original spike scope; it
+> shaped the writer-LLM-distillation Path C, which then failed below
+> floor when the GBNF descriptors collapsed under gemma-31B. Worth
+> keeping the lesson: when foundational R&D literature claims an open
+> territory, *verify with a focused research pass before sinking
+> implementation hours into workarounds*.
+
 ### O.5 Heavy NSFW with zero limits
 
 **Closest prior art:** local kobold + uncensored finetune + SillyTavern.[I1][H1]

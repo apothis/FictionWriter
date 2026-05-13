@@ -714,3 +714,78 @@ The full per-session ledger lives in [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORK
 - **`avatarPath` field surface** in the workspace character editor (deferred per [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) §8.4).
 - **React-side error visibility**. WKWebView's cross-origin error sanitization shows `"Script error. @ ?:?:?"` for React-render exceptions. Safari Web Inspector is the canonical diagnostic path (isInspectable is on). Long-term: wrap React render in an in-bundle try/catch that exposes errors to the inline shim, OR relax WKWebView's same-origin policy for the bundle.
 - **Workspace light-mode palette refinement.** Current values were sketched against DesignTokens semantic intent without actual sampled values. May want pixel-level matching at some point.
+
+### 15.11 Session ledger — 2026-05-13 (Phase 5 RAG-for-style spike, S1 → S7)
+
+Empirical eval of the Phase 5 retrieval-for-style hypothesis. Authoritative writeup lives in [`LOOM_RAG_SPIKE.md`](LOOM_RAG_SPIKE.md) §1–13. Doc commits + scaffolding landed in five stages over a single session; final verdict locked the Phase 5 architecture.
+
+#### What landed
+
+**S1 — pure-data scaffolding** ([`ec5bb95`](Sources/LoomCore/Retrieval/Embeddings.swift)). `EmbeddingVector` + cosine (defensive zero on degenerate cases), `RagChunker` word-window splitter with overlap, `RankingMetrics` (NDCG@k binary-relevance, style-vs-topic preference index, Kendall's tau-a). 30 new TestKit tests, all hand-computed values. Lives in `Sources/LoomCore/Retrieval/`. 880 → 910.
+
+**S2 — fixture authorship** ([`339fc02`](Tests/LoomCoreTests/Fixtures/RagSpike/fixture.json)). 12 hand-authored excerpts (4 styles × 3 topics, ~280-330 words each) + 4 query scenes (~165-205 words). **8 of 12 NSFW** per the LOOM_NSFW §3 strategic anchor — original plan had 2/12; user pushed back ("more of them need to be nsfw, that's the main purpose of this project") which reshaped the fixture composition. Style axis gives four distinct NSFW registers for free (S1 terse-physical, S2 literary, S3 subjective-interior, S4 clinical-detached). 10 new smoke tests pin grid shape, NSFW composition, word-count bounds. 910 → 920.
+
+**Plan revision (between S2 and S3)** ([`8be8eac`](LOOM_RAG_SPIKE.md)). Pre-S3 research pass surfaced load-bearing prior art the original plan missed: three open-weights style/authorship embedders (StyleDistance Oct 2024 SOTA, Wegmann RepL4NLP 2022, LUAR EMNLP 2021), all RoBERTa-base-sized and Apple-Silicon-runnable. The §1 premise ("no widely-adopted stylistic embedding model exists") was stale. Added Path D (purpose-built style embedder, becomes likely winner) + Path E (Burrows' Delta sanity baseline, diagnostic-only); demoted Path C (writer-distillation) from "speculative win" to "alternative hypothesis." Doc-only; 202 insertions / 36 deletions. **Lesson**: when foundational R&D literature claims an open territory, verify before sinking implementation hours into workarounds.
+
+**S3 — embedding clients + Python sidecar** ([`f34c5f7`](Tools/RagSpike/main.swift)). Pure-data response parsers for Kobold `/v1/embeddings` + Ollama `/api/embed` (10 TestKit tests, 920 → 930). Swift orchestrator `Tools/RagSpike/main.swift` with `--smoke` mode covering Paths A (nomic/Kobold), B (mxbai + bge on Ollama), C (gemma-31B GBNF descriptor → nomic). Python sidecar `Tools/RagSpike/Python/embed_offline.py` for Paths D + E (StyleDistance primary with Wegmann fallback; faststylometry-flavoured function-word z-score implemented inline via numpy). Venv + vectors.json gitignored.
+
+Bug-hunt note worth remembering: initial smoke crashed with SIGSEGV on `String(format: "...%s...", swiftString)`. `%s` expects a C string; passing a Swift String is undefined behavior on Apple platforms. Use interpolation + `padding(toLength:)` instead. [LedgerSpike](Tools/LedgerSpike/main.swift) uses `%@` (which works) throughout — worth a sweep there as a follow-on if any `%s` slipped in.
+
+**S4 — full corpus eval** ([`d399b3e`](LOOM_RAG_SPIKE.md)). `--corpus` mode embeds all 16 fixture items via every path, scores per §5 metrics. Path C took ~110s for 16 items (~6.9s/item via gemma-31B GBNF); A/B/D/E essentially instant. Results table + per-query breakdown landed in [`LOOM_RAG_SPIKE.md`](LOOM_RAG_SPIKE.md) §13 (~250 lines of analysis).
+
+Headline numbers (mean NDCG@3 / preference over 4 queries):
+
+| Path             | dim  | NDCG@3 | preference | NSFW hit | SFW hit |
+|------------------|------|--------|------------|----------|---------|
+| A-nomic          |  768 | 0.809  | +0.667     | 1.000    | 0.250   |
+| B-mxbai          | 1024 | 0.809  | +0.583     | 1.000    | 0.250   |
+| B-bge            | 1024 | 0.809  | +0.583     | 1.000    | 0.250   |
+| C-descriptor     |  768 | 0.485  | +0.167     | 0.375    | 0.500   |
+| **D-styledistance** |  768 | **0.883**  | **+0.833** | 0.750  | 1.000   |
+| E-funcword-z     |  150 | 0.883  | +0.750     | 1.000    | 0.500   |
+
+**S7 — finalisation** (this commit). [`LOOM_PLAN.md`](LOOM_PLAN.md) §5 Phase 5 + L5 row updated with verdict + chosen architecture; [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §O.4 updated with the empirical data point ("no stylistic embedder exists" claim retracted). New memory entry captures the falsification of that claim for future spike scoping.
+
+#### The verdict + chosen architecture
+
+[§7 decision tree](LOOM_RAG_SPIKE.md) fired the **PIVOT — D wins on NDCG but shows the §3-predicted NSFW derank** branch. User picked **D + E hybrid** when offered the choice between (single-index D, simpler) vs (hybrid D + E, balanced NSFW).
+
+Five empirical findings, in order of weight ([§13.3](LOOM_RAG_SPIKE.md)):
+
+(a) D wins headline but margin over A/B is smaller than the §3 prior expected (~9% NDCG).
+(b) **E ties D on NDCG.** 150-dim zero-dependency function-word z-score matched a 768-dim PyTorch model. Either fixture too separable via function-word frequency, or style genuinely is function-word-dominated at corpus size. Phase 5 production must re-test E on real reference texts before locking D-as-primary.
+(c) **C failed below floor.** gemma-31B GBNF descriptors collapsed to default enums ("tense past, tight_third, register literary") across wildly different prose. GBNF constrains structure; the model under-distinguishes within enums. The original-plan idea of C-as-NSFW-fallback is **dead** because of this.
+(d) **A/B passed NDCG by retrieving NSFW-content, not style.** Per-query inspection: Q101 top-3 = {S1-NSFW, S3-NSFW, S2-NSFW}. The §1 "topic not style" failure mode confirmed — "topic" was "NSFW status."
+(e) D has ~25% NSFW derank (§3 Reddit-skew hypothesis confirmed). A/B over-retrieve NSFW. **E is the most balanced.** E is therefore the empirically-observed NSFW-parity-balanced alternative — and it's the cheapest path in the slate.
+
+Phase 5 architecture: reference texts index in both D and E spaces. At retrieval time the system always retrieves from both and merges by normalised score (probably Reciprocal Rank Fusion — final decision at Phase 5 design lock). Always-retrieve-from-both keeps [LOOM_NSFW §3](LOOM_NSFW.md) content-neutrality intact — no NSFW classifier, no moderation gate. E is so cheap (~50 LOC of numpy, possibly portable to pure Swift in an afternoon) that the second index is essentially free.
+
+#### What graduates from the spike into Phase 5 production
+
+- `Sources/LoomCore/Retrieval/Embeddings.swift` — production-ready.
+- `Sources/LoomCore/Retrieval/RankingMetrics.swift` — production-ready.
+- `Sources/LoomCore/Retrieval/EmbeddingClients.swift` — Kobold + Ollama parsers; needs an `EmbeddingClient` protocol abstraction in Phase 5 production for Path D's Python encoder.
+- `Tools/RagSpike/Python/embed_offline.py` — keep as offline benchmarker for Phase 5 production re-tests on real reference corpora.
+- The fixture — keep, extend with real reference texts.
+- The spike runner (`Tools/RagSpike/main.swift`) — keep as on-demand eval tool for future model swaps.
+
+#### What did NOT graduate
+
+- **Path C as designed.** GBNF descriptor distillation under gemma-31B collapses style diversity. If revived in Phase 5, needs schema redesign (free-form-string fields for register/lexicon; richer enums; possibly a different/larger distillation model).
+- **Chunk-size sweep ({50, 150, 400} words from the original plan).** Deferred to Phase 5 production over real multi-page reference corpora. The fixture's 300-word excerpts didn't span the sweep range cleanly.
+
+#### Carried into the next session
+
+**Primary**: **Phase 5 production** — five scope locks at start, per [`LOOM_PLAN.md`](LOOM_PLAN.md) §5 Phase 5:
+
+1. StyleDistance deployment decision: bundled venv vs MLX port.
+2. E (function-word z-score) Swift port: ~50 LOC, vendor `embed_offline.py`'s `embed_path_e`.
+3. Reference-text entity type in the Bible Workspace (mirrors Phase 4.5 patterns).
+4. Hybrid retrieval merge policy (likely RRF).
+5. Per-scene-type retrieval pillar (the descriptor schema's `modality` slot is salvageable for ingest-time tagging even though full Path C distillation failed).
+
+**Still on the parking lot**: unchanged from §15.10 — Tests 8 + 9, SDT structural limit, extractor coverage variance, the four Phase 4.5 follow-ons.
+
+**Risk to flag at Phase 5 design lock**: §13.3(b) caveat. If E doesn't tie D on real reference texts (fixture-leakage hypothesis), the hybrid degrades to D-only and the Python-sidecar production cost is real. Worth running an E-only Phase 5 production benchmark over the user's first real reference corpus *before* committing to the StyleDistance deployment work.
+
+933/933 tests passing throughout the spike (no regressions across S1-S7). The spike's TDD discipline held — every Swift module has pure-data tests; network glue and orchestration are integration-test territory and that's intentional.
