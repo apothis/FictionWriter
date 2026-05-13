@@ -186,6 +186,59 @@ func phase7TemplateGenLogTests() -> TestSuite {
         try expectTrue(loggedEntry?.response.rawText.contains("Beat one prose") == true)
     }
 
+    // MARK: - History tab summary label
+    //
+    // Punchlist item: the History inspector previously labelled every
+    // template generation as "Continue" because `mode` is the least-
+    // wrong `.continueProse` stand-in. `templateGenerationInfo` is the
+    // authoritative discriminator — when present, the row label must
+    // say "Template: <name>" so the History tab is readable.
+
+    s.test("HistoryEntryRowView.summaryString labels non-template entries by mode") {
+        let entry = GenerationLogEntry(
+            sceneId: UUID(),
+            mode: .continueProse,
+            promptAssembly: PromptAssembly(
+                contextChiclets: [], fullPrompt: "x", promptTokens: 0,
+                aboveCacheTokens: 0, belowCacheTokens: 0, evictedLayers: [],
+                template: .raw
+            ),
+            response: GenerationResponse(rawText: "y", completionTokens: 5, elapsedMs: 10),
+            templateGenerationInfo: nil
+        )
+        let summary = HistoryEntryRowView.summaryString(for: entry)
+        try expectTrue(summary.contains("Continue"))
+        try expectFalse(summary.contains("Template:"))
+    }
+
+    s.test("HistoryEntryRowView.summaryString labels template entries by template name") {
+        let info = TemplateGenerationInfo(
+            templateId: UUID(),
+            templateName: "Doorway test",
+            castMapping: "Maya is the protagonist",
+            beatCount: 3,
+            beatModalitySequence: ["action", "dialogue", "action"],
+            voiceDescriptor: nil
+        )
+        let entry = GenerationLogEntry(
+            sceneId: UUID(),
+            mode: .continueProse,
+            promptAssembly: PromptAssembly(
+                contextChiclets: [], fullPrompt: "x", promptTokens: 0,
+                aboveCacheTokens: 0, belowCacheTokens: 0, evictedLayers: [],
+                template: .raw
+            ),
+            response: GenerationResponse(rawText: "y", completionTokens: 5, elapsedMs: 10),
+            templateGenerationInfo: info
+        )
+        let summary = HistoryEntryRowView.summaryString(for: entry)
+        try expectTrue(summary.contains("Template: Doorway test"))
+        // Mode label is suppressed in favour of the template label —
+        // otherwise the row reads "Continue · Template: Doorway test"
+        // which is contradictory.
+        try expectFalse(summary.contains("Continue"))
+    }
+
     s.test("TemplateGenerationCoordinator does NOT log on cancel before any beat completes") {
         let (projectURL, templateId, session) = try bootstrap(beatCount: 3)
         defer { try? FileManager.default.removeItem(at: projectURL) }

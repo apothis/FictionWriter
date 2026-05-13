@@ -282,20 +282,29 @@ final class HistoryEntryRowView {
     fileprivate func emitToggle() { onToggle() }
     fileprivate func emitInsertAgain() { onInsertAgain() }
 
-    private static func summaryString(for entry: GenerationLogEntry) -> String {
+    /// Pure formatter: how the entry's row label reads. Template gens
+    /// are discriminated by `templateGenerationInfo` rather than `mode`
+    /// (which is stamped as a least-wrong `.continueProse` for those
+    /// entries) — when present, the template name takes precedence.
+    /// Exposed for tests.
+    public static func summaryString(for entry: GenerationLogEntry) -> String {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
         let timeStr = f.string(from: entry.timestamp)
-        let mode: String
-        switch entry.mode {
-        case .continueProse: mode = "Continue"
-        case .expand:        mode = "Expand"
-        case .rewrite:       mode = "Rewrite"
-        default:             mode = entry.mode.rawValue
+        let label: String
+        if let info = entry.templateGenerationInfo {
+            label = "Template: \(info.templateName)"
+        } else {
+            switch entry.mode {
+            case .continueProse: label = "Continue"
+            case .expand:        label = "Expand"
+            case .rewrite:       label = "Rewrite"
+            default:             label = entry.mode.rawValue
+            }
         }
         let proseTok = entry.promptAssembly.promptTokens
         let replyTok = entry.response.completionTokens
-        return "\(timeStr) · \(mode) · \(proseTok)↑ \(replyTok)↓"
+        return "\(timeStr) · \(label) · \(proseTok)↑ \(replyTok)↓"
     }
 
     private static func makeExpandedPanel(
