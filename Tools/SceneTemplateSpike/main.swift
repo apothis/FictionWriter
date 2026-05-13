@@ -252,10 +252,13 @@ struct GenerationRun {
 /// Run Pass B end-to-end for one fixture: parse the prior `--extract`
 /// output back into a skeleton, then loop per-beat through the writer
 /// with the cast mapping. Returns the full run for hand-grading.
+/// `includeTemplateBody=false` activates §7.a.3 ablation arm B
+/// (skeleton-only generation, no template prose injected).
 func runPassB(
     fixture: Fixture,
     extracted: ExtractedSceneSkeleton,
-    castMapping: String
+    castMapping: String,
+    includeTemplateBody: Bool = true
 ) -> GenerationRun {
     let groundTruthPacing = PacingStats.compute(text: fixture.body)
     var outputs: [BeatGenerationOutput] = []
@@ -269,7 +272,8 @@ func runPassB(
             castMapping: castMapping,
             currentBeatIndex: idx,
             priorBeatsProse: rollingProse,
-            groundTruthPacing: groundTruthPacing
+            groundTruthPacing: groundTruthPacing,
+            includeTemplateBody: includeTemplateBody
         )
         // Give the model ~2x the target word count of headroom (one
         // word ≈ 1.4 tokens, plus the prompt itself ends with the
@@ -622,6 +626,138 @@ if args.count < 2 {
     exit(1)
 }
 
+/// Phase 7.a.3 ablation: run Pass A once, then Pass B TWICE — once
+/// with the template body included (Arm A) and once skeleton-only
+/// (Arm B). Render a side-by-side comparison report.
+func runAblation(fixtureFilename: String) {
+    guard let mapping = castMappings[fixtureFilename] else {
+        log("[\(fixtureFilename)] no cast mapping registered; skipping.")
+        return
+    }
+    let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let fixturePath = cwd
+        .appendingPathComponent(fixturesDir)
+        .appendingPathComponent(fixtureFilename)
+    let extraction = extract(fixturePath: fixturePath)
+    writeReport(extraction)
+    guard let skeleton = extraction.parsed else {
+        log("[\(fixtureFilename)] extraction failed; skipping ablation.")
+        return
+    }
+    log("[\(fixtureFilename)] ARM A — template included (\(skeleton.beats.count) beats)...")
+    let armA = runPassB(
+        fixture: extraction.fixture, extracted: skeleton,
+        castMapping: mapping, includeTemplateBody: true
+    )
+    log("[\(fixtureFilename)] ARM B — skeleton-only (\(skeleton.beats.count) beats)...")
+    let armB = runPassB(
+        fixture: extraction.fixture, extracted: skeleton,
+        castMapping: mapping, includeTemplateBody: false
+    )
+    writeAblationReport(armA: armA, armB: armB)
+}
+
+func writeAblationReport(armA: GenerationRun, armB: GenerationRun) {
+    let fixtureID = armA.fixture.frontmatter["fixture_id"] ?? armA.fixture.path.lastPathComponent
+    var out = ""
+    out += "# Pass-B ablation report — \(fixtureID)\n\n"
+    out += "**Arm A:** template body included as voice exemplar (default 7.a.2 behaviour).\n"
+    out += "**Arm B:** skeleton-only — no template prose injected. Tests Tripto 2025 long-exemplar surface-mimicry hypothesis.\n\n"
+    out += "**Cast mapping (identical for both arms):**\n\n```\n\(armA.castMapping)\n```\n\n"
+
+    let aWords = armA.beatOutputs.reduce(0) { $0 + $1.actualWords }
+    let bWords = armB.beatOutputs.reduce(0) { $0 + $1.actualWords }
+    let aEmpty = armA.beatOutputs.filter { $0.actualWords == 0 }.count
+    let bEmpty = armB.beatOutputs.filter { $0.actualWords == 0 }.count
+    let aLatency = armA.totalElapsedSeconds
+    let bLatency = armB.totalElapsedSeconds
+
+    out += "## Aggregate comparison\n\n"
+    out += "| metric | Arm A (template included) | Arm B (skeleton only) |\n"
+    out += "|---|---|---|\n"
+    out += "| total words generated | \(aWords) | \(bWords) |\n"
+    out += "| empty beats (0 words) | \(aEmpty) / \(armA.beatOutputs.count) | \(bEmpty) / \(armB.beatOutputs.count) |\n"
+    out += "| total latency | \(String(format: "%.1fs", aLatency)) | \(String(format: "%.1fs", bLatency)) |\n"
+
+    // Pacing-fidelity check: compute pacing stats over each arm's
+    // assembled prose and compare to ground truth.
+    let aProse = armA.beatOutputs.map(\.prose).joined(separator: "\n\n")
+    let bProse = armB.beatOutputs.map(\.prose).joined(separator: "\n\n")
+    let aPacing = PacingStats.compute(text: aProse)
+    let bPacing = PacingStats.compute(text: bProse)
+    let target = armA.groundTruthPacing
+    out += "| mean sentence length | \(String(format: "%.1f", aPacing.meanSentenceLengthWords)) | \(String(format: "%.1f", bPacing.meanSentenceLengthWords)) |\n"
+    out += "| short-sentence ratio | \(String(format: "%.2f", aPacing.shortSentenceRatio)) | \(String(format: "%.2f", bPacing.shortSentenceRatio)) |\n"
+    out += "| long-sentence ratio | \(String(format: "%.2f", aPacing.longSentenceRatio)) | \(String(format: "%.2f", bPacing.longSentenceRatio)) |\n"
+    out += "| dialogue ratio | \(String(format: "%.2f", aPacing.dialogueRatio)) | \(String(format: "%.2f", bPacing.dialogueRatio)) |\n\n"
+
+    out += "**Target pacing (from source):** mean \(String(format: "%.1f", target.meanSentenceLengthWords))w, short \(String(format: "%.2f", target.shortSentenceRatio)), long \(String(format: "%.2f", target.longSentenceRatio)), dialogue \(String(format: "%.2f", target.dialogueRatio)).\n\n"
+
+    // Pacing-deviation (signed Δ from target).
+    let aMeanDelta = aPacing.meanSentenceLengthWords - target.meanSentenceLengthWords
+    let bMeanDelta = bPacing.meanSentenceLengthWords - target.meanSentenceLengthWords
+    out += "**Mean sentence length divergence from target:** Arm A \(String(format: "%+.1f", aMeanDelta))w, Arm B \(String(format: "%+.1f", bMeanDelta))w. Closer to zero = better pacing fidelity.\n\n"
+
+    // Plot-leakage check, both arms.
+    out += "## Plot-leakage comparison\n\n"
+    func leaksFor(_ prose: String, sourceCharacters: [String]) -> [(String, Int)] {
+        var leaks: [(String, Int)] = []
+        for n in sourceCharacters {
+            let c = prose.components(separatedBy: n).count - 1
+            if c > 0 { leaks.append((n, c)) }
+        }
+        return leaks
+    }
+    let aLeaks = leaksFor(aProse, sourceCharacters: armA.skeleton.sourceCharacters)
+    let bLeaks = leaksFor(bProse, sourceCharacters: armB.skeleton.sourceCharacters)
+    out += "**Arm A character-name leakage:** \(aLeaks.isEmpty ? "✓ none" : aLeaks.map { "\($0.0)×\($0.1)" }.joined(separator: ", "))\n\n"
+    out += "**Arm B character-name leakage:** \(bLeaks.isEmpty ? "✓ none" : bLeaks.map { "\($0.0)×\($0.1)" }.joined(separator: ", "))\n\n"
+
+    // Modality post-hoc (heuristic) for both arms.
+    out += "## Heuristic modality match\n\n"
+    func modMatchCount(_ run: GenerationRun) -> Int {
+        run.beatOutputs.reduce(0) { acc, o in
+            let target = run.skeleton.beats[o.beatIndex].modality
+            return acc + (NarrativeModeHeuristic.classify(o.prose) == target ? 1 : 0)
+        }
+    }
+    out += "- Arm A: \(modMatchCount(armA)) / \(armA.beatOutputs.count)\n"
+    out += "- Arm B: \(modMatchCount(armB)) / \(armB.beatOutputs.count)\n\n"
+
+    // Per-beat side-by-side prose.
+    out += "## Per-beat side-by-side prose\n\n"
+    for i in 0..<armA.beatOutputs.count {
+        let beat = armA.skeleton.beats[i]
+        let aOut = armA.beatOutputs[i]
+        let bOut = armB.beatOutputs[i]
+        out += "### Beat \(i): \(beat.function.rawValue) / \(beat.modality.rawValue) (target \(beat.targetWords)w)\n\n"
+        out += "_Summary:_ \(beat.summary)\n\n"
+        out += "**Arm A (template included)** — \(aOut.actualWords)w, \(String(format: "%.1fs", aOut.elapsedSeconds)):\n\n"
+        out += aOut.prose.isEmpty ? "_(empty)_\n\n" : "> \(aOut.prose.replacingOccurrences(of: "\n", with: "\n> "))\n\n"
+        out += "**Arm B (skeleton only)** — \(bOut.actualWords)w, \(String(format: "%.1fs", bOut.elapsedSeconds)):\n\n"
+        out += bOut.prose.isEmpty ? "_(empty)_\n\n" : "> \(bOut.prose.replacingOccurrences(of: "\n", with: "\n> "))\n\n"
+        out += "---\n\n"
+    }
+
+    out += "## Assembled scenes\n\n"
+    out += "<details><summary>Arm A — full assembled scene</summary>\n\n"
+    out += armA.beatOutputs.map(\.prose).joined(separator: "\n\n") + "\n\n</details>\n\n"
+    out += "<details><summary>Arm B — full assembled scene</summary>\n\n"
+    out += armB.beatOutputs.map(\.prose).joined(separator: "\n\n") + "\n\n</details>\n"
+
+    let outName = armA.fixture.path.deletingPathExtension().lastPathComponent + ".ablation.md"
+    let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let outPath = cwd.appendingPathComponent(outputDir).appendingPathComponent(outName)
+    try? FileManager.default.createDirectory(at: outPath.deletingLastPathComponent(), withIntermediateDirectories: true)
+    do {
+        try out.write(to: outPath, atomically: true, encoding: .utf8)
+        log("[\(armA.fixture.path.lastPathComponent)] wrote \(outPath.path)")
+    } catch {
+        log("[\(armA.fixture.path.lastPathComponent)] failed to write report: \(error)")
+    }
+    print(out)
+}
+
 /// Run Pass A then Pass B end-to-end for one fixture. Reuses the
 /// extraction logic; if the cast mapping for the fixture isn't
 /// registered, errors out (the spike has 3 hardcoded mappings).
@@ -681,6 +817,12 @@ case "--generate-all":
     log("running \(keys.count) full pipelines: \(keys.joined(separator: ", "))")
     for k in keys { runFullPipeline(fixtureFilename: k) }
     log("done.")
+case "--ablate":
+    guard args.count >= 3 else {
+        log("--ablate requires a fixture basename (e.g. 01_the_doorway_dialogue.md)")
+        exit(1)
+    }
+    runAblation(fixtureFilename: args[2])
 default:
     log("Unknown command: \(cmd)")
     exit(1)

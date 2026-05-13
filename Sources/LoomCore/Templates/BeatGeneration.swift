@@ -37,7 +37,8 @@ public enum BeatGeneration {
         castMapping: String,
         currentBeatIndex: Int,
         priorBeatsProse: String,
-        groundTruthPacing: PacingStats
+        groundTruthPacing: PacingStats,
+        includeTemplateBody: Bool = true
     ) -> String {
         // Bounds-check the index — out-of-range returns empty so the
         // caller fails loudly (the spike runner catches + logs).
@@ -87,17 +88,37 @@ public enum BeatGeneration {
         // string — the production GenerationCoordinator wraps it in the
         // model's chat template (chatml / gemma / etc.) at request time.
         // For the spike runner we use raw completion.
+        let systemFraming: String
+        let templateBlock: String
+        if includeTemplateBody {
+            systemFraming = """
+                [SYSTEM]
+                You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT.
+
+                The TEMPLATE SCENE below is provided as a VOICE EXEMPLAR — study its prose voice, sentence rhythm, register, and modality handling. Do NOT reuse its plot, characters, settings, or specific events. The new scene's content comes from the NEW CAST mapping. The template is showing you HOW to write, not WHAT to write.
+                """
+            templateBlock = """
+                === TEMPLATE SCENE (voice reference; do not reuse plot) ===
+                \(templateBody)
+                === END TEMPLATE SCENE ===
+
+
+                """
+        } else {
+            // Ablation arm B: skeleton-only. No template prose, no
+            // voice-exemplar framing. Writer infers voice from the
+            // skeleton's summaries + the pacing target alone.
+            systemFraming = """
+                [SYSTEM]
+                You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT. The new scene's content comes from the NEW CAST mapping.
+                """
+            templateBlock = ""
+        }
+
         return """
-            [SYSTEM]
-            You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT.
+            \(systemFraming)
 
-            The TEMPLATE SCENE below is provided as a VOICE EXEMPLAR — study its prose voice, sentence rhythm, register, and modality handling. Do NOT reuse its plot, characters, settings, or specific events. The new scene's content comes from the NEW CAST mapping. The template is showing you HOW to write, not WHAT to write.
-
-            === TEMPLATE SCENE (voice reference; do not reuse plot) ===
-            \(templateBody)
-            === END TEMPLATE SCENE ===
-
-            [BEAT SKELETON for the new scene — \(skeleton.beats.count) beats total]
+            \(templateBlock)[BEAT SKELETON for the new scene — \(skeleton.beats.count) beats total]
             \(skeletonBlock)
 
             [NEW CAST]

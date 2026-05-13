@@ -130,5 +130,49 @@ func phase7BeatGenerationTests() -> TestSuite {
         try expectEqual(prompt, "")
     }
 
+    // MARK: - Phase 7.a.3 ablation: includeTemplateBody = false
+
+    s.test("BeatGeneration.buildBeatPrompt with includeTemplateBody=false omits template + voice-exemplar framing") {
+        let skeleton = makeSkeleton()
+        let prompt = BeatGeneration.buildBeatPrompt(
+            templateBody: "She walked into the doorway.",
+            skeleton: skeleton,
+            castMapping: "C",
+            currentBeatIndex: 0,
+            priorBeatsProse: "",
+            groundTruthPacing: skeleton.pacingStats,
+            includeTemplateBody: false
+        )
+        // Template body NOT present.
+        try expectFalse(prompt.contains("She walked into the doorway."))
+        try expectFalse(prompt.contains("TEMPLATE SCENE"))
+        // Voice-exemplar framing replaced with skeleton-only framing.
+        try expectFalse(prompt.contains("voice reference"))
+        // Skeleton + cast + instruction still present.
+        try expectTrue(prompt.contains("{PROTAGONIST} arrives"))
+        try expectTrue(prompt.contains("Write beat 0"))
+    }
+
+    s.test("BeatGeneration.buildBeatPrompt defaults to includeTemplateBody=true") {
+        // Existing tests already check default behaviour; this pins
+        // the default contract explicitly so flipping the default
+        // requires touching this test.
+        let skeleton = makeSkeleton()
+        let withDefault = BeatGeneration.buildBeatPrompt(
+            templateBody: "She walked.",
+            skeleton: skeleton, castMapping: "C",
+            currentBeatIndex: 0, priorBeatsProse: "",
+            groundTruthPacing: skeleton.pacingStats
+        )
+        let explicit = BeatGeneration.buildBeatPrompt(
+            templateBody: "She walked.",
+            skeleton: skeleton, castMapping: "C",
+            currentBeatIndex: 0, priorBeatsProse: "",
+            groundTruthPacing: skeleton.pacingStats,
+            includeTemplateBody: true
+        )
+        try expectEqual(withDefault, explicit)
+    }
+
     return s
 }
