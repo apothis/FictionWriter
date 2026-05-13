@@ -30,6 +30,21 @@ for bundle in "$BIN_DIR"/*.bundle; do
 done
 shopt -u nullglob
 
-codesign --force --sign - "$APP_DIR"
+# Prefer a stable self-signed identity over ad-hoc so macOS TCC grants
+# (Local Network, etc.) survive rebuilds — ad-hoc keys TCC off the
+# CDHash, which churns every build. See scripts/create-signing-identity.sh
+# to provision the identity once.
+SIGN_IDENTITY="Loom Local"
+# No `-v` — self-signed certs are reported "untrusted" by find-identity
+# but codesign still accepts them. Listing without -v matches our cert.
+if security find-identity -p codesigning 2>/dev/null \
+        | grep -q "\"$SIGN_IDENTITY\""; then
+    codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR"
+else
+    codesign --force --sign - "$APP_DIR"
+    echo "NOTE: signed ad-hoc. Run scripts/create-signing-identity.sh"
+    echo "      once to provision a stable identity — otherwise the"
+    echo "      Local Network grant will be revoked on every rebuild."
+fi
 
 echo "Built $APP_DIR"
