@@ -1031,9 +1031,10 @@ The §15.13 + §15.14 smoke-test queue is now the single coherent live-app valid
 
 Either (a) you-driven empirical validation pass against the live app, OR (b) more pre-validation polish:
 
-- **TemplateGenerationCoordinator generation-log entry on finish** — Continue writes one to `generation-log/<ts>.json`; template gen doesn't yet. Parity gap; concrete observability win. ~30 LOC. [LANDED IN §15.14 SUB-COMMIT — see history if this header is bumped.]
+- ~~**TemplateGenerationCoordinator generation-log entry on finish**~~ — landed `434da8f`. Every successful template gen now writes a `GenerationLogEntry` (mode = `.continueProse`, with `templateGenerationInfo` side-table carrying template/cast/beat/voice metadata). Per-beat prompts concatenated into the entry's `fullPrompt` with `=== BEAT N ===` separators.
 - **Section/Field layout primitives hoist** — Character/Lorebook/Reference/TemplateScene editors inline identical Section + Field components. With this 4th user, hoisting into `web/bible-workspace/src/components/EditorLayout.tsx` is now overdue.
 - **Cancel-task improvement** — `KoboldGenerating` doesn't expose `cancel()`. Adding it (or a parallel cancellable channel) would let `TemplateGenerationCoordinator.cancel()` abort the in-flight beat's URLSession task, not just prevent subsequent beats.
 - **Punchlist item 7 (added in §4.6)** — drop the example bullets from `BeatExtraction.buildExtractionPrompt` to test whether voice-descriptor `distinctiveTechniques` are model-invented or prompt-echo on fixtures where the examples don't fit. Cheap to test.
+- **History tab rendering of template gens** — the `GenerationLogEntry` now carries `templateGenerationInfo`, but `HistoryInspectorViewController` still renders the entry as "Continue" (since mode is `.continueProse`). The data is on disk; the UI just doesn't pull from the new side-table yet. Small follow-up: add a "Template: {name}" subheader when `templateGenerationInfo != nil`.
 
 **Architecturally complete.** Phase 7's design — Pass A extraction with structured voice fingerprint, Pass B per-beat generation with template-as-anchor + voice-as-positive-constraint + STRAP-stripped skeleton — is fully in production code. The live-app pass is the next gating step.
