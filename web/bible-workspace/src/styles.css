@@ -2,10 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Liquid Glass parity — the CSS variables themselves are emitted
-   by the Swift side (BibleWorkspaceWindowController) onto :root.
-   This file only specifies global resets + typography that don't
-   belong in Tailwind utility classes. */
+/* Liquid Glass palette — picks up the system's effective
+   appearance via `prefers-color-scheme`. WKWebView mirrors the
+   macOS app's NSAppearance, so flipping System Settings →
+   Appearance flips the workspace inline. Values mirror the
+   `.labelColor` / `.controlAccentColor` / `.windowBackgroundColor`
+   semantics from `DesignTokens.swift`, with concrete hex chosen
+   to match the rendered values at default macOS accents. */
+
+:root {
+  /* Dark (default) — matches macOS Dark mode + Liquid Glass. */
+  --loom-bg-primary: #1c1c1e;
+  --loom-bg-elevated: #2c2c2e;
+  --loom-bg-input: #3a3a3c;
+  --loom-fg-primary: #f2f2f7;
+  --loom-fg-secondary: #9d9da3;
+  --loom-fg-tertiary: #6e6e73;
+  --loom-fg-accent: #0a84ff;
+  --loom-border: #3a3a3c;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --loom-bg-primary: #ffffff;
+    --loom-bg-elevated: #f2f2f7;
+    --loom-bg-input: #ffffff;
+    --loom-fg-primary: #1c1c1e;
+    --loom-fg-secondary: #6c6c70;
+    --loom-fg-tertiary: #a0a0a4;
+    --loom-fg-accent: #007aff;
+    --loom-border: #d1d1d6;
+  }
+}
 
 html,
 body {

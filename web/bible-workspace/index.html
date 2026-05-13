@@ -4,21 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bible Workspace</title>
-    <script>
-      // Pre-load defaults for the Liquid Glass CSS variables. The
-      // Swift side (BibleWorkspaceWindowController) overwrites
-      // these via evaluateJavaScript on appearance changes; this
-      // fallback is in case JS runs before that first push (rare,
-      // but cheap to defend).
-      document.documentElement.style.setProperty("--loom-bg-primary", "#1c1c1e");
-      document.documentElement.style.setProperty("--loom-bg-elevated", "#2c2c2e");
-      document.documentElement.style.setProperty("--loom-bg-input", "#3a3a3c");
-      document.documentElement.style.setProperty("--loom-fg-primary", "#f2f2f7");
-      document.documentElement.style.setProperty("--loom-fg-secondary", "#9d9da3");
-      document.documentElement.style.setProperty("--loom-fg-tertiary", "#6e6e73");
-      document.documentElement.style.setProperty("--loom-fg-accent", "#0a84ff");
-      document.documentElement.style.setProperty("--loom-border", "#3a3a3c");
-    </script>
+    <!-- Liquid Glass palette lives in `src/styles.css` with a
+         `prefers-color-scheme` media split. WKWebView picks up the
+         macOS app's effective appearance automatically, so flipping
+         System Settings → Appearance retints the workspace inline. -->
   </head>
   <body class="bg-loom-bg text-loom-fg font-sans antialiased">
     <div id="root"></div>
