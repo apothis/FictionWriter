@@ -34,6 +34,11 @@ public final class ProjectStorage {
         try fm.createDirectory(at: url, withIntermediateDirectories: true)
         try fm.createDirectory(at: url.appendingPathComponent("scenes"), withIntermediateDirectories: true)
         try fm.createDirectory(at: url.appendingPathComponent("generation-log"), withIntermediateDirectories: true)
+        // Phase 5 — references/ scaffolded from day one so the
+        // Bible Workspace reference-text surface (scope-lock #3
+        // production work) and the embed pipeline can write into
+        // it without a directory-existence guard at every site.
+        try fm.createDirectory(at: url.appendingPathComponent("references"), withIntermediateDirectories: true)
 
         let project = Project(title: title, author: author)
         try saveProject(project, at: url)

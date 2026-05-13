@@ -22,6 +22,7 @@ func phase1ProjectStorageTests() -> TestSuite {
         try expectTrue(fm.fileExists(atPath: dir.appendingPathComponent("project.json").path))
         try expectTrue(fm.fileExists(atPath: dir.appendingPathComponent("scenes").path))
         try expectTrue(fm.fileExists(atPath: dir.appendingPathComponent("generation-log").path))
+        try expectTrue(fm.fileExists(atPath: dir.appendingPathComponent("references").path))
     }
 
     s.test("save 3 scenes + 2 characters and reload yields identical project") {
