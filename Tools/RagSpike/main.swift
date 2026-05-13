@@ -499,6 +499,48 @@ func corpus() -> Int32 {
     return 0
 }
 
+// MARK: - Funcword-Z Swift port cross-check (LOOM_RAG_SPIKE §13.6 graduation)
+
+/// One-time validation: embed the fixture via the Swift FuncwordZEmbedder
+/// and dump the resulting vectors as JSON for comparison against the
+/// canonical Python embed_path_e output. Pairs with
+/// Tools/RagSpike/MlxSpike/compare_funcword_z.py.
+func dumpFuncwordZ() -> Int32 {
+    guard let fixture = loadFixture() else {
+        log("FATAL: could not load fixture")
+        return 1
+    }
+    let all = fixture.excerpts + fixture.queries
+    let model = FuncwordZEmbedder.fit(corpus: all.map { $0.text }, topN: 150)
+    log("[E-swift] fitted vocab dim=\(model.dim) over \(all.count) items")
+
+    var vectors: [String: [Float]] = [:]
+    for item in all {
+        let v = FuncwordZEmbedder.transform(item.text, using: model)
+        vectors[String(item.id)] = v.values
+    }
+
+    let payload: [String: Any] = [
+        "version": 1,
+        "paths": [[
+            "path": "E-funcword-z-swift",
+            "model": "swift/FuncwordZEmbedder@LoomCore",
+            "dim": model.dim,
+            "vectors": vectors,
+        ]],
+    ]
+    let cwd = FileManager.default.currentDirectoryPath
+    let out = URL(fileURLWithPath: cwd)
+        .appendingPathComponent("Tools/RagSpike/MlxSpike/vectors_funcword_z_swift.json")
+    if let data = try? JSONSerialization.data(withJSONObject: payload),
+       (try? data.write(to: out)) != nil {
+        log("Wrote \(out.path)")
+        return 0
+    }
+    log("FATAL: could not write \(out.path)")
+    return 1
+}
+
 // MARK: - Entry
 
 let args = CommandLine.arguments.dropFirst()
@@ -506,9 +548,12 @@ if args.contains("--smoke") {
     exit(smoke())
 } else if args.contains("--corpus") {
     exit(corpus())
+} else if args.contains("--funcword-z-dump") {
+    exit(dumpFuncwordZ())
 } else {
     log("usage: swift run RagSpike --smoke")
     log("       swift run RagSpike --corpus")
+    log("       swift run RagSpike --funcword-z-dump   (LOOM_MLX_PORT_SPIKE §11 cross-check)")
     log("")
     log("env overrides:")
     log("  LOOM_SPIKE_BASE_URL   (default \(koboldURLString))")
