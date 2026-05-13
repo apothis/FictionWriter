@@ -211,6 +211,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         workspace.target = self
         workspace.toolTip = "Open the dedicated entity-management window: full character editors, lorebook power-user fields, accepted-facts examiner, suggestions queue. (Phase 4.5 — see LOOM_BIBLE_WORKSPACE.md)"
         bibleMenu.addItem(workspace)
+        bibleMenu.addItem(.separator())
+        // Phase 7.b.6 — trigger for the Scene-Template Generation
+        // feature. Lives in the Bible menu because it consumes a
+        // Template Scene entity (managed via Bible Workspace).
+        let writeFromTemplate = NSMenuItem(
+            title: "Write Scene From Template…",
+            action: #selector(writeSceneFromTemplateClicked),
+            keyEquivalent: "")
+        writeFromTemplate.target = self
+        writeFromTemplate.toolTip = "Generate a new scene using a Template Scene's extracted structural skeleton (beat ordering, modality flow, pacing) but with new characters and content. (Phase 7 — see LOOM_SCENE_TEMPLATE.md)"
+        bibleMenu.addItem(writeFromTemplate)
         bibleMenuItem.submenu = bibleMenu
 
         NSApp.mainMenu = main
@@ -282,6 +293,73 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     /// per-call instruction field. The user fires Continue themselves
     /// — Roll-Outcome is a Bible action, not an auto-firing mode.
     public static let requestRolledOutcomeNotification = Notification.Name("LoomBible.requestRolledOutcome")
+
+    // MARK: - Phase 7.b.6 — template-scene generation menu
+
+    @objc private func writeSceneFromTemplateClicked() {
+        let session = AppState.shared.currentSession
+        let templates = session.listTemplateSceneSnapshots()
+            .filter { $0.beatCount != nil }
+        guard !templates.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = "No extracted templates available"
+            alert.informativeText = "Add a Template Scene in the Bible Workspace and click Extract to generate its structural skeleton. Once that's on disk, this command can use it."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Write Scene From Template"
+        alert.informativeText = "Pick a Template Scene to use as the structural blueprint, then describe the new characters / setting / situation. Loom will generate a new scene that preserves the template's beat ordering and pacing but with your content."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Generate")
+        alert.addButton(withTitle: "Cancel")
+
+        // Accessory view: template picker + cast-mapping text field.
+        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 400, height: 24))
+        for t in templates {
+            let beatCount = t.beatCount ?? 0
+            picker.addItem(withTitle: "\(t.name) — \(beatCount) beat\(beatCount == 1 ? "" : "s")")
+        }
+        let castLabel = NSTextField(labelWithString: "Cast / setting / situation")
+        castLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        let castField = NSTextField(frame: NSRect(x: 0, y: 0, width: 400, height: 80))
+        castField.placeholderString = "e.g. \"Maya is the protagonist; the setting is a server room at midnight; the object is an encrypted hard drive…\""
+        castField.usesSingleLineMode = false
+        castField.cell?.wraps = true
+        castField.cell?.isScrollable = false
+        let pickerLabel = NSTextField(labelWithString: "Template")
+        pickerLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        let stack = NSStackView(views: [pickerLabel, picker, castLabel, castField])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.setFrameSize(NSSize(width: 420, height: 160))
+        alert.accessoryView = stack
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let idx = picker.indexOfSelectedItem
+        guard idx >= 0, idx < templates.count else { return }
+        let chosen = templates[idx]
+        let castMapping = castField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !castMapping.isEmpty else {
+            DebugLog.shared.write("[template-gen] menu: cancelled — empty cast mapping")
+            return
+        }
+        DebugLog.shared.write("[template-gen] menu: launching template=\(chosen.name) id=\(chosen.id) castMapping-chars=\(castMapping.count)")
+        NotificationCenter.default.post(
+            name: EditorViewController.requestStartTemplateGenerationNotification,
+            object: self,
+            userInfo: [
+                "templateId": chosen.id,
+                "castMapping": castMapping,
+            ]
+        )
+    }
 
     // MARK: - Plan window (Phase 3 §E)
 

@@ -28,6 +28,14 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var generationTokenObserver: NSObjectProtocol?
     private var generationFinishObserver: NSObjectProtocol?
     private var generationStartObserver: NSObjectProtocol?
+    // Phase 7.b.6 — parallel observers for TemplateGenerationCoordinator.
+    // The userInfo shape is identical to GenerationCoordinator's by
+    // design, so the handler closures share the same insertion logic.
+    private var templateCoordinator: TemplateGenerationCoordinator!
+    private var templateGenStartObserver: NSObjectProtocol?
+    private var templateGenTokenObserver: NSObjectProtocol?
+    private var templateGenFinishObserver: NSObjectProtocol?
+    private var templateGenRequestObserver: NSObjectProtocol?
     private var insertAgainObserver: NSObjectProtocol?
     private var pushPastRefusalObserver: NSObjectProtocol?
     private var rolledOutcomeObserver: NSObjectProtocol?
@@ -87,6 +95,10 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = generationTokenObserver { NotificationCenter.default.removeObserver(o) }
         if let o = generationFinishObserver { NotificationCenter.default.removeObserver(o) }
         if let o = generationStartObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = templateGenStartObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = templateGenTokenObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = templateGenFinishObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = templateGenRequestObserver { NotificationCenter.default.removeObserver(o) }
         if let o = insertAgainObserver { NotificationCenter.default.removeObserver(o) }
         if let o = pushPastRefusalObserver { NotificationCenter.default.removeObserver(o) }
         if let o = rolledOutcomeObserver { NotificationCenter.default.removeObserver(o) }
@@ -295,6 +307,75 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             self?.trayView.setGenerationState(.idle)
             self?.handleGenerationFinish()
         }
+
+        // Phase 7.b.6 — parallel TemplateGenerationCoordinator wiring.
+        // Closures mirror the GenerationCoordinator handlers above; the
+        // didEmitToken userInfo shape is identical by design so the
+        // streaming insertion logic is verbatim-reused.
+        templateCoordinator = TemplateGenerationCoordinator(
+            session: session,
+            writerResolver: { profileId in
+                AppState.shared.registry.client(forProfileId: profileId)
+            }
+        )
+        templateGenStartObserver = NotificationCenter.default.addObserver(
+            forName: TemplateGenerationCoordinator.didStartNotification,
+            object: templateCoordinator,
+            queue: .main
+        ) { [weak self] _ in
+            self?.firstTokenSeenThisGeneration = false
+            self?.streamingThinkStripper = StreamingThinkBlockStripper()
+            self?.streamingStartOffset = nil
+            self?.streamingInsertedLength = 0
+            self?.trayView.setGenerationState(.thinking)
+        }
+        templateGenTokenObserver = NotificationCenter.default.addObserver(
+            forName: TemplateGenerationCoordinator.didEmitTokenNotification,
+            object: templateCoordinator,
+            queue: .main
+        ) { [weak self] note in
+            guard let self = self,
+                  let token = note.userInfo?["token"] as? String,
+                  let offset = note.userInfo?["insertionOffset"] as? Int else { return }
+            if self.streamingStartOffset == nil {
+                self.streamingStartOffset = offset
+            }
+            // Template-mode prose comes back beat-at-a-time, not
+            // token-streaming, so the StreamingThinkBlockStripper is
+            // a no-op here (no `<|channel>` tags expected). Push the
+            // beat directly through the same insertion path Continue
+            // uses.
+            let visible = self.streamingThinkStripper.consume(token)
+            guard !visible.isEmpty else { return }
+            if !self.firstTokenSeenThisGeneration {
+                self.firstTokenSeenThisGeneration = true
+                self.trayView.setGenerationState(.streaming)
+            }
+            let insertAt = (self.streamingStartOffset ?? offset) + self.streamingInsertedLength
+            self.insertGeneratedToken(visible, at: insertAt)
+            self.streamingInsertedLength += (visible as NSString).length
+        }
+        templateGenFinishObserver = NotificationCenter.default.addObserver(
+            forName: TemplateGenerationCoordinator.didFinishNotification,
+            object: templateCoordinator,
+            queue: .main
+        ) { [weak self] _ in
+            self?.trayView.setGenerationState(.idle)
+            self?.handleGenerationFinish()
+        }
+        // Trigger observer — AppDelegate's menu item posts this with
+        // `templateId` + `castMapping` after the user picks via NSAlert.
+        templateGenRequestObserver = NotificationCenter.default.addObserver(
+            forName: EditorViewController.requestStartTemplateGenerationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self = self,
+                  let templateId = note.userInfo?["templateId"] as? UUID,
+                  let castMapping = note.userInfo?["castMapping"] as? String
+            else { return }
+            self.startTemplateGeneration(templateId: templateId, castMapping: castMapping)
+        }
         insertAgainObserver = NotificationCenter.default.addObserver(
             forName: HistoryInspectorViewController.requestInsertAgainNotification,
             object: nil,
@@ -442,12 +523,52 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         acceptanceMachine.handleGenerationFinished(insertedRange: range, mode: mode)
     }
 
+    // MARK: - Phase 7.b.6 — template-scene generation trigger
+
+    /// Posted by AppDelegate's "Write scene from template…" menu item
+    /// (after the user picks a template + types a cast mapping in the
+    /// NSAlert). The editor observes this and kicks off
+    /// `TemplateGenerationCoordinator.start(...)` at the current
+    /// cursor offset. `userInfo: ["templateId": UUID, "castMapping": String]`.
+    public static let requestStartTemplateGenerationNotification = Notification.Name("LoomEditor.requestStartTemplateGeneration")
+
+    /// Public entry for kicking off a template-scene generation at
+    /// the current cursor. No-op if either coordinator is already
+    /// generating (both pipelines write into the same text view; we
+    /// don't multiplex). Surfaced as a public method so smoke tests +
+    /// the AppDelegate menu both reach the same path.
+    public func startTemplateGeneration(templateId: UUID, castMapping: String) {
+        guard !coordinator.isGenerating, !templateCoordinator.isGenerating else {
+            DebugLog.shared.write("[template-gen] start aborted: a generation is already in flight")
+            return
+        }
+        let cursorOffset = currentCursorOffset()
+        DebugLog.shared.write("[template-gen] starting at cursor=\(cursorOffset) templateId=\(templateId)")
+        templateCoordinator.start(
+            templateId: templateId,
+            castMapping: castMapping,
+            cursorOffset: cursorOffset
+        )
+    }
+
+    /// Resolves the text view's current cursor offset (location of
+    /// the first selected range, or end of document if no selection).
+    private func currentCursorOffset() -> Int {
+        guard let ranges = textView.selectedRanges as? [NSValue],
+              let first = ranges.first else {
+            return textView.textStorage?.length ?? 0
+        }
+        return first.rangeValue.location
+    }
+
     // MARK: - Phase 2 follow-on — Esc / ⌘. mid-stream cancel (HANDOFF §9.2)
 
     /// Public read-only view onto the coordinator's `isGenerating`
     /// — smoke tests use this to confirm the cancel shortcut routes
     /// without crashing while idle.
-    public var isGeneratingForTesting: Bool { coordinator.isGenerating }
+    public var isGeneratingForTesting: Bool {
+        coordinator.isGenerating || templateCoordinator.isGenerating
+    }
 
     /// Cancels any in-flight generation. No-op when idle. The
     /// coordinator already exposes `cancel()`; this is the editor-
