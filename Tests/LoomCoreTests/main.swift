@@ -147,6 +147,7 @@ let suites: [TestSuite] = [
     phase5RetrievalQueryBuilderTests(),
     phase5AppStateRetrievalWiringTests(),
     phase5BibleWorkspaceReferencesTests(),
+    phase7BeatExtractionTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

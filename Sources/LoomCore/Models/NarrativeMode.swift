@@ -17,7 +17,7 @@ import Foundation
 /// rather than `NarrativeMode?` to forward-tolerate unknown labels
 /// from future enum extensions; this enum formalises the v1 value
 /// space and the GBNF grammar fragment for classifier prompts.
-public enum NarrativeMode: String, CaseIterable, Equatable {
+public enum NarrativeMode: String, CaseIterable, Equatable, Codable {
     /// Physical action / external events. Active verbs, scene-time
     /// progression.
     case action

@@ -66,5 +66,17 @@ let package = Package(
             path: "Tools/RagSpike",
             exclude: ["Python"]
         ),
+        // Phase 7.a Scene-Template Generation spike runner
+        // (LOOM_SCENE_TEMPLATE.md §9). Reads fixtures, hits the Ollama
+        // gemma4_2b extractor for Pass A beat extraction, and emits
+        // Markdown reports for hand-grading. Run with:
+        //   swift run SceneTemplateSpike --extract <fixture.md>
+        //   swift run SceneTemplateSpike --extract-all
+        .executableTarget(
+            name: "SceneTemplateSpike",
+            dependencies: ["LoomCore"],
+            path: "Tools/SceneTemplateSpike",
+            exclude: ["Fixtures", "last-run"]
+        ),
     ]
 )
