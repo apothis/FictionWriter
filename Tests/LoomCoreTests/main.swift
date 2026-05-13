@@ -135,6 +135,10 @@ let suites: [TestSuite] = [
     phase5ReferenceTextSchemaTests(),
     phase5ReferenceFileTests(),
     phase5ReferenceStorageTests(),
+    phase5NarrativeModeTests(),
+    phase5NarrativeModeGoldTests(),
+    phase5NarrativeModeHeuristicTests(),
+    phase5NarrativeModeClassifierTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

@@ -499,6 +499,284 @@ func corpus() -> Int32 {
     return 0
 }
 
+// MARK: - Narrative-mode classifier (Phase 5 scope-lock #5)
+
+/// Flat-enum GBNF grammar for narrative-mode classification, per
+/// LOOM_NARRATIVE_MODE_SPIKE §3.2. Single label only — no JSON
+/// wrapper, no nested structure (Bastan et al. 2025 "Lost in Space"
+/// failure-mode fix).
+let narrativeModeGrammar: String = "root ::= \(NarrativeMode.gbnfAlternation)"
+
+/// Zero-shot classifier prompt. The category descriptions + leading-
+/// blank-line shape are calibrated against the "Lost in Space"
+/// finding that GBNF-constrained decoding prefers a clear `prompt
+/// ends → grammar begins` boundary.
+func narrativeModeZeroShotPrompt(passage: String) -> String {
+    """
+    Classify this prose passage's primary narrative mode.
+
+    Categories:
+    - action: physical action / external events
+    - dialogue: character speech
+    - interiority: internal thought, feeling, or free-indirect discourse
+    - description: settings, objects, sensory environment, suspended time
+    - summary: compressed-time narration (e.g. "for three weeks…")
+    - mixed: genuinely 50/50 across two modes
+
+    Passage:
+    \(passage)
+
+    Mode:
+    """
+}
+
+/// Four-shot classifier prompt: one labeled exemplar per category
+/// drawn from authors outside the gold set. Research expects κ to
+/// rise 0.1–0.2 vs zero-shot for subjective literary labels.
+func narrativeModeFewShotPrompt(passage: String) -> String {
+    """
+    Classify this prose passage's primary narrative mode. Pick exactly one of: action, dialogue, interiority, description, summary, mixed.
+
+    Examples:
+
+    Passage: The rain fell straight and slow across the empty street, and the lamp at the corner flickered, and the cobblestones gleamed black under it.
+    Mode: description
+
+    Passage: He grabbed the rope. He pulled. The crate lifted three inches off the deck and then slipped sideways. He swore.
+    Mode: action
+
+    Passage: She wondered, not for the first time, whether she had been wrong about him from the start. She thought, no. She thought, but I should have been.
+    Mode: interiority
+
+    Passage: For most of that decade she lived alone in the rooms above the bakery. Friends visited and stopped visiting. Her hair went grey.
+    Mode: summary
+
+    Passage: "I won't ask you again," he said.
+    "Then don't ask."
+    "I have to."
+    Mode: dialogue
+
+    Now classify this passage:
+
+    Passage:
+    \(passage)
+
+    Mode:
+    """
+}
+
+/// Single classification call. Returns nil on network error or
+/// unparseable output (the latter shouldn't happen under GBNF, but
+/// defensive nil for the rare edge).
+func classifyViaLLM(passage: String, prompt: String) -> NarrativeMode? {
+    guard let url = URL(string: "api/v1/generate", relativeTo: URL(string: koboldURLString))?.absoluteURL else {
+        return nil
+    }
+    let body: [String: Any] = [
+        "prompt": prompt,
+        "max_length": 8,
+        "max_context_length": 8192,
+        "temperature": 0.0,
+        "rep_pen": 1.0,
+        "grammar": narrativeModeGrammar,
+    ]
+    guard let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+    switch postJSON(url: url, body: data, timeoutSeconds: 120) {
+    case .success(let respData):
+        struct GenerateResponse: Decodable {
+            let results: [Item]
+            struct Item: Decodable { let text: String }
+        }
+        guard let r = try? JSONDecoder().decode(GenerateResponse.self, from: respData),
+              let raw = r.results.first?.text else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return NarrativeMode(rawValue: trimmed)
+    case .failure(let e):
+        log("[narrative-mode] network error: \(e)")
+        return nil
+    }
+}
+
+struct GoldChunk: Decodable {
+    let id: Int
+    let source: String
+    let nsfw: Bool
+    let modality: String
+    let text: String
+}
+struct GoldFile: Decodable {
+    let chunks: [GoldChunk]
+}
+
+func loadNarrativeGold() -> GoldFile? {
+    let cwd = FileManager.default.currentDirectoryPath
+    let url = URL(fileURLWithPath: cwd)
+        .appendingPathComponent("Tests/LoomCoreTests/Fixtures/NarrativeModeSpike/gold.json")
+    guard let data = try? Data(contentsOf: url) else { return nil }
+    return try? JSONDecoder().decode(GoldFile.self, from: data)
+}
+
+func narrativeMode() -> Int32 {
+    log("=== RagSpike --narrative-mode (LOOM_NARRATIVE_MODE_SPIKE.md §3) ===")
+    guard let gold = loadNarrativeGold() else {
+        log("FATAL: could not load gold fixture")
+        return 1
+    }
+    log("Gold: \(gold.chunks.count) chunks")
+
+    // Per-config predictions. (config_name, [(chunk_id, predicted, elapsed_seconds)])
+    var allConfigs: [(String, [(Int, NarrativeMode?, Double)])] = []
+
+    // Config A: heuristic
+    log("")
+    log("[heuristic] classifying \(gold.chunks.count) chunks...")
+    var hPreds: [(Int, NarrativeMode?, Double)] = []
+    for c in gold.chunks {
+        let start = Date()
+        let pred = NarrativeModeHeuristic.classify(c.text)
+        hPreds.append((c.id, pred, Date().timeIntervalSince(start)))
+    }
+    allConfigs.append(("heuristic", hPreds))
+
+    // Config B: LLM zero-shot
+    log("[zero-shot LLM] classifying \(gold.chunks.count) chunks via Kobold gemma-31B (...)" )
+    var zPreds: [(Int, NarrativeMode?, Double)] = []
+    for (i, c) in gold.chunks.enumerated() {
+        let start = Date()
+        let pred = classifyViaLLM(passage: c.text, prompt: narrativeModeZeroShotPrompt(passage: c.text))
+        let elapsed = Date().timeIntervalSince(start)
+        zPreds.append((c.id, pred, elapsed))
+        if (i + 1) % 10 == 0 {
+            log("  zero-shot: \(i + 1)/\(gold.chunks.count) (\(String(format: "%.1fs", elapsed)) last)")
+        }
+    }
+    allConfigs.append(("zero-shot LLM", zPreds))
+
+    // Config C: LLM 4-shot
+    log("[4-shot LLM] classifying \(gold.chunks.count) chunks...")
+    var fPreds: [(Int, NarrativeMode?, Double)] = []
+    for (i, c) in gold.chunks.enumerated() {
+        let start = Date()
+        let pred = classifyViaLLM(passage: c.text, prompt: narrativeModeFewShotPrompt(passage: c.text))
+        let elapsed = Date().timeIntervalSince(start)
+        fPreds.append((c.id, pred, elapsed))
+        if (i + 1) % 10 == 0 {
+            log("  4-shot: \(i + 1)/\(gold.chunks.count) (\(String(format: "%.1fs", elapsed)) last)")
+        }
+    }
+    allConfigs.append(("4-shot LLM", fPreds))
+
+    // Score
+    let goldById = Dictionary(uniqueKeysWithValues: gold.chunks.map { ($0.id, $0) })
+    log("")
+    log("=== Per-config eval ===")
+    log("")
+    log("| Config         | Accuracy | NSFW acc | SFW acc | Dialogue P | Action P | Mean s |")
+    log("|----------------|----------|----------|---------|------------|----------|--------|")
+    var dumpRows: [[String: Any]] = []
+    for (name, preds) in allConfigs {
+        var correct = 0
+        var nsfwTotal = 0, nsfwCorrect = 0
+        var sfwTotal = 0, sfwCorrect = 0
+        var dialogueTP = 0, dialogueFP = 0
+        var actionTP = 0, actionFP = 0
+        var totalElapsed: Double = 0
+        var perCatTP: [String: Int] = [:]
+        var perCatFN: [String: Int] = [:]
+        var perCatFP: [String: Int] = [:]
+        var nullCount = 0
+        for (id, pred, elapsed) in preds {
+            guard let g = goldById[id] else { continue }
+            totalElapsed += elapsed
+            guard let pred else {
+                nullCount += 1
+                if g.nsfw { nsfwTotal += 1 } else { sfwTotal += 1 }
+                perCatFN[g.modality, default: 0] += 1
+                continue
+            }
+            let isCorrect = pred.rawValue == g.modality
+            if isCorrect { correct += 1; perCatTP[g.modality, default: 0] += 1 }
+            else {
+                perCatFN[g.modality, default: 0] += 1
+                perCatFP[pred.rawValue, default: 0] += 1
+            }
+            if g.nsfw {
+                nsfwTotal += 1
+                if isCorrect { nsfwCorrect += 1 }
+            } else {
+                sfwTotal += 1
+                if isCorrect { sfwCorrect += 1 }
+            }
+            if pred == .dialogue {
+                if g.modality == "dialogue" { dialogueTP += 1 } else { dialogueFP += 1 }
+            }
+            if pred == .action {
+                if g.modality == "action" { actionTP += 1 } else { actionFP += 1 }
+            }
+        }
+        let acc = Double(correct) / Double(preds.count)
+        let nsfwAcc = nsfwTotal > 0 ? Double(nsfwCorrect) / Double(nsfwTotal) : 0
+        let sfwAcc = sfwTotal > 0 ? Double(sfwCorrect) / Double(sfwTotal) : 0
+        let dialP = (dialogueTP + dialogueFP) > 0 ? Double(dialogueTP) / Double(dialogueTP + dialogueFP) : 0
+        let actP = (actionTP + actionFP) > 0 ? Double(actionTP) / Double(actionTP + actionFP) : 0
+        let meanS = totalElapsed / Double(preds.count)
+        let nameCol = name.padding(toLength: 14, withPad: " ", startingAt: 0)
+        log("| \(nameCol) |  \(String(format: "%.3f", acc))   |  \(String(format: "%.3f", nsfwAcc))   |  \(String(format: "%.3f", sfwAcc))  |   \(String(format: "%.3f", dialP))    |  \(String(format: "%.3f", actP))   | \(String(format: "%5.2f", meanS))  |")
+        dumpRows.append([
+            "config": name,
+            "accuracy": acc,
+            "nsfw_accuracy": nsfwAcc,
+            "sfw_accuracy": sfwAcc,
+            "dialogue_precision": dialP,
+            "action_precision": actP,
+            "mean_seconds_per_chunk": meanS,
+            "null_predictions": nullCount,
+            "per_category_correct": perCatTP,
+            "per_category_missed": perCatFN,
+            "per_category_misattributed": perCatFP,
+        ])
+    }
+
+    // Per-category confusion for the best config + per-chunk dump.
+    log("")
+    log("=== Per-chunk predictions (gold vs each config) ===")
+    let header = "id".padding(toLength: 4, withPad: " ", startingAt: 0)
+        + "gold".padding(toLength: 12, withPad: " ", startingAt: 0)
+        + "nsfw".padding(toLength: 6, withPad: " ", startingAt: 0)
+        + "heuristic".padding(toLength: 13, withPad: " ", startingAt: 0)
+        + "zero-shot".padding(toLength: 13, withPad: " ", startingAt: 0)
+        + "4-shot"
+    log(header)
+    for (i, c) in gold.chunks.enumerated() {
+        let h = allConfigs[0].1[i].1?.rawValue ?? "—"
+        let z = allConfigs[1].1[i].1?.rawValue ?? "—"
+        let f = allConfigs[2].1[i].1?.rawValue ?? "—"
+        let mark: (Int, String) -> String = { gi, pred in
+            let g = gold.chunks[gi].modality
+            return pred == g ? pred : "✗\(pred)"
+        }
+        let line = String(c.id).padding(toLength: 4, withPad: " ", startingAt: 0)
+            + c.modality.padding(toLength: 12, withPad: " ", startingAt: 0)
+            + (c.nsfw ? "Y" : "n").padding(toLength: 6, withPad: " ", startingAt: 0)
+            + mark(i, h).padding(toLength: 13, withPad: " ", startingAt: 0)
+            + mark(i, z).padding(toLength: 13, withPad: " ", startingAt: 0)
+            + mark(i, f)
+        log(line)
+    }
+
+    // Persist dump for follow-on analysis
+    let lastRunDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        .appendingPathComponent("Tools/RagSpike/last-run")
+    try? FileManager.default.createDirectory(at: lastRunDir, withIntermediateDirectories: true)
+    let dumpURL = lastRunDir.appendingPathComponent("narrative-mode-eval.json")
+    if let data = try? JSONSerialization.data(withJSONObject: dumpRows, options: [.prettyPrinted]) {
+        try? data.write(to: dumpURL)
+        log("")
+        log("Wrote \(dumpURL.path)")
+    }
+    return 0
+}
+
 // MARK: - Hybrid retrieval validation (Phase 5 scope-lock #4)
 
 /// Loads D (StyleDistance) + E (function-word z-score) vectors from
@@ -670,10 +948,13 @@ if args.contains("--smoke") {
     exit(dumpFuncwordZ())
 } else if args.contains("--hybrid") {
     exit(hybrid())
+} else if args.contains("--narrative-mode") {
+    exit(narrativeMode())
 } else {
     log("usage: swift run RagSpike --smoke")
     log("       swift run RagSpike --corpus")
     log("       swift run RagSpike --hybrid           (D+E via RRF — scope-lock #4)")
+    log("       swift run RagSpike --narrative-mode   (LOOM_NARRATIVE_MODE_SPIKE — scope-lock #5)")
     log("       swift run RagSpike --funcword-z-dump   (LOOM_MLX_PORT_SPIKE §11 cross-check)")
     log("")
     log("env overrides:")
