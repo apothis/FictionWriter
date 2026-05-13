@@ -164,28 +164,38 @@ Styles (chosen for sharp differentiation, deliberately exaggerated):
 4. **S4 — Procedural thriller.** Mid-length declarative sentences,
    technical/operational vocabulary, suppressed affect, Clancy/Forsyth-adjacent.
 
-Topics (chosen so each works in every style):
+Topics (chosen so each works in every style, *and* so NSFW reflects
+the project's strategic anchor — see NSFW coverage below):
 
-- **T1 — A car chase / pursuit.**
-- **T2 — A kitchen breakfast scene.**
-- **T3 — A confrontation between two characters.**
+- **T1 — A sexual encounter.** All 4 excerpts NSFW.
+- **T2 — A confrontation that crosses physical lines.** 2 NSFW (S2,
+  S3) / 2 SFW (S1, S4).
+- **T3 — A morning-after / aftermath.** 2 NSFW (S2, S4) / 2 SFW (S1,
+  S3).
 
 **Query scenes** (the "user wants to write X in Y style" inputs): 4
-queries, one per style, at varied topics:
+queries, one per style, at varied topics; at least 3 of the 4
+queries are NSFW per the strategic anchor:
 
-- **Q1:** S1 (clipped) at T2 (breakfast).
-- **Q2:** S2 (gothic) at T1 (pursuit).
-- **Q3:** S3 (interior) at T3 (confrontation).
-- **Q4:** S4 (procedural) at T2 (breakfast).
+- **Q1:** S1 (clipped) at T1 (sexual encounter). NSFW.
+- **Q2:** S2 (gothic) at T2 (confrontation-physical). NSFW.
+- **Q3:** S3 (interior) at T1 (sexual encounter). NSFW.
+- **Q4:** S4 (procedural) at T3 (aftermath). NSFW.
 
 **Gold rankings:** for each query, the 3 same-style chunks rank
 positions 1/2/3 (any order among themselves); the 3 same-topic
 different-style chunks should *not* rank in the top 3 — they're the
 adversarial decoys. Remaining 6 chunks are uninvolved.
 
-**NSFW coverage:** per [LOOM_NSFW.md §3](LOOM_NSFW.md) content-neutrality
-directive, at least 2 of the 12 excerpts are NSFW (one in S2 lush, one
-in S3 interior). Mirrors LedgerSpike fixture practice.
+**NSFW coverage: 8 of 12 excerpts NSFW.** Per
+[LOOM_NSFW.md §3](LOOM_NSFW.md) content-neutrality directive +
+strategic-anchor framing, NSFW is the dominant case Loom must serve,
+not a niche to spot-check. The style axis gives 4 distinct NSFW
+registers for free: S1 terse-physical, S2 literary, S3 subjective-
+interior, S4 clinical-detached. Path B's bge-large is the most
+SFW-skewed embedder in the slate; if it systematically deranks NSFW
+chunks at equivalent style match, that is a production-relevant
+finding for Loom specifically.
 
 **Fixture path:** `Tests/LoomCoreTests/Fixtures/RagSpike/fixture.json`.
 

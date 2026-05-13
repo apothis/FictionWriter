@@ -129,6 +129,7 @@ let suites: [TestSuite] = [
     phase4_5RemoveKnownFactTests(),
     phase5RagEmbeddingsTests(),
     phase5RagRankingMetricsTests(),
+    phase5RagFixtureTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
