@@ -130,6 +130,7 @@ let suites: [TestSuite] = [
     phase5RagEmbeddingsTests(),
     phase5RagRankingMetricsTests(),
     phase5RagFixtureTests(),
+    phase5RagClientsTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

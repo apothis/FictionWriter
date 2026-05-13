@@ -56,5 +56,15 @@ let package = Package(
             dependencies: ["LoomCore"],
             path: "Tools/LedgerSpike"
         ),
+        // Phase 5 RAG-for-style spike runner (LOOM_RAG_SPIKE.md §6).
+        // Reads the fixture, hits Kobold + Ollama for Paths A/B/C,
+        // and consumes the Python sidecar's vectors.json for Paths
+        // D + E. Run with `swift run RagSpike --smoke`.
+        .executableTarget(
+            name: "RagSpike",
+            dependencies: ["LoomCore"],
+            path: "Tools/RagSpike",
+            exclude: ["Python"]
+        ),
     ]
 )
