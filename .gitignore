@@ -12,6 +12,9 @@ Tools/RagSpike/vectors.json
 Tools/RagSpike/last-run/
 Tools/RagSpike/Python/.venv/
 Tools/RagSpike/Python/__pycache__/
+Tools/RagSpike/MlxSpike/models/
+Tools/RagSpike/MlxSpike/vectors_mlx.json
+Tools/RagSpike/MlxSpike/__pycache__/
 
 # Phase 4.5 Bible Workspace web bundle. Dev source lives in
 # web/bible-workspace/; the build script populates these dirs from

@@ -174,7 +174,7 @@ Chunk reference texts, embed via a **hybrid D + E index**, retrieve relevant sty
 
 **Production scope locks needed at Phase 5 start:**
 
-1. **StyleDistance deployment.** Path D requires a Python encoder — Loom currently has zero Python dependencies. Two options to decide: (a) bundled venv in `Loom.app/Contents/Resources/` (~150 MB) with a localhost HTTP sidecar process, (b) MLX port of StyleDistance weights (real porting work, ~1 session). Spike's [§9 production gap #5](LOOM_RAG_SPIKE.md).
+1. ~~**StyleDistance deployment.**~~ ✅ **MLX, closed 2026-05-13** via [`LOOM_MLX_PORT_SPIKE.md`](LOOM_MLX_PORT_SPIKE.md). Both numerical (cosine 1.000000 across all 16 fixture items vs sentence-transformers baseline) and behavioural (4 of 4 identical top-3 rankings, zero NDCG/preference drift) gates passed. Phase 5 production ships MLX via [`MLXEmbedders`](https://github.com/ml-explore/mlx-swift-lm) — in-process Swift, no sidecar, no Python interpreter in .app, no ML-native-lib code-signing pipeline. 242 MB fp16 weights; 4-bit quantisation experiment is a Phase 5 follow-on.
 2. **E (function-word z-score) Swift port.** ~50 LOC in `Sources/LoomCore/Retrieval/`, vendor `Tools/RagSpike/Python/embed_offline.py`'s `embed_path_e` directly. No external dependency.
 3. **Reference-text entity type in the Bible Workspace.** Mirrors Phase 4.5 Sessions 2–5 patterns; the React-side scaffolding already covers list/editor/intent dispatch. Add a new `Reference` snapshot kind + view + intent cases. Storage at `references/<id>.md` + `<id>.index` per [LOOM_PLAN.md §7](LOOM_PLAN.md).
 4. **Hybrid retrieval merge policy.** Sum-of-normalised-cosines, or rank-fusion (Reciprocal Rank Fusion is the standard). Decide at Phase 5 design lock.
