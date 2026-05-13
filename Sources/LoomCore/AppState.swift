@@ -504,6 +504,66 @@ public final class AppState {
     /// closure — its `PythonStyleDistanceClient` deinit closes the
     /// subprocess. Phase 5.5 may cache this if the per-ingest cold
     /// start (~7.65s) becomes a UX concern in practice.
+    // MARK: - Phase 7 — template scene extraction
+
+    /// Posted on the main queue when a Pass-A beat extraction finishes
+    /// (success or failure). `userInfo` carries `["templateId": UUID,
+    /// "beatCount": Int?, "error": Error?]`. The Bible Workspace
+    /// listens for this to refresh the snapshot so the new
+    /// `.beats.json` sidecar surfaces as "N beats" instead of "not
+    /// yet extracted."
+    public static let templateExtractDidFinishNotification = Notification.Name("LoomTemplate.extractDidFinish")
+
+    /// Kick off Pass A beat extraction for a template scene on a
+    /// background queue. Uses the configured extractor server
+    /// (Ollama gemma4_2b by default — same server Phase 4's ledger
+    /// extractor uses). Posts `templateExtractDidFinishNotification`
+    /// + `ProjectSession.didChangeNotification` on completion so the
+    /// workspace snapshot refreshes with the new beat count.
+    ///
+    /// No-op for in-memory sessions or when no extractor server is
+    /// configured. The transient `OllamaClient` is dropped at the
+    /// end of the closure.
+    public func extractTemplateScene(id: UUID) {
+        guard let projectURL = currentSession.url else {
+            DebugLog.shared.write("[template] extract skipped: in-memory session id=\(id)")
+            return
+        }
+        guard let profile = settings.extractorServer() else {
+            DebugLog.shared.write("[template] extract skipped: no extractor server configured id=\(id)")
+            return
+        }
+        let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let client = OllamaClient(baseURL: profile.baseURL, model: model)
+            let extractor = OllamaBeatExtractor(client: client)
+            let pipeline = BeatExtractionPipeline(projectURL: projectURL, extractor: extractor)
+            pipeline.extractAndPersist(templateId: id) { result in
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    var info: [AnyHashable: Any] = ["templateId": id]
+                    switch result {
+                    case .success(let skeleton):
+                        info["beatCount"] = skeleton.beats.count
+                        DebugLog.shared.write("[template] extract completed id=\(id) beats=\(skeleton.beats.count)")
+                    case .failure(let err):
+                        info["error"] = err
+                        DebugLog.shared.write("[template] extract failed id=\(id) error=\(err)")
+                    }
+                    NotificationCenter.default.post(
+                        name: Self.templateExtractDidFinishNotification,
+                        object: self,
+                        userInfo: info
+                    )
+                    NotificationCenter.default.post(
+                        name: ProjectSession.didChangeNotification,
+                        object: self.currentSession
+                    )
+                }
+            }
+        }
+    }
+
     public func ingestReference(id: UUID) {
         guard let projectURL = currentSession.url else {
             DebugLog.shared.write("[ingest] skipped: in-memory session id=\(id)")

@@ -45,11 +45,14 @@ func phase7BeatExtractionPipelineTests() -> TestSuite {
             pending.append((cannedResult, completion))
         }
 
-        /// Drain pending completions. Tests call this after invoking
-        /// the pipeline so they run in a deterministic order.
+        /// Drain pending completions. Snapshot + clear before firing
+        /// so completions that re-enqueue work (e.g. retry paths)
+        /// land in the freshly-cleared `pending` rather than being
+        /// dropped by `removeAll`.
         func flush() {
-            for (r, c) in pending { c(r) }
+            let snapshot = pending
             pending.removeAll()
+            for (r, c) in snapshot { c(r) }
         }
     }
 

@@ -107,63 +107,14 @@ func loadFixture(path: URL) throws -> Fixture {
     return Fixture(path: path, frontmatter: fm, body: body.trimmingCharacters(in: .whitespacesAndNewlines))
 }
 
-// MARK: - Ollama call (synchronous wrapper)
+// MARK: - (Pass A) Ollama call — production wrapper used directly
 
-func ollamaExtract(prompt: String, schema: [String: Any]) -> Result<String, Error> {
-    guard let url = URL(string: "api/chat", relativeTo: URL(string: ollamaURLString))?.absoluteURL else {
-        return .failure(NSError(domain: "Spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "bad ollama URL"]))
-    }
-    let body: [String: Any] = [
-        "model": ollamaModel,
-        "messages": [["role": "user", "content": prompt]],
-        "stream": false,
-        "options": [
-            // Low temperature — extraction wants deterministic JSON,
-            // not creative variation. Matches LedgerSpike's tight-sampler
-            // posture (Tools/LedgerSpike/main.swift §sampler-rationale).
-            "temperature": 0.2,
-            // Large numPredict because the schema is sizable
-            // (8 beat fields × ~10 beats + pacingStats + character list)
-            // — a tight budget here causes deterministic-empty completion
-            // per the LOOM_LEDGER_SPIKE §11 finding.
-            "num_predict": 4096,
-            "repeat_penalty": 1.1,
-        ],
-        "format": schema,
-        "keep_alive": "30m",
-    ]
-    var req = URLRequest(url: url)
-    req.httpMethod = "POST"
-    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-    let cfg = URLSessionConfiguration.default
-    cfg.timeoutIntervalForRequest = 600
-    let session = URLSession(configuration: cfg)
-    let sem = DispatchSemaphore(value: 0)
-    var result: Result<String, Error> = .failure(NSError(domain: "Spike", code: -1))
-    session.dataTask(with: req) { data, _, err in
-        defer { sem.signal() }
-        if let err = err { result = .failure(err); return }
-        guard let data = data else {
-            result = .failure(NSError(domain: "Spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "no body"]))
-            return
-        }
-        do {
-            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            if let msg = obj?["message"] as? [String: Any],
-               let content = msg["content"] as? String {
-                result = .success(content)
-            } else {
-                let raw = String(data: data, encoding: .utf8) ?? ""
-                result = .failure(NSError(domain: "Spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "unexpected shape: \(raw.prefix(200))"]))
-            }
-        } catch {
-            result = .failure(error)
-        }
-    }.resume()
-    sem.wait()
-    return result
-}
+// Phase 7.b.3 refactor: the spike runner used to hand-roll the
+// `/api/chat` request here. That code moved into the production
+// `OllamaBeatExtractor` (which inherits the retry-on-empty +
+// scaled-budget pattern from `OllamaLedgerExtractor`). The spike
+// runner now wraps `OllamaBeatExtractor` in a semaphore — see
+// `extract(fixturePath:)`.
 
 // MARK: - Kobold writer call (synchronous wrapper)
 
@@ -546,32 +497,49 @@ func extract(fixturePath: URL) -> ExtractionResult {
         )
     }
     let groundTruth = PacingStats.compute(text: fixture.body)
-    let prompt = BeatExtraction.buildExtractionPrompt(sourceProse: fixture.body)
-    let schema = BeatExtraction.jsonSchema()
 
     log("[\(fixture.path.lastPathComponent)] extracting (~\(fixture.body.split(whereSeparator: { $0.isWhitespace }).count)w)...")
     let start = Date()
-    let raw: String
-    switch ollamaExtract(prompt: prompt, schema: schema) {
-    case .success(let s): raw = s
-    case .failure(let e):
+
+    // Phase 7.b.3 refactor: go through the production extractor
+    // (OllamaBeatExtractor) instead of the hand-rolled HTTP path.
+    // Wrap the async API in a semaphore for the CLI runner.
+    guard let baseURL = URL(string: ollamaURLString) else {
         return ExtractionResult(
-            fixture: fixture,
-            rawResponse: "",
-            elapsedSeconds: Date().timeIntervalSince(start),
-            parsed: nil,
-            parseError: "ollama: \(e)",
+            fixture: fixture, rawResponse: "", elapsedSeconds: 0,
+            parsed: nil, parseError: "bad ollama URL",
             groundTruthPacing: groundTruth
         )
     }
+    let client = OllamaClient(baseURL: baseURL, model: ollamaModel)
+    let extractor = OllamaBeatExtractor(client: client)
+    let sem = DispatchSemaphore(value: 0)
+    var skeletonResult: Result<ExtractedSceneSkeleton, Error>? = nil
+    extractor.extractSkeleton(from: fixture.body) { result in
+        skeletonResult = result
+        sem.signal()
+    }
+    sem.wait()
     let elapsed = Date().timeIntervalSince(start)
     log("[\(fixture.path.lastPathComponent)] response in \(String(format: "%.2fs", elapsed))")
+    guard let skeletonResult = skeletonResult else {
+        return ExtractionResult(
+            fixture: fixture, rawResponse: "", elapsedSeconds: elapsed,
+            parsed: nil, parseError: "no result",
+            groundTruthPacing: groundTruth
+        )
+    }
     do {
-        let parsed = try BeatExtraction.parseExtractedSkeleton(raw)
+        let parsed = try skeletonResult.get()
+        // Re-encode the parsed skeleton as the "raw response" surface
+        // for the report renderer. OllamaBeatExtractor doesn't expose
+        // the raw text from Ollama (it parses internally); the
+        // canonical view is the round-tripped JSON.
+        let rawJSON = (try? String(data: JSONEncoder.loomPretty.encode(parsed), encoding: .utf8)) ?? "{}"
         log("[\(fixture.path.lastPathComponent)] parsed \(parsed.beats.count) beats")
         return ExtractionResult(
             fixture: fixture,
-            rawResponse: raw,
+            rawResponse: rawJSON,
             elapsedSeconds: elapsed,
             parsed: parsed,
             parseError: nil,
@@ -580,7 +548,7 @@ func extract(fixturePath: URL) -> ExtractionResult {
     } catch {
         return ExtractionResult(
             fixture: fixture,
-            rawResponse: raw,
+            rawResponse: "",
             elapsedSeconds: elapsed,
             parsed: nil,
             parseError: "parse: \(error)",
