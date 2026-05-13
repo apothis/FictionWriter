@@ -811,7 +811,10 @@ empirically defensible.
 - **Chunk-size sweep.** Defer to Phase 5 production over real
   multi-page reference corpora.
 
-### 13.8 Hybrid validation — RRF k=10 (Phase 5 scope-lock #4)
+### 13.8 Hybrid validation — RRF k=10 (Phase 5 scope-lock #4) [CLOSED 2026-05-13]
+
+> **Production status:** Phase 5 production scope-lock #4 closed against RRF k=10 equal-weights. Implemented at [`Sources/LoomCore/Retrieval/RankingMetrics.swift::reciprocalRankFusion`](Sources/LoomCore/Retrieval/RankingMetrics.swift); the [`RetrievalService`](Sources/LoomCore/Retrieval/RetrievalService.swift) (query side) and [`ReferenceIngestPipeline`](Sources/LoomCore/Retrieval/ReferenceIngestPipeline.swift) (write side) are wired end-to-end. Writer-prompt integration ([`StyleExemplarsLayer`](Sources/LoomCore/Generation/StyleExemplarsLayer.swift) + [`GenerationCoordinator.styleRetriever`](Sources/LoomCore/Generation/GenerationCoordinator.swift)) is in. The app-level injection point (creating a RetrievalService per project, wiring it into the coordinator) is the one remaining seam — see HANDOFF.md §15.12 for the next-session pickup.
+
 
 Reproducible via `swift run RagSpike --hybrid` (no Kobold/Ollama
 calls — runs from the saved `vectors.json` produced by

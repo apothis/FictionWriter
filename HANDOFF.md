@@ -789,3 +789,136 @@ Phase 5 architecture: reference texts index in both D and E spaces. At retrieval
 **Risk to flag at Phase 5 design lock**: §13.3(b) caveat. If E doesn't tie D on real reference texts (fixture-leakage hypothesis), the hybrid degrades to D-only and the Python-sidecar production cost is real. Worth running an E-only Phase 5 production benchmark over the user's first real reference corpus *before* committing to the StyleDistance deployment work.
 
 933/933 tests passing throughout the spike (no regressions across S1-S7). The spike's TDD discipline held — every Swift module has pure-data tests; network glue and orchestration are integration-test territory and that's intentional.
+
+### 15.12 Session ledger — 2026-05-13 (Phase 5 production, all five scope-locks + C step)
+
+Big session. Phase 5 went from "five empirical scope-locks closed in spike form" to "production retrieval engine end-to-end, pipeline wired into the writer prompt, one app-level injection point away from a runnable demo." 16 commits, 1075 tests passing.
+
+#### What landed (chronological by commit)
+
+**Phase 5 sub-spike: StyleDistance MLX conversion validity** ([`6e50328`](LOOM_MLX_PORT_SPIKE.md))
+
+User confirmed the spike doc proposal (Paths D + E, RRF k=10, hybrid index). Picked D + E hybrid over single-D. Pre-implementation research found StyleDistance had no direct MLX port but the `mlx-embeddings` Python tool handles RoBERTa-base architecturally (XLM-RoBERTa class works for plain RoBERTa once `model_type` is patched). Conversion succeeded; both numerical (cosine 1.000000 across all 16 fixture items vs PyTorch baseline) and behavioural (4 of 4 identical top-3 rankings, zero NDCG/preference drift) gates passed. Phase 5 production scope-lock #1 closed against MLX.
+
+**Phase 5 scope-lock #2: Path E Swift port** ([`0abc34d`](Sources/LoomCore/Retrieval/FuncwordZEmbedder.swift))
+
+Pure-Swift port of `Tools/RagSpike/Python/embed_offline.py::embed_path_e`. ASCII-only `[a-z]+` tokenisation, top-N most-frequent tokens by global frequency with first-encountered tie-break (matches Python `Counter.most_common`), per-text rel-freq over the top-N vocab, z-score per dim across the corpus with `<1e-9` std guard. 13 TestKit tests including a hand-computed symmetric [a,b,c] corpus and a cross-check via `RagSpike --funcword-z-dump`: Swift output matches Python at cosine 1.000000, max element diff 1e-6 across all 16 fixture items. Pure-Swift, no external deps.
+
+**Phase 5 scope-lock #3: reference-text storage** ([`d6d6e51`](Sources/LoomCore/Storage/ReferenceStorage.swift))
+
+`<project>/references/<id>.md` (YAML frontmatter + body, mirrors `scenes/<id>.md`) + `<id>.index` (JSON sidecar with per-chunk D + E vectors). `ReferenceText` / `ReferenceFile` (encode/decode) / `ReferenceStorage` (save/load/delete/list). The index schema includes optional `dVec`, `eVec`, and `modality` per chunk so pre-embed and partial-embed states are model-able without migrations. `schemaVersion: 1` anchored for future forward-load tests. `ProjectStorage.createNewProject` scaffolds `references/` alongside `scenes/` and `generation-log/` from day one. 29 new TestKit tests.
+
+**Phase 5 scope-lock #4: hybrid retrieval merge** ([`894003f`](Sources/LoomCore/Retrieval/RankingMetrics.swift))
+
+Pre-implementation research pass surveyed RRF / DBSF / convex-combination / cross-encoder rerank prior art. The "two complementary dense embedders both targeting style" niche turned out to be under-served in the literature (dense+sparse is the standard hybrid case); the closest practitioner advice supports RRF when score distributions are incommensurable (our situation). Implementation: `RankingMetrics.reciprocalRankFusion(rankings:k:weights:)`, 30 LOC. Defaults: `k=10` (not Cormack's 60 — Loom retrieves top-3 over ~50-chunk small corpora, not TREC top-1000), equal weights (D + E tie on NDCG in the spike fixture; no learned weights to overfit on 16 decisions). Empirically validated against the [LOOM_RAG_SPIKE](LOOM_RAG_SPIKE.md) §13.1 fixture via `RagSpike --hybrid`: hybrid NDCG@3 0.926 vs individual 0.883, preference +0.917 vs +0.833 / +0.750, NSFW hit 0.875 vs D-alone 0.750. Strictly Pareto-better. 9 new TestKit tests including hand-computed score-formula verification.
+
+**Phase 5 scope-lock #5: narrative-mode tagging** ([`ed60eb7`](Sources/LoomCore/Retrieval/NarrativeModeClassifier.swift))
+
+User chose Option B (LLM-classified at ingest) over A/C/D. Pre-spike research surfaced two load-bearing changes before any code: (1) extend the taxonomy from LOOM_RESEARCH §O.4's four modes to **six** — added `summary` (Marshall 1998 / Card 1999 — scene-vs-summary pace axis) and `mixed` (gold's noise floor + classifier opt-out); (2) acceptance bar of 70% not 90% (Zehe et al. EACL 2021 γ ≈ 0.7 IAA ceiling). 52-chunk hand-labeled gold set: 32 re-chunked from the RAG fixture + 20 hand-authored targeting summary + edge cases. NSFW 56%. Tested three configs: heuristic 55.8% (below floor; 100%/87.5% precision/recall on dialogue), zero-shot LLM **73.1%** (above floor; dialogue recall weak at 37%), 4-shot LLM 51.9% with 31.7% NSFW parity gap (DROPPED — violates spec). Verdict: PIVOT to two-pass hybrid (`NarrativeModeClassifier`) — heuristic dialogue-gate first (100% precision, 87.5% recall), zero-shot LLM for the residual. Projected hybrid accuracy ~80%. Three surprises documented: (a) few-shot backfired ~21 accuracy points + violated NSFW parity (likely GBNF + in-context label exposure interaction), (b) zero-shot gemma-31B exceeds human IAA ceiling, (c) heuristic dialogue-gate decisively beats LLM dialogue recall.
+
+**Phase 5 production B: ingest orchestrator** ([`bd1d7e6`](Sources/LoomCore/Retrieval/ReferenceIngestPipeline.swift))
+
+`ReferenceIngestPipeline` composes all five scope-locks. Two-pass design: `chunkAndEmbedD(referenceId:)` for per-reference (load .md → chunk → classify modality → embed via injected D `EmbeddingClient` → write sidecar) and `refitAllEVectors()` for project-wide (gather every chunk across every reference → fit FuncwordZ on the full corpus → re-transform → update every sidecar). Split exists because Path E is corpus-relative; adding a new reference shifts the distribution and requires re-transforming every existing reference. `EmbeddingClient` protocol abstraction lets production wrap MLX/venv/whatever; tests use a stub. 10 new TestKit tests.
+
+**Phase 5 production: RetrievalService** ([`024e1c2`](Sources/LoomCore/Retrieval/RetrievalService.swift))
+
+Mirror of ReferenceIngestPipeline on the query side. Reads `.index` sidecars; runs Path D embed via injected client + per-call FuncwordZ refit-and-transform; per-path rank by cosine; RRF merge with the §13.8 lock (k=10, equal weights); returns top-K `StyleExemplar` with full provenance metadata. Graceful degradation: D embed nil → E-only; no eVec stored → D-only; both fail → empty result. `.mixed` modality filter is a no-op (the "classifier unsure" output shouldn't be preferentially retrieved). 8 new TestKit tests.
+
+**Phase 5 production: KoboldNarrativeModeClassifier** ([`873432f`](Sources/LoomCore/Retrieval/KoboldNarrativeModeClassifier.swift))
+
+Pure-data Kobold ↔ NarrativeMode wiring. Mirrors `KoboldEmbeddingsRequest/Response` pattern. Flat-enum GBNF (`root ::= "action" | "dialogue" | ...`), zero-shot prompt with 6-category gloss, low-temperature + tight max_length sampling per LOOM_NARRATIVE_MODE_SPIKE §10 verdict. `makeClosure(baseURL:)` returns a synchronous `(String) -> NarrativeMode?` closure suitable for `ReferenceIngestPipeline.modalityLLM` (URLSession + DispatchSemaphore; blocking; must run off-main). 9 new TestKit tests.
+
+**MLX → venv pivot** ([`217f1ef`](Sources/LoomCore/Retrieval/PythonStyleDistanceClient.swift))
+
+Wrote a Swift `MLXStyleDistanceClient` against `ml-explore/mlx-swift-lm` per the §11 research. Compiled clean. Failed at runtime with `MLX error: Failed to load the default metallib`. Root cause documented in mlx-swift's own README: "SwiftPM (command line) cannot build the Metal shaders so the ultimate build has to be done via Xcode." User's machine has CLT only, no full Xcode. Disk check: 87% full (29 GB free / 228 GB total) — Xcode's ~15-20 GB minimal install was infeasible without significant cleanup.
+
+User pivoted to bundled-venv. Implementation: a long-lived Python subprocess (`Tools/RagSpike/Python/embed_subprocess.py` — loads StyleDistance once, serves stdin/stdout JSON-line protocol) wrapped by `PythonStyleDistanceClient`. Subprocess is parent's child — dies automatically when stdin closes; no daemon, no port management, no separate code-signing pipeline for a launcher. End-to-end validated: cosine 1.000000 against canonical Python baseline. ~7.65s cold start + 0.05-0.2s per warm embed. Reuses existing `Tools/RagSpike/Python/.venv`; bundling Python + venv into Loom.app is a Phase 5.5 deployment task. 9 new TestKit tests for the wire-format. LOOM_MLX_PORT_SPIKE §12 documents the full pivot rationale + re-test path if Xcode ever arrives.
+
+**Phase 5 production C: writer-prompt integration** ([`df11e9f`](Sources/LoomCore/Generation/StyleExemplarsLayer.swift), [`62834e3`](Sources/LoomCore/Generation/GenerationCoordinator.swift))
+
+Step 1: `StyleExemplarsLayer.format(_:)` produces a `[STYLE EXEMPLARS] ... [END]` block with per-exemplar reference name + modality + verbatim text + load-bearing voice-cues-not-content guidance (counter to the LOOM_RAG_SPIKE §13.3(d) plagiarism risk when retrieval surfaces same-NSFW-vocabulary chunks). `PromptContext.styleExemplars: [StyleExemplar]` field added, default empty (backwards compat). PromptBuilder appends a `fewShotStyleExample` layer below cache, after bible/lorebook/knowledge layers, before recent-prose, eviction priority 30 (nice-to-have; budget pressure drops it first). 13 new TestKit tests.
+
+Step 2: `RetrievalQueryBuilder.queryText(for:)` extracts query text per-mode (`.continueProse` → last N words before cursor; selection-modes → selected text; `.brainstorm`/`.critique`/`.bridge`/`.describe`/`.nameSuggest` → nil). `GenerationCoordinator.styleRetriever: ((String) -> [StyleExemplar])?` optional closure dep. When set, `start()` extracts the query, blocks on retrieval, threads `styleExemplars` into PromptContext. Default nil preserves pre-Phase-5 behaviour exactly. 10 new TestKit tests for the query builder.
+
+#### What Phase 5 production has now
+
+**Architecturally complete.** All five spike scope-locks have production conformers; the ingest pipeline + retrieval service + writer-prompt integration are all wired end-to-end.
+
+```
+ingest:    ReferenceText.md → RagChunker → NarrativeModeClassifier (heuristic + Kobold LLM)
+                                          → PythonStyleDistanceClient (D)
+                                          → ReferenceTextIndex.json sidecar
+                                          → FuncwordZEmbedder.refitAllEVectors (project-wide E)
+
+retrieve:  query → PythonStyleDistanceClient (D) + FuncwordZEmbedder.transform (E)
+                  → per-path rank-by-cosine
+                  → RankingMetrics.reciprocalRankFusion (RRF k=10)
+                  → top-K StyleExemplar with provenance
+
+generate:  GenerationCoordinator.start
+              → RetrievalQueryBuilder.queryText (per-mode)
+              → styleRetriever closure (RetrievalService.retrieve)
+              → PromptContext.styleExemplars
+              → PromptBuilder ([STYLE EXEMPLARS] layer)
+              → Kobold gemma-31B writer
+```
+
+Every step is TDD'd at the pure-data layer; integration is validated end-to-end via `Tools/RagSpike` subcommands.
+
+#### What's MISSING for a runnable demo
+
+**The app-level injection.** Nothing currently *creates* a `RetrievalService` per project + *injects* it into the coordinator's `styleRetriever`. Expected location: `AppState` (or somewhere in the project-open lifecycle). ~20-30 LOC. Probably:
+
+```swift
+// Pseudo-code
+extension AppState {
+    func styleRetriever(for project: ProjectSession) -> (String) -> [StyleExemplar] {
+        let pythonExec = URL(fileURLWithPath: ".../Tools/RagSpike/Python/.venv/bin/python3")
+        let script = URL(fileURLWithPath: ".../Tools/RagSpike/Python/embed_subprocess.py")
+        let d = PythonStyleDistanceClient(...)
+        let service = RetrievalService(projectURL: project.projectURL, dClient: d)
+        return { query in
+            (try? service.retrieve(query: query, topK: 3)) ?? []
+        }
+    }
+}
+
+// At coordinator construction:
+coordinator.styleRetriever = AppState.shared.styleRetriever(for: session)
+```
+
+This is small enough to do in a follow-on session start; documenting it as **the** primary entry point.
+
+**No reference texts in the UI.** Phase 5 production work A — Bible Workspace surface for managing reference texts — has not started. Today the only way to add a reference text to a project is to write `references/<uuid>.md` directly on disk. The Workspace surface would mirror Phase 4.5 Sessions 2-5 patterns: snapshot kind + view + intent dispatch + storage hookup.
+
+**Reference-text ingest UX.** Once references exist, the user needs a way to trigger `ReferenceIngestPipeline.chunkAndEmbedD(referenceId:)` and `refitAllEVectors()`. Could be an explicit "ingest" button per reference, or implicit on save. Subprocess cold-start is ~7.65s; UI needs to surface progress.
+
+#### Phase 5.5 deployment hardening (deferred)
+
+These are concerns for when Loom ships to other users, not blockers for self-use:
+
+- **Bundle Python + venv into `Loom.app/Contents/Resources/Python/`** (~1 GB inside .app, no user setup). Today the spike reuses `Tools/RagSpike/Python/.venv`.
+- **ML-native-lib code-signing** for hardened-runtime + notarisation. ~1 day of build.sh pipeline work.
+- **4-bit quantisation** of StyleDistance weights (242 MB fp16 → ~125 MB) — same Swift API, weight-file swap.
+- **MLX re-test path** if Xcode is installed later. Restore from git (LoomMLX target was deleted in the pivot commit; predecessor commit `873432f` had it). Documented in LOOM_MLX_PORT_SPIKE §12.5.
+
+#### Carried into the next session
+
+**Primary**: **App-level RetrievalService injection** (small) + **A — Bible Workspace reference-text surface** (mirrors Phase 4.5 patterns, ~half-day to ~full session).
+
+**Secondary** (Phase 5 cleanup):
+- Reference-text ingest UX in the workspace (button + progress).
+- LOOM_PLAN.md: add Phase 5 production sub-items to the inventory table.
+
+**Still on the parking lot** (unchanged from §15.11):
+- Tests 8 + 9 unrun.
+- SDT structural limit.
+- Extractor coverage variance.
+- The four Phase 4.5 follow-ons.
+
+**New parking-lot from this session**:
+- `.app` bundle Phase 5.5 work (Python + venv bundling, ML-native-lib code-signing).
+- MLX re-test if Xcode is ever installed.
+- The MLX research-verification lesson: **research agents can verify library state but cannot verify local toolchain state**. Worth a memory note (added this session).
+
+933 → 1075 tests passing across the Phase 5 production arc. The TDD discipline held — every Swift module has pure-data tests; subprocess management, MLX runtime, network glue, and orchestration are integration-test territory and that's intentional.

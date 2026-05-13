@@ -260,7 +260,10 @@ The few-shot prompt collapses ~17 chunks to `mixed` that zero-shot correctly cla
 
 Strong on dialogue + summary (the rule-detectable categories); weak on interiority and the action↔description distinction. Falls below floor on aggregate but is structurally complementary to the LLM.
 
-## 10. Verdict — PIVOT: two-pass hybrid (heuristic dialogue-gate + zero-shot LLM)
+## 10. Verdict — PIVOT: two-pass hybrid (heuristic dialogue-gate + zero-shot LLM) [CLOSED 2026-05-13]
+
+> **Production status:** Scope-lock #5 closed against the two-pass hybrid. [`NarrativeModeClassifier`](Sources/LoomCore/Retrieval/NarrativeModeClassifier.swift) composes the heuristic + LLM. The production Kobold wrapper [`KoboldNarrativeModeClassifier.makeClosure(baseURL:)`](Sources/LoomCore/Retrieval/KoboldNarrativeModeClassifier.swift) produces the `(String) -> NarrativeMode?` closure the [`ReferenceIngestPipeline`](Sources/LoomCore/Retrieval/ReferenceIngestPipeline.swift) wants for its `modalityLLM` dep. End-to-end wired; see HANDOFF.md §15.12.
+
 
 **Phase 5 production scope-lock #5 closes against:**
 

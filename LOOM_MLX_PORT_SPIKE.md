@@ -157,7 +157,10 @@ Aggregate (mean over 4 queries, mirroring [LOOM_RAG_SPIKE §13.1](LOOM_RAG_SPIKE
 
 Threshold was ΔNDCG ≤ 0.05 AND Δpref ≤ 0.05 AND ≥ 3 of 4 queries with identical top-3. Actual: all four queries produced *identical* top-3 rankings; all deltas zero to 3dp. The MLX path is operationally indistinguishable from the PyTorch baseline.
 
-## 10. Verdict — PROCEED with MLX
+## 10. Verdict — PROCEED with MLX [SUPERSEDED 2026-05-13 BY §12]
+
+> **Status update:** MLX was the right choice on paper but the runtime requires full Xcode (for the `metal` compiler), which the user's machine doesn't have and can't fit (29 GB free, 87% full). §12 below documents the production pivot to a Python subprocess; the MLX work is preserved in git history. The §10 verdict + §11 references remain authoritative for the conversion + numerical validation; only the deployment path changed.
+
 
 **Phase 5 production scope-lock #1 closes against MLX.** Both gates pass with margin:
 
