@@ -101,6 +101,23 @@ func phase7VoiceDescriptorTests() -> TestSuite {
         try expectTrue(prompt.contains("distinctiveTechniques"))
     }
 
+    // Punchlist item 7 (post-§7.a.4): the `distinctiveTechniques`
+    // examples in the prompt were being parroted verbatim by gemma4_2b
+    // — 3 of 4 fixture-01 outputs in the §7.a.4 ablation matched the
+    // prompt examples word-for-word. Drop the concrete example strings;
+    // keep the positive guidance ("Be surgically specific…").
+    s.test("BeatExtraction.buildExtractionPrompt omits concrete distinctiveTechniques examples") {
+        let prompt = BeatExtraction.buildExtractionPrompt(sourceProse: "She walked.")
+        // Fragment matches — the prompt is wrapped, so look for
+        // recognisable phrase fragments rather than full strings.
+        try expectFalse(prompt.contains("single-line dialogue"))
+        try expectFalse(prompt.contains("subject-verb-object sentence structure"))
+        try expectFalse(prompt.contains("repetition of concrete"))
+        try expectFalse(prompt.contains("bare 'he said' tags"))
+        // Positive guidance must remain.
+        try expectTrue(prompt.contains("surgically specific"))
+    }
+
     s.test("BeatExtraction.jsonSchema includes voiceDescriptor with enum constraints") {
         let schema = BeatExtraction.jsonSchema()
         let props = schema["properties"] as! [String: Any]

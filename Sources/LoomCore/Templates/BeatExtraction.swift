@@ -71,11 +71,11 @@ public enum BeatExtraction {
             adjacent periodic prose", "Cormac McCarthy biblical",
             "Victorian three-decker")
           - distinctiveTechniques: 2–5 bullet points naming SPECIFIC
-            craft moves the prose uses (e.g., "single-line dialogue
-            with bare 'he said' tags only", "subject-verb-object
-            sentence structure exclusively", "repetition of concrete
-            nouns to build pressure"). Be surgically specific — these
+            craft moves the prose uses. Be surgically specific — these
             bullets are the most useful signal the writer will see.
+            Each bullet must name a technique actually present in
+            THIS scene; do not output generic descriptions that could
+            apply to any prose.
 
         Scene:
         \(sourceProse)
