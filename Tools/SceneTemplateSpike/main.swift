@@ -209,8 +209,17 @@ func runPassB(
     fixture: Fixture,
     extracted: ExtractedSceneSkeleton,
     castMapping: String,
-    includeTemplateBody: Bool = true
+    includeTemplateBody: Bool = true,
+    includeVoiceDescriptor: Bool = true
 ) -> GenerationRun {
+    // Phase 7.b followup ablation seam: when includeVoiceDescriptor
+    // is false, strip the descriptor from the skeleton before
+    // building per-beat prompts. Lets the runner A/B the voice
+    // injection without changing the upstream extractor output.
+    var extracted = extracted
+    if !includeVoiceDescriptor {
+        extracted.voiceDescriptor = nil
+    }
     let groundTruthPacing = PacingStats.compute(text: fixture.body)
     var outputs: [BeatGenerationOutput] = []
     var rollingProse = ""
@@ -587,6 +596,47 @@ if args.count < 2 {
     exit(1)
 }
 
+/// Phase 7.b followup ablation: run Pass A once, then Pass B TWICE
+/// — once with the voice descriptor injected (Arm A, new default),
+/// once with the descriptor stripped (Arm B, §7.a.3 baseline).
+/// Both arms include the template body (§7.a.3 already established
+/// that template inclusion is good).
+func runVoiceAblation(fixtureFilename: String) {
+    guard let mapping = castMappings[fixtureFilename] else {
+        log("[\(fixtureFilename)] no cast mapping registered; skipping.")
+        return
+    }
+    let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let fixturePath = cwd
+        .appendingPathComponent(fixturesDir)
+        .appendingPathComponent(fixtureFilename)
+    let extraction = extract(fixturePath: fixturePath)
+    writeReport(extraction)
+    guard let skeleton = extraction.parsed else {
+        log("[\(fixtureFilename)] extraction failed; skipping voice ablation.")
+        return
+    }
+    guard skeleton.voiceDescriptor != nil else {
+        log("[\(fixtureFilename)] no voiceDescriptor in skeleton; nothing to ablate. (Did Pass A emit it?)")
+        return
+    }
+    log("[\(fixtureFilename)] ARM A — with voice descriptor (\(skeleton.beats.count) beats)...")
+    let armA = runPassB(
+        fixture: extraction.fixture, extracted: skeleton,
+        castMapping: mapping,
+        includeTemplateBody: true,
+        includeVoiceDescriptor: true
+    )
+    log("[\(fixtureFilename)] ARM B — without voice descriptor (\(skeleton.beats.count) beats)...")
+    let armB = runPassB(
+        fixture: extraction.fixture, extracted: skeleton,
+        castMapping: mapping,
+        includeTemplateBody: true,
+        includeVoiceDescriptor: false
+    )
+    writeAblationReport(armA: armA, armB: armB)
+}
+
 /// Phase 7.a.3 ablation: run Pass A once, then Pass B TWICE — once
 /// with the template body included (Arm A) and once skeleton-only
 /// (Arm B). Render a side-by-side comparison report.
@@ -784,6 +834,12 @@ case "--ablate":
         exit(1)
     }
     runAblation(fixtureFilename: args[2])
+case "--ablate-voice":
+    guard args.count >= 3 else {
+        log("--ablate-voice requires a fixture basename")
+        exit(1)
+    }
+    runVoiceAblation(fixtureFilename: args[2])
 default:
     log("Unknown command: \(cmd)")
     exit(1)

@@ -101,6 +101,32 @@ public enum BeatGeneration {
                 """
         }
 
+        // Phase 7.b followup — voice-descriptor injection at recency.
+        // The §7.a.3 ablation showed voice transfer is the design's
+        // weakest leg; the mitigation is to extract a focused voice
+        // fingerprint at Pass A and inject it here as explicit
+        // positive constraints, immediately before the per-beat
+        // instruction. Renders nothing when the descriptor is absent
+        // (legacy sidecars).
+        let voiceTargetBlock: String
+        if let v = skeleton.voiceDescriptor {
+            let bullets = v.distinctiveTechniques
+                .map { "  - \($0)" }
+                .joined(separator: "\n")
+            voiceTargetBlock = """
+
+                [VOICE TARGET — match these specific voice qualities; treat as positive constraints, not as suggestions]
+                - Sentence cadence: \(voiceCadenceHint(v.sentenceCadence))
+                - Dialogue density: \(voiceDialogueHint(v.dialogueDensity))
+                - Rhetorical flourish: \(voiceFlourishHint(v.rhetoricalFlourish))
+                - Register: \(v.register)
+                - Distinctive techniques (apply each consistently in this beat):
+                \(bullets)
+                """
+        } else {
+            voiceTargetBlock = ""
+        }
+
         // The whole prompt is collapsed into a single instruct-template-agnostic
         // string — the production GenerationCoordinator wraps it in the
         // model's chat template (chatml / gemma / etc.) at request time.
@@ -145,11 +171,52 @@ public enum BeatGeneration {
             \(pacingLine)
 
             \(priorBeatsSection)
+            \(voiceTargetBlock)
 
             [INSTRUCTION]
             Write beat \(currentBeatIndex). Modality: \(beat.modality.rawValue). Function: \(beat.function.rawValue). Target length: \(beat.targetWords) words. \(endingInstruction)
 
             Beat \(currentBeatIndex) prose:
             """
+    }
+
+    // MARK: - Voice-descriptor hints
+
+    /// Expand the cadence enum into a concrete instruction. The
+    /// writer LLM responds more reliably to descriptive language
+    /// than to enum tokens — "short, clipped sentences (under 8
+    /// words; bare declaratives; subject-verb-object)" beats
+    /// "shortClipped".
+    private static func voiceCadenceHint(_ c: SentenceCadence) -> String {
+        switch c {
+        case .shortClipped:
+            return "short, clipped sentences. Aim for bare declaratives; subject-verb-object; few or no subordinate clauses; most sentences under 10 words."
+        case .moderateBalanced:
+            return "balanced mix of short and long sentences; moderate use of subordinate clauses."
+        case .longFlowing:
+            return "long, periodic sentences with nested subordinate clauses; rhythm should build over commas / semicolons; Conrad-adjacent."
+        }
+    }
+
+    private static func voiceDialogueHint(_ d: DialogueDensity) -> String {
+        switch d {
+        case .dialogueHeavy:
+            return "dialogue-heavy. Lean on direct speech; minimal narration between exchanges."
+        case .balanced:
+            return "balanced narration and dialogue."
+        case .narrativeHeavy:
+            return "narration-heavy. Dialogue should be sparse or absent in this beat."
+        }
+    }
+
+    private static func voiceFlourishHint(_ f: RhetoricalFlourish) -> String {
+        switch f {
+        case .minimal:
+            return "minimal. NO metaphor, NO rhetorical adornment, NO adverbial qualification. Concrete nouns and active verbs only."
+        case .moderate:
+            return "moderate. Occasional figurative language; image and sensory detail used purposefully but not lavishly."
+        case .ornate:
+            return "ornate. Lyrical, image-dense prose; metaphor and rhythm in the foreground."
+        }
     }
 }

@@ -56,6 +56,26 @@ public enum BeatExtraction {
           scene (so the new-scene caller can map them to a target cast)
         - sourceSettingMarkers: place / time / object tokens that anchor
           the setting and would need substitution
+        - voiceDescriptor: a five-field fingerprint of the prose voice,
+          used as a positive constraint when the writer generates a new
+          scene in this style:
+          - sentenceCadence: shortClipped (Hemingway / Carver, bare
+            declaratives, no subordination) | moderateBalanced (mix of
+            short and long) | longFlowing (Conrad / Faulkner / McCarthy
+            periodic sentences with nested subordinate clauses)
+          - dialogueDensity: dialogueHeavy | balanced | narrativeHeavy
+          - rhetoricalFlourish: minimal (no metaphor, no adornment) |
+            moderate | ornate (lyrical / image-dense)
+          - register: a short phrase characterising the voice
+            (e.g., "noir minimalism", "Hemingway-clipped", "Conrad-
+            adjacent periodic prose", "Cormac McCarthy biblical",
+            "Victorian three-decker")
+          - distinctiveTechniques: 2–5 bullet points naming SPECIFIC
+            craft moves the prose uses (e.g., "single-line dialogue
+            with bare 'he said' tags only", "subject-verb-object
+            sentence structure exclusively", "repetition of concrete
+            nouns to build pressure"). Be surgically specific — these
+            bullets are the most useful signal the writer will see.
 
         Scene:
         \(sourceProse)
@@ -101,6 +121,33 @@ public enum BeatExtraction {
         // dropped post-§7.a.1. The LLM under-counted sentences by
         // 40-60% in spike runs; computed ground-truth via
         // `PacingStats.compute(text:)` is exact + free.
+        let voiceDescriptorSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "sentenceCadence": [
+                    "type": "string",
+                    "enum": SentenceCadence.allCases.map(\.rawValue),
+                ],
+                "dialogueDensity": [
+                    "type": "string",
+                    "enum": DialogueDensity.allCases.map(\.rawValue),
+                ],
+                "rhetoricalFlourish": [
+                    "type": "string",
+                    "enum": RhetoricalFlourish.allCases.map(\.rawValue),
+                ],
+                "register": ["type": "string"],
+                "distinctiveTechniques": [
+                    "type": "array",
+                    "items": ["type": "string"],
+                ],
+            ],
+            "required": [
+                "sentenceCadence", "dialogueDensity",
+                "rhetoricalFlourish", "register",
+                "distinctiveTechniques",
+            ],
+        ]
         return [
             "type": "object",
             "properties": [
@@ -116,9 +163,11 @@ public enum BeatExtraction {
                     "type": "array",
                     "items": ["type": "string"],
                 ],
+                "voiceDescriptor": voiceDescriptorSchema,
             ],
             "required": [
                 "beats", "sourceCharacters", "sourceSettingMarkers",
+                "voiceDescriptor",
             ],
         ]
     }

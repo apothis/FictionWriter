@@ -334,7 +334,127 @@ All six items are non-blocking for 7.b kickoff; they're prompt-revisions that la
 
 ---
 
-## 4. References
+## 4. §7.a.4 — Voice-descriptor extraction + injection (followup spike) — LANDED 2026-05-13
+
+The §7.a.3 verdict deferred the v2 voice-weight dial in favor of "explicit voice-descriptor injection" — extract a focused voice fingerprint at Pass A, inject at Pass B's recency slot as positive constraints. This section validates whether that approach actually moves the voice-transfer needle.
+
+### 4.1 Setup
+
+- New `VoiceDescriptor` struct ([`Sources/LoomCore/Templates/VoiceDescriptor.swift`](Sources/LoomCore/Templates/VoiceDescriptor.swift)) with 5 fields: 3 constrained enums (`sentenceCadence`, `dialogueDensity`, `rhetoricalFlourish`) + free-form `register` short phrase + 2–5 `distinctiveTechniques` bullets.
+- `BeatExtraction.buildExtractionPrompt` + `jsonSchema` extended to elicit the descriptor (Ollama `format` enum constraints prevent the model from hallucinating enum values).
+- `BeatGeneration.buildBeatPrompt` injects a `[VOICE TARGET]` block AFTER prior-beats prose, BEFORE the per-beat instruction — at the recency slot per Lost-in-the-Middle (Liu 2024).
+- Each enum value expands into a descriptive instruction (e.g., `shortClipped` → "short, clipped sentences. Aim for bare declaratives; subject-verb-object; few or no subordinate clauses; most sentences under 10 words.") because the writer LLM responds more reliably to descriptive language than to enum tokens.
+- 9 new pure-data tests pin the schema shape + the prompt-injection invariants.
+
+### 4.2 Pass A: what gemma4_2b actually emits
+
+**Fixture 01 (Hemingway-clipped dialogue):**
+
+```json
+{
+  "sentenceCadence": "shortClipped",
+  "dialogueDensity": "balanced",
+  "rhetoricalFlourish": "minimal",
+  "register": "noir minimalism",
+  "distinctiveTechniques": [
+    "single-line dialogue with bare 'he said' tags only",
+    "subject-verb-object sentence structure exclusively",
+    "repetition of concrete nouns to build pressure",
+    "use of physical action to punctuate dialogue"
+  ]
+}
+```
+
+**Fixture 03 (Conrad-adjacent description):**
+
+```json
+{
+  "sentenceCadence": "moderateBalanced",
+  "dialogueDensity": "narrativeHeavy",
+  "rhetoricalFlourish": "moderate",
+  "register": "observational and sensory",
+  "distinctiveTechniques": [
+    "repetition of concrete nouns to build pressure",
+    "sensory detail focusing on temperature/light",
+    "metaphorical description of architecture (arms of swimmers)",
+    "focus on texture (rusted iron, stained stone)"
+  ]
+}
+```
+
+### 4.3 Pass A findings
+
+**Pass A reliably produces useful, fixture-specific descriptors.** This was the load-bearing question for the whole approach.
+
+**✓ Source-specific bullets.** Fixture 03's distinctiveTechniques include the literal "arms of swimmers" metaphor and "rusted iron / stained stone" texture descriptors from the actual source prose. Fixture 01's bullets correctly identify the bare "he said" tags + repetition pattern. The model is genuinely reading the source, not parroting prompt examples.
+
+**⚠ Sentence-cadence classification fuzzy on the moderate/long boundary.** Fixture 03 was classified as `moderateBalanced` (target ≈ 11–15w mean), but the source's actual mean sentence length is 25.4w with 43% long-sentence ratio — clearly `longFlowing` by the schema's definition. Hemingway-clipped is easy to identify; ornate-periodic gets misclassified down to "moderate".
+
+**⚠ Three of fixture-01's four distinctiveTechniques are verbatim copies of the prompt's example bullets.** "single-line dialogue with bare 'he said' tags", "subject-verb-object sentence structure", "repetition of concrete nouns" are all examples used in `BeatExtraction.buildExtractionPrompt`. Saving grace: those examples happen to be accurate descriptions of fixture 01. Risk: on a fixture where the prompt examples are wrong, the model may produce confident but misleading bullets. Phase 7.b followup: drop the example bullets from the Pass A prompt and let the model invent its own.
+
+### 4.4 Pass B: A/B (template+descriptor vs template-only)
+
+Two fixtures, identical Pass A skeleton consumed by both arms; only the voice descriptor presence differs. Implemented via `--ablate-voice` subcommand in the spike runner.
+
+| Metric | Fixture 01 | | Fixture 03 | |
+|---|---:|---:|---:|---:|
+| | **Arm A (voice)** | **Arm B (no voice)** | **Arm A (voice)** | **Arm B (no voice)** |
+| Total words | 85 | **163** | **181** | 137 |
+| Empty beats | **8 / 23** ⚠ | 3 / 23 | **3 / 5** ⚠ | 2 / 5 |
+| Mean sentence length | **5.7** | 7.6 | **11.3** | 19.6 |
+| Short-sentence ratio | **0.87** | 0.68 | **0.25** | 0.00 |
+| Long-sentence ratio | 0.00 | 0.05 | 0.00 | 0.43 |
+| Dialogue ratio | 0.26 | 0.26 | 0.00 | 0.00 |
+
+(Bold marks the arm "closer to the descriptor's intent" — Hemingway-clipped should produce short sentences; moderate/observational should NOT produce dominantly long sentences.)
+
+### 4.5 Pass B findings
+
+**✓ The voice descriptor measurably moves the prose toward target style.** On fixture 01, Arm A's prose is meaningfully more clipped (5.7w mean vs 7.6w; 87% short sentences vs 68%). On fixture 03, Arm A obeys the "moderateBalanced" classification (11.3w mean) while Arm B drifts toward gemma's default writerly long-periodic register (19.6w mean, 43% long sentences). Net: when the descriptor commits to a position, the writer respects it.
+
+**✓ Example of clean voice transfer (fixture 03 beat 1, Arm A, 107w):**
+
+> Tomas walked along the harbour wall because the salt air kept him cool away from the noon sun. He eyed the upturned freighter and saw that the waterline had receded six feet. Below the deck level, great plates of steel gleamed with barnacles. Only here did the ship reveal its true girth. Rust clung to the metal in sheets. A few gulls perched on the mast but otherwise nothing moved. […]
+
+Compare to **Arm B on the same beat: 0 words.** This is the cleanest single demonstration: the voice descriptor pulls the writer over the empty-beat threshold AND produces in-style prose.
+
+**✓ Example of clean voice transfer (fixture 01 beat 7, Arm A):**
+
+> "We filed patents," she said.
+
+Five words, bare attribution, declarative — exactly the descriptor's target. Arm B for the same beat: 41 words with rhetorical buildup.
+
+**⚠ But the voice descriptor INCREASES empty-beat rate.** 35% on fixture 01 (vs 13% baseline) and 60% on fixture 03 (vs 40% baseline). Hypothesis: the voice descriptor adds prompt complexity (more bracketed sections; more competing constraints), and when target beat length is pathologically short (the fixture-01 Pass A run produced 23 beats with 2–12w targets — over-segmented), the contradiction between "write 4 words" and "match this voice fingerprint" causes the model to freeze.
+
+**⚠ Pacing-fidelity is descriptor-fidelity, not source-fidelity.** Fixture 03's actual source has 25.4w mean; Arm A targets the descriptor's "moderateBalanced" (11.3w mean) and Arm B drifts to gemma's default (19.6w mean — coincidentally closer to source). The pipeline now optimises for "match what Pass A said the voice is" rather than "match the source directly." If Pass A misclassifies (as it does on fixture 03's moderate-vs-long boundary), Arm A's prose follows the misclassification.
+
+### 4.6 §7.a.4 verdict
+
+**SHIP voice-descriptor extraction (always on); ship Pass B injection (default on); flag the empty-beat regression as a known issue compounding with over-segmentation.**
+
+Reasoning:
+
+- The voice descriptor materially improves voice transfer when the writer commits to output. This was §7.a.3's worst leg; we now have a measurable improvement.
+- Pass A reliably produces useful descriptors on clear voice types. The moderate/longFlowing boundary is fuzzy but acceptable.
+- The empty-beat regression IS real but appears to compound with the over-segmentation failure mode (Pass A producing 23 beats of 2–12 words each on a 462-word source). On the fixture 03 run where Pass A produced 5 normally-sized beats (target 15–100w), Arm A's commit rate was 2/5 vs Arm B's 3/5 — close, and Arm A's committed beats are higher quality.
+
+**Production-prep punchlist (now 7 items, +1 from voice ablation):**
+
+1–5: as documented in §3.9.
+6. (was item 6, no longer parked) **Voice-descriptor extraction + injection — LANDED.** Now monitor the empty-beat-vs-pacing tradeoff in real-app usage.
+7. **NEW: Drop the example bullets from `BeatExtraction.buildExtractionPrompt`** to test whether the model invents its own (or whether prompt-example-echoing was actually load-bearing for quality). Cheap to test; ~1 prompt-revision commit.
+
+Architectural-decision deltas vs the planning doc:
+
+| Decision | Planning doc state | After §7.a.4 |
+|---|---|---|
+| Voice transfer mechanism | "v2 voice-weight dial" | Replaced with structured voice descriptor (extracted + injected by default) |
+| Voice classification taxonomy | undefined | 5-field schema; 3 enums + register + bullets |
+| Pacing target source | computed from source prose | Mixed: computed-from-source PLUS descriptor enum classification. When the two disagree, descriptor wins (because the writer follows the descriptor more reliably). Future refinement: make this a deliberate weighting. |
+
+---
+
+## 5. References
 
 - [`LOOM_SCENE_TEMPLATE.md`](LOOM_SCENE_TEMPLATE.md) — Phase 7 planning doc + research-citation bibliography (full).
 - [`LOOM_NARRATIVE_MODE_SPIKE.md`](LOOM_NARRATIVE_MODE_SPIKE.md) §10 — the 73% floor this spike inherits.

@@ -108,19 +108,27 @@ public struct ExtractedSceneSkeleton: Codable, Equatable {
     public var beats: [SceneBeat]
     public var sourceCharacters: [String]
     public var sourceSettingMarkers: [String]
+    /// Phase 7.b followup — Pass-A voice fingerprint. Injected into
+    /// Pass B at recency as a positive constraint. Optional for
+    /// back-compat: pre-voice-descriptor sidecars decode cleanly
+    /// with `nil` here; new extractions require the model to emit
+    /// it (the schema marks it `required`).
+    public var voiceDescriptor: VoiceDescriptor?
 
     public init(
         beats: [SceneBeat],
         sourceCharacters: [String],
-        sourceSettingMarkers: [String]
+        sourceSettingMarkers: [String],
+        voiceDescriptor: VoiceDescriptor? = nil
     ) {
         self.beats = beats
         self.sourceCharacters = sourceCharacters
         self.sourceSettingMarkers = sourceSettingMarkers
+        self.voiceDescriptor = voiceDescriptor
     }
 
     private enum CodingKeys: String, CodingKey {
-        case beats, sourceCharacters, sourceSettingMarkers
+        case beats, sourceCharacters, sourceSettingMarkers, voiceDescriptor
         case pacingStats  // legacy; ignored on decode
     }
 
@@ -129,6 +137,7 @@ public struct ExtractedSceneSkeleton: Codable, Equatable {
         self.beats = try c.decode([SceneBeat].self, forKey: .beats)
         self.sourceCharacters = try c.decode([String].self, forKey: .sourceCharacters)
         self.sourceSettingMarkers = try c.decode([String].self, forKey: .sourceSettingMarkers)
+        self.voiceDescriptor = try c.decodeIfPresent(VoiceDescriptor.self, forKey: .voiceDescriptor)
         // Legacy pacingStats key is silently ignored if present —
         // post-§7.a.1 we compute pacing from source via
         // `PacingStats.compute(text:)` rather than trusting the
@@ -140,6 +149,7 @@ public struct ExtractedSceneSkeleton: Codable, Equatable {
         try c.encode(beats, forKey: .beats)
         try c.encode(sourceCharacters, forKey: .sourceCharacters)
         try c.encode(sourceSettingMarkers, forKey: .sourceSettingMarkers)
+        try c.encodeIfPresent(voiceDescriptor, forKey: .voiceDescriptor)
     }
 }
 
