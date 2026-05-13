@@ -13,6 +13,29 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     private weak var recentProjectsMenu: NSMenu?
     private var settingsWindow: SettingsWindowController?
 
+    /// Last server status observed by the periodic health probe.
+    /// Drives edge-only debug logging via
+    /// `ServerHealthMonitor.transitionMessage` so a 30s tick doesn't
+    /// spam the log with "still reachable" lines.
+    private var lastObservedServerStatus: StatusStripView.ServerStatus?
+
+    /// Initial-probe retry budget. Consumed by failures that land
+    /// before any successful observation. Once `.unreachable` or
+    /// `.reachable` is posted, retries are gated off — the budget is
+    /// only there to absorb the macOS TCC settle window at launch.
+    private var initialProbeRetriesRemaining: Int = ServerHealthMonitor.initialProbeRetryBudget
+
+    /// 30s periodic health-check timer. Re-issues
+    /// `probeAndPublishServerStatus()` so the status-strip dot tracks
+    /// drops + reconnects without a generation attempt to discover
+    /// them. Mirrors the RPClient health-tick pattern.
+    private var healthCheckTimer: Timer?
+
+    /// 30s matches the RPClient cadence — short enough to surface a
+    /// drop quickly, long enough that the 5s `/api/v1/model` GET is
+    /// noise-floor. Exposed for tests / future tuning.
+    public static let healthCheckInterval: TimeInterval = 30
+
     public override init() {
         super.init()
     }
@@ -29,9 +52,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         mainWindow.showAndActivate()
 
         // Probe the configured server (or localhost fallback) once on
-        // launch so the status strip dot reflects reachability. 1.m
-        // ships single-shot probing; periodic re-probe is Phase 2 polish.
+        // launch so the status strip dot reflects reachability. The
+        // 30s health-check timer picks up drops + reconnects mid-
+        // session so the user doesn't only discover an outage at the
+        // next generation attempt.
         probeAndPublishServerStatus()
+        startServerHealthChecks()
         NotificationCenter.default.addObserver(
             forName: ProjectSession.didReplaceNotification,
             object: AppState.shared.currentSession,
@@ -41,23 +67,76 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         }
     }
 
+    /// Schedule a periodic `probeAndPublishServerStatus()`. Calling
+    /// repeatedly is safe — any prior timer is invalidated first.
+    private func startServerHealthChecks() {
+        healthCheckTimer?.invalidate()
+        let timer = Timer.scheduledTimer(
+            withTimeInterval: Self.healthCheckInterval, repeats: true
+        ) { [weak self] _ in
+            self?.probeAndPublishServerStatus()
+        }
+        // .common keeps the tick alive during modal menu tracking.
+        RunLoop.main.add(timer, forMode: .common)
+        healthCheckTimer = timer
+    }
+
     private func probeAndPublishServerStatus() {
         let client = AppState.shared.registry.clientForDefault()
-        ServerProbe.probe(baseURL: client.baseURL) { result in
+        ServerProbe.probe(baseURL: client.baseURL) { [weak self] result in
             DispatchQueue.main.async {
                 let status: StatusStripView.ServerStatus
                 switch result {
                 case .success(let caps):
                     AppState.shared.lastProbedModelName = caps.modelName
                     AppState.shared.lastProbedMaxContext = caps.trueMaxContext
-                    DebugLog.shared.write("[loom] server probe ok: model=\(caps.modelName ?? "?") ctx=\(caps.trueMaxContext.map(String.init) ?? "?")")
                     status = .reachable(model: caps.modelName, maxContext: caps.trueMaxContext)
                 case .failure(let error):
                     AppState.shared.lastProbedModelName = nil
                     AppState.shared.lastProbedMaxContext = nil
-                    DebugLog.shared.write("[loom] server probe failed: \(error)")
+                    // Initial-probe retry burst: when the OS hasn't
+                    // yet settled Local Network permission, the first
+                    // probe(s) fail with a transport error that looks
+                    // identical to a real outage. Stay in `.unknown`
+                    // for a short retry burst before committing to
+                    // `.unreachable` so the user doesn't see a red
+                    // dot for a TCC race.
+                    if let self = self,
+                       ServerHealthMonitor.shouldRetryInitialProbe(
+                           lastObserved: self.lastObservedServerStatus,
+                           retriesRemaining: self.initialProbeRetriesRemaining
+                       ) {
+                        self.initialProbeRetriesRemaining -= 1
+                        DebugLog.shared.write(
+                            "[health] initial probe failed, retrying in \(ServerHealthMonitor.initialProbeRetryDelay)s "
+                            + "(\(self.initialProbeRetriesRemaining) retries left): \(error)"
+                        )
+                        DispatchQueue.main.asyncAfter(
+                            deadline: .now() + ServerHealthMonitor.initialProbeRetryDelay
+                        ) { [weak self] in
+                            self?.probeAndPublishServerStatus()
+                        }
+                        return
+                    }
+                    // The error itself is only useful on the
+                    // transition (so the user knows *why* it dropped);
+                    // include it in the transition log line.
+                    if let message = ServerHealthMonitor.transitionMessage(
+                        from: self?.lastObservedServerStatus, to: .unreachable
+                    ) {
+                        DebugLog.shared.write("\(message) — \(error)")
+                    }
                     status = .unreachable
                 }
+                // Reachable transitions don't carry the error path;
+                // log them via the unmodified transition message.
+                if case .reachable = status,
+                   let message = ServerHealthMonitor.transitionMessage(
+                       from: self?.lastObservedServerStatus, to: status
+                   ) {
+                    DebugLog.shared.write(message)
+                }
+                self?.lastObservedServerStatus = status
                 NotificationCenter.default.post(
                     name: StatusStripView.serverStatusChangedNotification,
                     object: nil,

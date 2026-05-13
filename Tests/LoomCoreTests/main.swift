@@ -156,6 +156,7 @@ let suites: [TestSuite] = [
     phase7BibleWorkspaceTemplatesTests(),
     phase7VoiceDescriptorTests(),
     phase7TemplateGenLogTests(),
+    phase7ServerHealthMonitorTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
