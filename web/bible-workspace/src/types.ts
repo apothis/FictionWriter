@@ -81,12 +81,26 @@ export interface PendingSuggestion {
   sourceSceneId: string | null;
 }
 
+// Phase 5 production A2.1 — bridge projection of `ReferenceText`.
+// `chunkCount: null` = no `.index` sidecar on disk yet (UI surfaces
+// an "Ingest" prompt); non-null = vectors are present (count shown
+// inline). `body` is the editable prose blob.
+export interface SnapshotReference {
+  id: string;
+  name: string;
+  nsfw: boolean;
+  createdAt: string;
+  body: string;
+  chunkCount: number | null;
+}
+
 export interface BibleWorkspaceSnapshot {
   projectTitle: string;
   characters: Character[];
   lorebook: LorebookEntry[];
   scenes: SceneSummary[];
   suggestions: PendingSuggestion[];
+  references: SnapshotReference[];
 }
 
 // Mirrors CharacterPatch.swift — every field optional. The React
@@ -111,6 +125,15 @@ export interface CharacterPatch {
   canonBrief?: string;
   customFields?: CharacterCustomField[];
   injectionMode?: "constant" | "keyed";
+}
+
+// Mirrors ReferencePatch.swift — name / nsfw / body are user-editable.
+// `id` is carried at the intent envelope; createdAt / extraFrontmatter
+// are not patchable from the workspace.
+export interface ReferencePatch {
+  name?: string;
+  nsfw?: boolean;
+  body?: string;
 }
 
 // Mirrors LorebookEntryPatch.swift — every field optional. Same

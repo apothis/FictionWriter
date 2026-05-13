@@ -3,6 +3,7 @@ import type {
   Character,
   LorebookEntry,
   PendingSuggestion,
+  SnapshotReference,
 } from "../types";
 import { cn } from "../lib/cn";
 
@@ -14,7 +15,9 @@ interface Props {
   snapshot: BibleWorkspaceSnapshot;
   onSelectCharacter: (id: string) => void;
   onSelectLorebookEntry: (id: string) => void;
+  onSelectReference: (id: string) => void;
   onAddLorebookEntry: () => void;
+  onAddReference: () => void;
   onOpenSuggestions: () => void;
 }
 
@@ -22,7 +25,9 @@ export function EntityList({
   snapshot,
   onSelectCharacter,
   onSelectLorebookEntry,
+  onSelectReference,
   onAddLorebookEntry,
+  onAddReference,
   onOpenSuggestions,
 }: Props) {
   return (
@@ -66,6 +71,31 @@ export function EntityList({
                 key={entry.id}
                 entry={entry}
                 onClick={() => onSelectLorebookEntry(entry.id)}
+              />
+            ))
+          )}
+        </Section>
+        <Section
+          title="References"
+          count={snapshot.references.length}
+          headerAction={
+            <button
+              type="button"
+              onClick={onAddReference}
+              className="text-xs text-loom-accent hover:underline"
+            >
+              + Add reference
+            </button>
+          }
+        >
+          {snapshot.references.length === 0 ? (
+            <EmptyRow text="No reference texts yet. Reference texts feed the Phase 5 style-RAG retriever." />
+          ) : (
+            snapshot.references.map((ref) => (
+              <ReferenceRow
+                key={ref.id}
+                reference={ref}
+                onClick={() => onSelectReference(ref.id)}
               />
             ))
           )}
@@ -232,6 +262,58 @@ function LorebookRow({
       {entry.content && (
         <p className="mt-1 line-clamp-2 text-xs leading-snug text-loom-fg-secondary">
           {entry.content}
+        </p>
+      )}
+    </button>
+  );
+}
+
+function ReferenceRow({
+  reference,
+  onClick,
+}: {
+  reference: SnapshotReference;
+  onClick: () => void;
+}) {
+  const wordCount = reference.body
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+  const ingestState =
+    reference.chunkCount === null
+      ? { label: "not ingested", className: "text-loom-fg-tertiary" }
+      : {
+          label: `${reference.chunkCount} chunk${reference.chunkCount === 1 ? "" : "s"}`,
+          className: "text-loom-accent",
+        };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group block w-full cursor-pointer rounded-lg px-3 py-2.5 text-left hover:bg-loom-bg-elevated focus:bg-loom-bg-elevated focus:outline-none focus:ring-1 focus:ring-loom-accent"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="truncate text-sm font-medium text-loom-fg">
+          {reference.name || "(unnamed reference)"}
+        </span>
+        <div className="flex shrink-0 items-baseline gap-2 text-[11px] text-loom-fg-tertiary">
+          {reference.nsfw && (
+            <span
+              className="rounded bg-loom-bg-elevated px-1.5 py-0.5 text-loom-fg-secondary"
+              title="Marked NSFW; retriever can be filtered on this flag."
+            >
+              nsfw
+            </span>
+          )}
+          <span title="Word count of the reference body.">
+            {wordCount} word{wordCount === 1 ? "" : "s"}
+          </span>
+          <span className={ingestState.className}>{ingestState.label}</span>
+        </div>
+      </div>
+      {reference.body && (
+        <p className="mt-1 line-clamp-2 text-xs leading-snug text-loom-fg-secondary">
+          {reference.body.trim().slice(0, 200)}
         </p>
       )}
     </button>

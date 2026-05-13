@@ -3,21 +3,22 @@ import type {
   BibleWorkspaceSnapshot,
   CharacterPatch,
   LorebookEntryPatch,
+  ReferencePatch,
 } from "./types";
 import { postIntent, subscribeToSnapshots } from "./bridge";
 import { EntityList } from "./views/EntityList";
 import { CharacterEditor } from "./views/CharacterEditor";
 import { LorebookEditor } from "./views/LorebookEditor";
+import { ReferenceEditor } from "./views/ReferenceEditor";
 import { SuggestionsQueue } from "./views/SuggestionsQueue";
 
 // Top-level routing. Sessions 2-5 extended the Selection union as
-// each editor surface landed. Session 5 adds a top-level
-// `suggestions` kind for the cross-character pending-suggestions
-// view — no id, since the surface lists all pending suggestions
-// across the project.
+// each editor surface landed. Phase 5 production A2.2 adds the
+// `reference` kind for the style-RAG reference-text editor.
 type Selection =
   | { kind: "character"; id: string }
   | { kind: "lorebook"; id: string }
+  | { kind: "reference"; id: string }
   | { kind: "suggestions" }
   | null;
 
@@ -79,6 +80,27 @@ export function App() {
     );
   }
 
+  if (selection?.kind === "reference") {
+    const reference = snapshot.references.find((r) => r.id === selection.id);
+    if (!reference) return renderList();
+    return (
+      <ReferenceEditor
+        reference={reference}
+        dispatchPatch={(patch: ReferencePatch) =>
+          postIntent({ kind: "patchReference", id: reference.id, patch })
+        }
+        onBack={() => setSelection(null)}
+        onDelete={() => {
+          postIntent({ kind: "deleteReference", id: reference.id });
+          setSelection(null);
+        }}
+        onIngest={() =>
+          postIntent({ kind: "ingestReference", id: reference.id })
+        }
+      />
+    );
+  }
+
   if (selection?.kind === "suggestions") {
     return (
       <SuggestionsQueue
@@ -100,10 +122,15 @@ export function App() {
         snapshot={snapshot!}
         onSelectCharacter={(id) => setSelection({ kind: "character", id })}
         onSelectLorebookEntry={(id) => setSelection({ kind: "lorebook", id })}
+        onSelectReference={(id) => setSelection({ kind: "reference", id })}
         onOpenSuggestions={() => setSelection({ kind: "suggestions" })}
         onAddLorebookEntry={() => {
           const name = `Entry ${snapshot!.lorebook.length + 1}`;
           postIntent({ kind: "addLorebookEntry", name });
+        }}
+        onAddReference={() => {
+          const name = `Reference ${snapshot!.references.length + 1}`;
+          postIntent({ kind: "createReference", name });
         }}
       />
     );
