@@ -658,3 +658,59 @@ Full test plan at [`TEST_PLAN_2026-05-13.md`](TEST_PLAN_2026-05-13.md) (NSFW-foc
 3. **Streaming-aware ThinkBlockStripper** — visible UX paper-cut now that user is committed to Gemma (which always emits the channel-thought block).
 4. **Phase 4.5 Bible Workspace** — the bigger UX redesign, multi-session.
 5. **Extractor coverage variance** + **subject-vs-character_id mis-attribution** stay parking-lot; haven't reproduced enough to justify a fix slice yet.
+
+### 15.10 Session ledger — 2026-05-12 → 2026-05-13 (Phase 4 §15.10 + Phase 4.5 Bible Workspace arc)
+
+**Test count: 880 passing** (was 774 at end of §15.9).
+
+**Branch on `main`, pushed clean to origin** through `4a983a0`.
+
+#### What landed (chronological by commit)
+
+**Phase 4 §15.10 — three slices on top of the §15.9 baseline:**
+
+- `1b1b614` — **rewriteTense no-op-target picker guard.** `SelectionTenseHeuristic` (NLTagger-driven, dialogue-aware) classifies the selection's tense; matching-tense entry in the Rewrite picker renders disabled with a tooltip + click-time short-circuit. Resolves the §15.8 entry on both-writers no-op-target failure mode (catastrophic on Qwen, milder on Gemma). +17 TestKit. See `feedback_prompt_blacklist_evasion` memory — the prompt-side fixes that we'd previously rolled back are now permanently obsoleted by the upstream picker fix.
+- `9b6edac` — **streaming-aware `ThinkBlockStripper`.** State-machine that handles both Qwen `<think>...</think>` and Gemma 4 `<|channel>thought\n...\n<channel|>` formats, including token-boundary tag splits, stray `<` in prose, unclosed-block flush preservation, trailing-whitespace cleanup post-close. Threaded into the editor's `didEmitTokenNotification` observer with a separate streaming insertion-offset tracker (the coordinator's running offset counts raw tokens; we track actually-inserted length). Side-effect: tray now stays on "Thinking…" through the channel-thought block and only flips to "Streaming…" when visible prose arrives. +16 TestKit. Resolves the §15.8 streaming-tags paper cut.
+- `06c7f1a` — **Rewrite-POV vs sidebar Set-POV disambiguation.** Rewrite picker entries renamed from `"POV — X"` to `"Rewrite to X's POV"` (action phrasing); sidebar Set-POV NSMenuItem gains a tooltip clarifying the distinction. Resolves the §15.8 Test-6 UX confusion entry.
+
+**Side-fix that surfaced mid-session:**
+
+- `d4e4dcb` — **Inspector responder-clobber on per-keystroke writeback.** Typing into the character description text view registered one keystroke at a time, then beeped. Root cause: each keystroke fired textDidChange → writeBack → session.updateCharacter → markChanged → didChangeNotification → `BibleInspectorViewController.renderDetail` tore down the whole detail editor including the NSTextView holding first responder. Fix: when the selection ref hasn't changed, refresh field values in place via `BibleDetailEditor.refreshInPlace()` instead of rebuilding the view tree. +3 TestKit (regression suite with per-mount UUID token, since ObjectIdentifier is unreliable across heap-slot recycling). Unrelated to Phase 4.5 but shipped this session.
+
+**Phase 4.5 Bible Workspace — full five-session arc, ~3,500 LOC, WKWebView pivot away from AppKit (scoped to the workspace only):**
+
+The full per-session ledger lives in [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) §11. Highlights:
+
+- `318c266` — **Plan landed.** [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) authoritative doc; pivot rationale (AppKit cost ledger trigger), tech-stack choice (Vite + React + TS + Tailwind + shadcn-style primitives + Bun), session breakdown, bridge contract, rollback path. L4.5 row in [`LOOM_PLAN.md`](LOOM_PLAN.md) + §5 Phase 4.5 section updated to point at the new doc.
+- `188907d` — **Session 1: WKWebView shell + bridge + read-only entity list.** AppKit shell (`BibleWorkspaceWindowController`) hosts a `WKWebView`; `BibleWorkspaceSnapshot` Codable contract; `BibleWorkspaceBridge.encodeSnapshotPush` produces a JS call with JSON inlined as object literal (U+2028/U+2029 defensively escaped); React side renders Characters + Lorebook lists. Three file:// gotchas burned through + documented in the build script: `crossorigin` attribute breaks scripts under file://, `<script type="module">` silently no-ops in WebKit on file://, classic head scripts need explicit `defer`. Bible menu → "Open Bible Workspace…" + ⌘⇧B. +17 TestKit.
+- `d91a91a` — **Session 2: full character editor + JS→Swift intent path.** Every `Character` field surfaced; debounced (250ms) `patchCharacter` intent dispatch; `CharacterPatch` Codable with `apply(to:)`; controlled inputs + local draft + reset effect keyed on `character.id` only (snapshot pushes for the same character don't clobber in-flight typing). Tiny shadcn-style primitives (Input/Textarea/Select/Button) + `useDebouncedCallback` hook. Deferred React Hook Form + Zod as overkill for the schema. +20 TestKit.
+- `d2c3820` — **Session 3: full lorebook editor + add/delete CRUD + NumericField.** All 13 `LorebookEntry` fields (v1 inspector surfaces 4); conditional `depth` render when `positionMode=depthN`; "+ Add entry" creates with `"Entry N"` default name (no `window.prompt` — that's a no-op in WKWebView without UIDelegate); Delete button in the editor header. `NumericField` helper fixes the controlled-numeric-input quirk where backspacing the existing `0` immediately re-anchors it. +19 TestKit.
+- `01c82cb` — **Session 4: accepted-facts examiner + UUID-key snapshot fix.** Closes the §15.9 ledger-fact-audit gap. `<Tabs>` primitive on character editor (Fields | Accepted facts). `FactsExaminer` view groups facts by source scene with certainty pills + ✕ delete buttons. `ProjectSession.removeKnownFact` mutator. **Load-bearing fix**: introduced `SnapshotCharacter` projection that re-keys `Character.knownFactsBySceneId` from `[UUID: V]` to `[String: V]` before encoding — Swift's `JSONEncoder` serializes UUID-keyed dicts as flat arrays (`[uuid, value, uuid, value]`), which the web side's `Record<string, KnownFact[]>` couldn't index. Cross-origin error sanitization on file:// hid the real trace (Safari Web Inspector via `isInspectable=true` is now canonical for React-side diagnostics). +10 TestKit.
+- `d1a0f8a` — **Session 5: cross-character suggestions queue + arc closeout.** `SuggestionsQueue` view (character pill, certainty pill, scene title, fact text, evidence quote, Accept/Reject buttons). New intents `.acceptSuggestion(factId)` + `.rejectSuggestion(factId)` route to the existing `AppState.{accept,reject}LedgerSuggestion` API. New `suggestionsObserver` on `AppState.ledgerSuggestionsDidChangeNotification` so reject (which doesn't mutate the session itself) still triggers a snapshot push. Entity-list header gains a prominent blue "N pending suggestion(s) →" button when count > 0. +3 TestKit.
+- `4a983a0` — **Workspace respects system light/dark.** Palette moved from inline `documentElement.style.setProperty` (always wins, kept workspace dark) to `styles.css` with `:root` dark default + `@media (prefers-color-scheme: light)` override. WKWebView mirrors the macOS app's effective appearance, so System Settings → Appearance retints inline.
+
+**Phase 4.5 arc — honest tally.**
+
+*What the pivot bought*: every form / list / grouped-list surface in Sessions 2-5 landed in a fraction of the AppKit-equivalent time. CSS grid + Tailwind preflight + Liquid Glass CSS vars + shadcn-style primitives = consistent visuals with near-zero layout debugging. Zero macOS-26 fittingSize cascade incidents. The architectural pieces compose: `NumericField`, `Tabs`, the patch/intent pattern got reused verbatim across editors.
+
+*What it cost*: ~30 min of file:// + cross-origin debugging across Sessions 1 + 4 (crossorigin attribute, type=module, head-script defer ordering, UUID dict keys, script-error sanitization). One contained Bun dependency (`brew install oven-sh/bun/bun`). ~170 KB JS bundle (gzipped ~54 KB) shipped inside Loom.app. Two render systems coexist; the side-pane inspector stays AppKit, the workspace is web.
+
+**Strategic verdict**: the WKWebView pivot was decisively the right call. Validates the AppKit pivot-pressure memory's instinct — when a fix is brittle and workarounds are stacking, the alternative path can be cheaper than continuing to grind. The pivot scope (one new window) made it locally reversible at every session boundary; Session 1's exit criteria would have triggered rollback if WKWebView had fought us catastrophically, and didn't.
+
+#### Carried into the next session
+
+**Primary**: **Phase 5 — Style ingestion (RAG-for-style)** ([`LOOM_PLAN.md`](LOOM_PLAN.md) L5 row + §5 Phase 5 section). Chunk reference texts, embed via RPClient embeddings server, per-scene-type retrieval (action / dialogue / interiority / description) as the differentiator vs SillyTavern's generic vectorised lorebook. Loom's largest single phase; R&D risk is real per [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §O.4. Plan for an empirical pass first; production after. The reference-text management UI lands inside the **Bible Workspace** WKWebView stack — that's why we landed Phase 4.5 first.
+
+**Still on the parking lot from §15.9**:
+
+- **Tests 8 + 9 still unrun**. Test 8 = Lorebook v1 editor live-test on the side-pane inspector (partially obsoleted by Phase 4.5 Session 3's full editor — but the v1 surface still exists and could be live-tested in a few minutes). Test 9 = cross-cutting NSFW content-neutrality audit.
+- **SDT-on-sparse-sources structural limit** ([`HANDOFF.md`](HANDOFF.md) §15.8). Documented; targeted negative-example blacklists in prompts don't suppress the failure (memory: `feedback_prompt_blacklist_evasion`). Would need constrained decoding / positional-anchor approach at the GenerateRequest layer. Heavy.
+- **Extractor coverage variance + subject-vs-character_id mis-attribution** — haven't reproduced enough to justify a fix slice.
+
+**New parking-lot items from Phase 4.5**:
+
+- **Confirm-before-delete dialogs.** Facts + lorebook entries delete immediately. Facts are recoverable via re-extraction (low risk). Lorebook entries are unique authored content — a confirmation prompt would be a small follow-on if mis-clicks happen in practice.
+- **Side-pane inspector's per-character suggestions chip → workspace link.** Plan §7 Session 5 deliverable #3; only the workspace side landed. The AppKit chip still surfaces suggestions inline; we'd want it to link out to the workspace's Suggestions surface instead.
+- **`avatarPath` field surface** in the workspace character editor (deferred per [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) §8.4).
+- **React-side error visibility**. WKWebView's cross-origin error sanitization shows `"Script error. @ ?:?:?"` for React-render exceptions. Safari Web Inspector is the canonical diagnostic path (isInspectable is on). Long-term: wrap React render in an in-bundle try/catch that exposes errors to the inline shim, OR relax WKWebView's same-origin policy for the bundle.
+- **Workspace light-mode palette refinement.** Current values were sketched against DesignTokens semantic intent without actual sampled values. May want pixel-level matching at some point.
