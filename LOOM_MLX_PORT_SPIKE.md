@@ -179,6 +179,86 @@ The conversion is faithful enough that the production decision becomes "MLX or M
 2. The hub-API import patch (§7) is a venv-local hack. Either pin `mlx-embeddings` to a version that fixes the import (when one releases) or vendor `mlx_embeddings/utils.py` in-tree with the patch applied.
 3. `MLXEmbedders` Swift wiring is a Phase 5 production task. Pattern: load model + tokeniser at app launch via Swift, call `encode(text:)` returning `[Float]`, wrap in `EmbeddingClient` protocol per [LOOM_RAG_SPIKE.md §13.6](LOOM_RAG_SPIKE.md) graduates list.
 
+## 12. Production pivot — Python subprocess (2026-05-13)
+
+The §10 MLX verdict held in code: `MLXStyleDistanceClient` was written, compiled clean against `ml-explore/mlx-swift-lm` 3.31.3, used the API exactly per the README. But at runtime it failed with `MLX error: Failed to load the default metallib. library not found`.
+
+Root cause (documented in mlx-swift's own README):
+
+> SwiftPM (command line) cannot build the Metal shaders so the ultimate build has to be done via Xcode.
+
+The user's machine has **Command Line Tools only**, not full Xcode. The `metal` compiler ships only with full Xcode (~15-20 GB installed without simulators, ~12 GB App Store download). The disk-space check at decision time revealed the data volume at 87% full (29 GB free / 228 GB total) — installing Xcode would have left effectively no headroom even at the bare-Xcode minimum.
+
+The previous research pass (this doc §11) verified the MLX **library** was viable but didn't verify the **toolchain** on the dev machine. That's the *verify-research-claims* memory rule (`feedback_verify_research_claims`) meeting its limit: research agents check published library status; they don't check the user's local install state.
+
+**Pivot decision (user, 2026-05-13):** drop MLX, ship a Python-subprocess Path D conformer using the existing `sentence-transformers` venv (`Tools/RagSpike/Python/.venv`). The subprocess architecture:
+
+- **Long-lived child process.** Spawned on first `embed(_:)` call (lazy); reused for every subsequent embed; dies automatically with the parent (stdin closes → Python's stdin loop exits). No daemon, no port management, no HTTP server, no separate code-signing pipeline for a launcher service.
+- **Stdin/stdout JSON-line protocol.** Each request is `{"text": "..."}`; each response is `{"dim": 768, "vec": [...]}` (or `{"error": "..."}`). One ready-signal `{"ready": true}` after model load so the client doesn't race startup.
+- **Reuses the existing spike venv.** `Tools/RagSpike/Python/.venv` already has `sentence-transformers` 3.0.x installed (from the original embed_offline.py path). No new dependency burden for the pivot itself; .app bundling of a Python interpreter + venv is a Phase 5.5 production-hardening task.
+
+### 12.1 Implementation landed
+
+- `Tools/RagSpike/Python/embed_subprocess.py` — the stdin/stdout subprocess script (~120 LOC).
+- `Sources/LoomCore/Retrieval/PythonStyleDistanceClient.swift` — Swift `EmbeddingClient` conformer (~180 LOC). Owns the subprocess lifecycle, request body builder, response parser, ready-signal handshake. Internal `LineReader` for newline-delimited stdout framing.
+- `Tools/RagSpike/MlxSpike/compare_swift_venv.py` — validity check (cosine vs canonical Python output).
+- 9 new TestKit tests pinning the wire-format (request body shape, response parser including ready/error/empty-vec cases).
+- `RagSpike --venv-smoke` subcommand: full end-to-end run.
+
+### 12.2 Validation
+
+```
+=== RagSpike --venv-smoke (Python subprocess D) ===
+Embedding 16 items (first call includes model load)...
+  id=1: dim=768 (first call) 7.65s
+  id=4: dim=768 0.208s
+  id=8: dim=768 0.068s
+  id=12: dim=768 0.076s
+  id=104: dim=768 0.058s
+Total: 9.80s
+```
+
+```
+   id      cosine    max-abs-diff  pass
+--------------------------------------------------
+    1-104  1.000000    0.000000     ✓ (all 16 items)
+
+min cosine: 1.000000
+mean cosine: 1.000000
+max max-abs-diff: 0.000000
+
+PASS
+```
+
+**Bit-identical to the canonical Python sentence-transformers baseline** — expected, since the Swift client is just an stdin/stdout pipe around the same library that produced the baseline. The numerical equivalence to PyTorch was already established in §8.
+
+Latency profile:
+- **Cold start:** ~7.65s (Python interpreter import + StyleDistance model load + first Metal JIT).
+- **Warm embed:** 0.05–0.2s per 300-word chunk. Comparable to PyTorch CPU; faster than Kobold round-trip for ingest.
+- **One subprocess per Loom run.** No retrieval-time start-up cost after the first embed of a session.
+
+### 12.3 What the pivot does NOT cost
+
+- The pure-Swift Path E ([Sources/LoomCore/Retrieval/FuncwordZEmbedder.swift](Sources/LoomCore/Retrieval/FuncwordZEmbedder.swift)) is unchanged and is the NSFW-parity-balanced half of the hybrid.
+- The hybrid retrieval merge ([RankingMetrics.reciprocalRankFusion](Sources/LoomCore/Retrieval/RankingMetrics.swift)) is unchanged.
+- The ingest pipeline ([ReferenceIngestPipeline](Sources/LoomCore/Retrieval/ReferenceIngestPipeline.swift)) is unchanged — it accepts any `EmbeddingClient` conformer; the venv path is now one such conformer.
+- The retrieval service ([RetrievalService](Sources/LoomCore/Retrieval/RetrievalService.swift)) is unchanged.
+
+### 12.4 What the pivot DOES cost
+
+- **Bundled-Python in Loom.app** (Phase 5.5 deployment work): ~1 GB inside `.app/Contents/Resources/Python/` once we bundle the interpreter + venv. The current spike reuses the user's existing `Tools/RagSpike/Python/.venv` — sufficient to validate the architecture but not shippable.
+- **ML-native-lib code-signing** for distribution: every `.so`/`.dylib` in the bundled venv has to be signed individually for hardened runtime + notarisation. Apple's own tooling supports this but it's ~1 day of pipeline work in build.sh. For a single-user app the user is also the developer who signs; for actual distribution this matters.
+- **Python interpreter install on user's machine** (alternative if we don't bundle): ~30 MB compressed; CLT's bundled Python 3 works for sentence-transformers. Less clean than bundling but ships immediately.
+
+### 12.5 Re-test path if Xcode arrives later
+
+The MLX work isn't lost — `LOOM_MLX_PORT_SPIKE.md` §7–11 documents the conversion + numerical validation + Swift API surface; `Sources/LoomMLX/MLXStyleDistanceClient.swift` (deleted from working tree in the pivot commit) is preserved in git history at the predecessor commit. To re-test:
+
+1. Install full Xcode (Xcode → Settings → Platforms → install macOS SDK only, skip iOS / etc).
+2. Verify `xcrun -sdk macosx metal --version` resolves.
+3. Restore the LoomMLX target + MLXStyleDistanceClient.swift from git history.
+4. `swift run MLXSwiftSpike --dump` should now produce the same vectors_swift_mlx.json as the venv path. Compare via `Tools/RagSpike/MlxSpike/compare.py`.
+
 ## 11. References
 
 - [LOOM_RAG_SPIKE.md §13.6](LOOM_RAG_SPIKE.md) — Phase 5 architecture decision (D + E hybrid).

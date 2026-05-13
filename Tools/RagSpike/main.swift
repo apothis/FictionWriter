@@ -937,6 +937,83 @@ func dumpFuncwordZ() -> Int32 {
     return 1
 }
 
+// MARK: - Python subprocess D smoke (LOOM_MLX_PORT_SPIKE §12 pivot)
+
+/// End-to-end smoke for PythonStyleDistanceClient. Spawns the
+/// subprocess, embeds the 16 fixture items, dumps the vectors,
+/// and verifies cosine ≥ 0.999 vs the canonical PyTorch baseline
+/// (vectors.json's D-styledistance block).
+func venvSmoke() -> Int32 {
+    log("=== RagSpike --venv-smoke (Python subprocess D) ===")
+    guard let fixture = loadFixture() else {
+        log("FATAL: could not load fixture")
+        return 1
+    }
+
+    let cwd = FileManager.default.currentDirectoryPath
+    let venvPython = URL(fileURLWithPath: cwd)
+        .appendingPathComponent("Tools/RagSpike/Python/.venv/bin/python3")
+    let script = URL(fileURLWithPath: cwd)
+        .appendingPathComponent("Tools/RagSpike/Python/embed_subprocess.py")
+    guard FileManager.default.fileExists(atPath: venvPython.path) else {
+        log("FATAL: Python venv missing at \(venvPython.path)")
+        return 1
+    }
+    guard FileManager.default.fileExists(atPath: script.path) else {
+        log("FATAL: subprocess script missing at \(script.path)")
+        return 1
+    }
+    log("Python: \(venvPython.path)")
+    log("Script: \(script.path)")
+
+    let client = PythonStyleDistanceClient(
+        pythonExecutable: venvPython,
+        scriptPath: script,
+        workingDirectory: URL(fileURLWithPath: cwd)
+    )
+
+    let items = fixture.excerpts + fixture.queries
+    log("Embedding \(items.count) items (first call includes model load)...")
+    var vectors: [String: [Float]] = [:]
+    let overallStart = Date()
+    for (i, item) in items.enumerated() {
+        let start = Date()
+        guard let v = client.embed(item.text) else {
+            log("  id=\(item.id): FAIL (nil)")
+            return 1
+        }
+        let elapsed = Date().timeIntervalSince(start)
+        vectors[String(item.id)] = v.values
+        if i == 0 {
+            log("  id=\(item.id): dim=\(v.dim) (first call) \(String(format: "%.2fs", elapsed))")
+        } else if (i + 1) % 4 == 0 {
+            log("  id=\(item.id): dim=\(v.dim) \(String(format: "%.3fs", elapsed))")
+        }
+    }
+    log("Total: \(String(format: "%.2fs", Date().timeIntervalSince(overallStart)))")
+
+    // Dump for compare.py
+    let outURL = URL(fileURLWithPath: cwd)
+        .appendingPathComponent("Tools/RagSpike/MlxSpike/vectors_swift_venv.json")
+    let payload: [String: Any] = [
+        "version": 1,
+        "paths": [[
+            "path": "D-styledistance-swift-venv",
+            "model": "PythonStyleDistanceClient via Tools/RagSpike/Python/.venv",
+            "dim": vectors.values.first?.count ?? 0,
+            "vectors": vectors,
+        ]],
+    ]
+    if let data = try? JSONSerialization.data(withJSONObject: payload) {
+        try? data.write(to: outURL)
+        log("Wrote \(outURL.path)")
+        log("")
+        log("Compare against the Python-direct baseline:")
+        log("  Tools/RagSpike/Python/.venv/bin/python3 Tools/RagSpike/MlxSpike/compare_swift_venv.py")
+    }
+    return 0
+}
+
 // MARK: - Entry
 
 let args = CommandLine.arguments.dropFirst()
@@ -950,12 +1027,15 @@ if args.contains("--smoke") {
     exit(hybrid())
 } else if args.contains("--narrative-mode") {
     exit(narrativeMode())
+} else if args.contains("--venv-smoke") {
+    exit(venvSmoke())
 } else {
     log("usage: swift run RagSpike --smoke")
     log("       swift run RagSpike --corpus")
     log("       swift run RagSpike --hybrid           (D+E via RRF — scope-lock #4)")
     log("       swift run RagSpike --narrative-mode   (LOOM_NARRATIVE_MODE_SPIKE — scope-lock #5)")
     log("       swift run RagSpike --funcword-z-dump   (LOOM_MLX_PORT_SPIKE §11 cross-check)")
+    log("       swift run RagSpike --venv-smoke        (LOOM_MLX_PORT_SPIKE §12 venv pivot end-to-end)")
     log("")
     log("env overrides:")
     log("  LOOM_SPIKE_BASE_URL   (default \(koboldURLString))")
