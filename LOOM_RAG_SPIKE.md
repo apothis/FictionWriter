@@ -75,8 +75,22 @@ revealed a hard constraint:
   Gemma 4 generative checkpoint isn't exposed as an embedder. This
   candidate, as proposed, is non-viable.
 
-This shifts the candidate list to three meaningfully different
-**paths** rather than three models:
+> **§3 update — 2026-05-13.** A focused research pass after S2 landed
+> revealed that the §1 premise ("no widely-adopted stylistic embedding
+> model exists") was stale. **Purpose-built, open-weights style /
+> authorship embedders exist and run on Apple Silicon** —
+> [StyleDistance](https://huggingface.co/StyleDistance/styledistance)
+> (Oct 2024 SOTA), [Wegmann Style-Embedding](https://huggingface.co/AnnaWegmann/Style-Embedding)
+> (RepL4NLP 2022, explicitly addresses "same topic ≠ same style"), and
+> [LUAR](https://huggingface.co/rrivera1849/LUAR-CRUD) (EMNLP 2021).
+> The [TACL 2024 paper](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00610/118299)
+> empirically confirms these models capture *style*, not just author
+> identity. This adds **Path D** (purpose-built style embedder) and
+> **Path E** (non-neural Burrows' Delta sanity baseline) below.
+> Path D is now the most likely winner; the spike has five paths to
+> score, not three.
+
+The candidate list is five meaningfully different **paths**:
 
 ### Path A — nomic-embed direct (the baseline)
 
@@ -105,7 +119,7 @@ This shifts the candidate list to three meaningfully different
   meaningful negative result. If B materially beats A, the embedder
   choice matters and Phase 5 should benchmark several before committing.
 
-### Path C — writer-distilled style descriptors (the speculative win)
+### Path C — writer-distilled style descriptors (alternative hypothesis)
 
 The original third slot in the user's proposal was gemma4_2b on Ollama.
 Since gemma4_2b can't embed directly, we redirect the *idea* behind the
@@ -127,9 +141,69 @@ over raw prose. The distillation step strips the topical signal
 (characters, setting, plot beats) and keeps the voice signal.
 
 - **Hypothesis:** C ranks by style materially better than A or B alone.
-  If true, Phase 5 production indexes chunks via descriptor-embedding
-  (descriptors generated offline at reference-ingest time, not per
-  query — same one-shot cost model as raw embedding).
+  Demoted from "speculative win" to "alternative hypothesis" after the
+  §3 update — Path D is now the headline candidate. C survives because
+  it tests a *different* hypothesis (explicit-feature elicitation by a
+  generative LLM vs. end-to-end contrastive learning); if D fails on
+  NSFW prose due to Reddit training-distribution skew, C may still win.
+
+### Path D — purpose-built style embedder (the new headline candidate)
+
+Per the §3 update, three open-weights models embed prose for style /
+authorship rather than topic. All RoBERTa-base sized (~500MB), all
+runnable on Apple Silicon. None go through Kobold or Ollama (those are
+generative-only and `/v1/embeddings`/`/api/embed` endpoints don't load
+encoder-only models) — D requires a small Python sidecar.
+
+- **Primary model:** [StyleDistance](https://huggingface.co/StyleDistance/styledistance).
+  Oct 2024 release, current SOTA for content-independent style.
+  Contrastively trained on SynthSTEL (40 style features) + Reddit
+  authorship pairs. 768-dim.
+- **Fallback model:** [Wegmann Style-Embedding](https://huggingface.co/AnnaWegmann/Style-Embedding)
+  (CISR, RepL4NLP 2022). Native sentence-transformers, explicitly
+  conversation-level content control. 768-dim. Run if StyleDistance
+  fails to load or returns degenerate output on the NSFW excerpts.
+- **Endpoint:** Python sidecar (spike-only — Flask or a one-shot
+  command-line invocation), in/out via JSON. Embedded vectors land in
+  a JSON file the Swift spike runner reads. Production deployment
+  (HTTP sidecar, MLX port, or sentence-transformers via a Python
+  helper bundled with Loom) is a Phase 5 production decision — out of
+  scope for the spike.
+- **Hypothesis:** D substantially beats A, B, C on NDCG@3 and the
+  style-vs-topic preference index. If confirmed, Phase 5 indexes
+  references via StyleDistance and the per-scene-type pillar
+  ([LOOM_RESEARCH.md §O.4](LOOM_RESEARCH.md)) becomes a tag-based
+  filter over the style-embedding index.
+
+### Path E — Burrows' Delta non-neural baseline (sanity floor)
+
+Stylometric features have been used for authorship attribution since
+the 19th century; Burrows' Delta (2002) is the modern canonical form.
+[`faststylometry`](https://pypi.org/project/faststylometry/) is a
+~50-LOC pip-installable Python implementation: compute z-scores over
+the top-N (default 150) function-word frequencies per text; the
+resulting per-text vector slots into cosine similarity exactly like
+the neural paths.
+
+- **Endpoint:** Python sidecar (same as Path D's), runs
+  `faststylometry` over the fixture corpus.
+- **Hypothesis:** E should *lose* to D, probably also to A/B. If D
+  doesn't beat E, the eval is broken — function-word z-scores are an
+  extremely cheap signal and they're the floor under any neural-style
+  retrieval claim. E's role is diagnostic, not productional.
+
+### Path D + E shared concern: NSFW Reddit-skew
+
+StyleDistance, Wegmann, and LUAR are all trained primarily on Reddit
+authorship-pair data. Reddit hosts NSFW subreddits but applies heavy
+moderation; the training distribution skews SFW. Burrows' Delta
+relies on function words (the, of, and, ...) which are SFW-stable but
+may underweight NSFW-specific vocabulary patterns. **The fixture's
+8/12 NSFW composition will reveal whether Path D systematically
+deranks NSFW chunks at equivalent style match** — a Loom-specific
+production constraint not covered by published benchmarks. This is
+the load-bearing question for Loom that the spike answers and no
+upstream paper has.
 
 ### Oracle path — gemma-4-31B as judge (ground truth, not a candidate)
 
@@ -256,17 +330,25 @@ network layer last. TDD per memory `feedback_tdd_always`.
   literate reader would assign to the right style with > 90% accuracy.
 - Commit.
 
-**S3 — Embedding clients (~2h)**
+**S3 — Embedding clients (~3h)**
 - `Tools/RagSpike/`: standalone Swift executable mirroring
   `Tools/LedgerSpike`. Calls Kobold `/v1/embeddings`, Ollama `/api/embed`.
+- `Tools/RagSpike/Python/embed_offline.py`: one-shot script for Paths
+  D + E (StyleDistance / Wegmann via `sentence-transformers`, Burrows'
+  Delta via `faststylometry`). Reads `fixture.json`, writes a
+  `vectors.json` keyed by path × excerpt-id that the Swift runner
+  consumes alongside its own Kobold/Ollama responses. Pure batch — no
+  HTTP server for the spike (defers production sidecar decision to
+  Phase 5 if D wins).
 - No production code path yet — the spike runner exists solely to
   produce the eval table.
 - Commit.
 
 **S4 — Path A + B sweep (~2h)**
-- Embed corpus + queries via A (nomic) and B (mxbai).
+- Embed corpus + queries via A (nomic) and B (mxbai + bge).
 - Score under §5 at chunk sizes {50, 150, 400} words.
-- Land results as a markdown table in §7 of this doc.
+- Land results as a markdown table in §13 of this doc (post-results
+  section, mirroring LedgerSpike §9+ pattern).
 - Commit (doc + tooling).
 
 **S5 — Path C: descriptor distillation (~3h)**
@@ -277,10 +359,23 @@ network layer last. TDD per memory `feedback_tdd_always`.
 - Score.
 - Commit.
 
-**S6 — Oracle pass (~2h, optional if A/B/C already give a clean verdict)**
+**S5.5 — Path D + E (Python-side) sweep (~2h)**
+- Run `embed_offline.py` with `StyleDistance/styledistance`; fallback
+  to `AnnaWegmann/Style-Embedding` only if SD load fails or returns
+  degenerate output (e.g. NaN vectors on NSFW excerpts).
+- Run `embed_offline.py` with `faststylometry` for Path E baseline.
+- Swift runner consumes `vectors.json` and scores D + E under §5.
+- Critical sub-step: **NSFW-vs-SFW match parity audit.** For each
+  path, compare top-3 NSFW-style-match rate against SFW-style-match
+  rate. If D systematically deranks NSFW at equivalent style match,
+  flag it in §13 as a Loom-specific production constraint (the
+  §3 NSFW Reddit-skew hypothesis confirmed empirically).
+- Commit.
+
+**S6 — Oracle pass (~2h, optional if A–E already give a clean verdict)**
 - Pairwise gemma-judge over the corpus per §3 oracle.
 - 20-comparison hand-validation sanity check.
-- Kendall τ for each path. Land in §7.
+- Kendall τ for each path. Land in §13.
 - Commit.
 
 **S7 — Findings + recommendation (no code, ~1h)**
@@ -289,32 +384,56 @@ network layer last. TDD per memory `feedback_tdd_always`.
   PROCEED / PIVOT / NO-GO verdict.
 - HANDOFF.md write-up.
 
-Total estimate: ~13–15h. One full session if focused; two sessions
-realistic.
+Total estimate: ~15–18h (was 13–15h pre-§3-update; +2h for the Python
+sidecar + Paths D + E). One long session if focused; two sessions
+more realistic.
 
 ## 7. Decision tree (PROCEED / PIVOT / NO-GO)
 
 After all paths score, exactly one branch fires:
 
-### PROCEED — any path clears NDCG@3 ≥ 0.7 AND preference ≥ +0.3
+### PROCEED — Path D clears NDCG@3 ≥ 0.7 AND preference ≥ +0.3 AND no NSFW derank
 
-Phase 5 production proceeds with the winning path:
+The expected outcome given the §3 update. Phase 5 production
+proceeds with StyleDistance (or Wegmann if SD failed) as the
+embedder. The per-scene-type pillar ([LOOM_RESEARCH.md §O.4](LOOM_RESEARCH.md))
+is supplied by tag-based filtering before similarity ranking.
 
-- A or B → raw-chunk embedding pipeline; the per-scene-type pillar
-  ([LOOM_RESEARCH.md §O.4](LOOM_RESEARCH.md)) is supplied by
-  *tagging* chunks at ingest time and filtering candidates by tag
-  before similarity ranking.
-- C → descriptor distillation; ingest pipeline becomes two-stage
-  (chunk → descriptor → embed), index sidecar stores descriptor
-  embeddings, per-scene-type pillar is supplied by the descriptor's
-  `modality` field as a filter.
+**Production deployment question** (Phase 5, not the spike): how
+does Loom run a Python-only encoder model? Options to evaluate
+post-spike:
 
-### PIVOT — A/B at floor but C wins materially
+- Bundled Python sidecar in `Loom.app/Contents/Resources/` with a
+  small uv-managed venv; Swift talks to it over localhost HTTP. Adds
+  a Python runtime dependency to the .app payload (~50 MB).
+- MLX port of StyleDistance weights. Native Apple-Silicon path. Real
+  porting work (~1 session) but no Python dependency.
+- LocalAI / ggerganov port if either ever exposes an encoder-friendly
+  API. Speculative.
 
-Phase 5 ships **descriptor-distillation** as the indexing strategy.
-This is a non-trivial production complication (writer model runs on
-every reference-text ingest, not just on user-facing scene
-generation) — the spike justifies the cost.
+### PROCEED — A or B (semantic embedder) clears the floor
+
+Surprising but possible — if the fixture's styles happen to share
+vocabulary clusters the embedders pick up on. Phase 5 indexes via
+raw-chunk embedding (no descriptor stage, no Python sidecar). The
+simplest production path. Per-scene-type pillar by tagging.
+
+### PROCEED — C (writer-distillation) wins where A/B/D fail on NSFW
+
+If D scores well on SFW but deranks NSFW (the §3 hypothesis
+confirmed), and C survives the NSFW excerpts because the distillation
+strips topical-NSFW signal — Phase 5 ships C as the indexing
+strategy. Cost: writer model runs at every reference-text ingest.
+Justified by the eval if C is the only path that handles NSFW
+without parity loss.
+
+### PIVOT — D wins on NDCG but shows NSFW derank ≥ 0.2 vs SFW
+
+The path retrieves style well but unevenly across content. Phase 5
+ships D as the embedder but with a fallback: NSFW-tagged references
+also index via Path C (writer-distilled descriptors). At retrieval
+time, NSFW queries pull from the C index, SFW queries pull from D.
+Operationally awkward but empirically justified.
 
 ### PIVOT — no path clears floor, but oracle agreement is high (Kendall τ ≥ 0.6) for one path
 
@@ -323,10 +442,11 @@ too coarse. Phase 5 proceeds with that path but the production UX
 surfaces top-K with K ≥ 5 (more candidates, looser filter) rather
 than top-3, and pins few-shot inclusion behind a user confirm step.
 
-### NO-GO — no path clears floor and oracle agreement is low across all
+### NO-GO — no path clears floor and oracle agreement is low across all (including D)
 
-Style-RAG isn't feasible at the current model fleet. Phase 5
-production scope shrinks to:
+This would be a genuine surprise given the §3 prior. Style-RAG isn't
+feasible at the current model fleet, including the purpose-built
+style embedders. Phase 5 production scope shrinks to:
 
 - **Lorebook-style topical RAG** (general semantic retrieval over
   user-curated reference snippets — useful for setting/worldbuilding
@@ -338,6 +458,12 @@ production scope shrinks to:
 This is roughly SillyTavern's status quo ([LOOM_RESEARCH.md §C.3 + §M.5](LOOM_RESEARCH.md))
 and matches the deprecation pattern of NovelAI's AI Modules. Not a
 failure mode for Loom — just a smaller Phase 5.
+
+### Path E (Burrows' Delta) — diagnostic only, never the production winner
+
+If E beats *any* of A/B/C/D, the eval is broken — function-word
+z-scores are a 19th-century sanity floor. E winning means rewrite the
+fixture before trusting the verdict on the others.
 
 ## 8. Out of scope
 
@@ -372,15 +498,25 @@ Anticipated, to be confirmed empirically:
 2. **Chunk-boundary sensitivity for style.** Voice emerges over
    paragraph-scale spans; 50-word chunks may strip too much rhythm,
    400-word chunks may dilute against intra-passage style shifts.
-3. **NSFW retrieval parity.** Generic semantic embedders may
-   under-weight NSFW vocabulary (training-corpus filtering effects).
-   The fixture's 2 NSFW excerpts will reveal this — if path A
-   systematically deranks NSFW chunks vs SFW ones at equivalent
-   style match, that's a production constraint.
+3. **NSFW retrieval parity.** Both generic semantic embedders (Paths
+   A, B) AND purpose-built style embedders (Path D) are trained
+   primarily on corpora that filter or moderate NSFW content (web
+   text for A/B; Reddit authorship pairs for D). The fixture's
+   8 NSFW excerpts will reveal whether any path systematically
+   deranks NSFW vs SFW at equivalent style match. This is the
+   Loom-specific constraint no upstream paper benchmarks for; the
+   spike's primary novel finding.
 4. **Index sidecar format.** 768-dim float32 × ~10k chunks ≈ 30MB per
    reference text. 1024-dim doubles that. The spike confirms which
    path's dimensionality we're paying for. Float16 packing is a
    probable Phase 5 production optimisation.
+5. **Python runtime in production (if Path D wins).** Loom currently
+   has zero Python dependencies; the .app bundle is pure Swift +
+   bundled WKWebView assets. Path D winning means either bundling
+   a Python runtime + sentence-transformers (~50 MB unpacked, ~150 MB
+   with PyTorch CPU wheels) or doing an MLX port of StyleDistance.
+   Either is a real production cost the spike's verdict has to
+   weigh; flag in §13 results.
 
 ## 10. Risks
 
@@ -404,6 +540,21 @@ Anticipated, to be confirmed empirically:
   If descriptor generation per chunk takes 5s+, indexing a
   100-chunk reference text takes 8 minutes — acceptable for offline
   ingest, but flag explicitly in §7 PROCEED/PIVOT.
+- **StyleDistance load failure or degenerate output on NSFW.** SD's
+  training corpus may have filtered NSFW Reddit data aggressively;
+  worst case, the model returns NaN or near-uniform vectors for
+  explicit prose. Mitigation: Wegmann Style-Embedding is the
+  pre-declared fallback (smaller research footprint, native
+  sentence-transformers integration, also Reddit-trained but with
+  different filtering pipeline). LUAR is a second fallback if both
+  fail.
+- **`sentence-transformers` install on Apple Silicon.** PyTorch wheels
+  on macOS-arm64 occasionally have transient breakages.
+  Mitigation: pin specific versions in
+  `Tools/RagSpike/Python/requirements.txt`; if the env breaks,
+  fall back to running Path D on a Linux machine and copying
+  `vectors.json` over. The spike isn't production — operational
+  awkwardness is acceptable for a one-shot eval.
 
 ## 11. Memory + design-doc updates produced
 
@@ -442,3 +593,18 @@ Doc-only, post-results:
   Path B alternative embedder.
 - [llama.cpp GBNF README](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md) —
   Path C descriptor schema.
+- [StyleDistance](https://huggingface.co/StyleDistance/styledistance)
+  ([arXiv 2410.12757](https://arxiv.org/pdf/2410.12757)) — Path D
+  primary embedder; Oct 2024 SOTA for content-independent style.
+- [Wegmann Style-Embedding (CISR)](https://huggingface.co/AnnaWegmann/Style-Embedding)
+  ([RepL4NLP 2022](https://aclanthology.org/2022.repl4nlp-1.26/)) —
+  Path D fallback; explicitly addresses "same topic ≠ same style."
+- [LUAR (rrivera1849/LUAR-CRUD)](https://huggingface.co/rrivera1849/LUAR-CRUD)
+  ([LLNL repo](https://github.com/LLNL/LUAR)) — Path D second
+  fallback; canonical authorship-representation model.
+- [TACL 2024 — Can Authorship Representation Learning Capture Stylistic
+  Features?](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00610/118299)
+  — empirical confirmation that contrastive authorship models
+  capture style, not just author identity.
+- [faststylometry](https://pypi.org/project/faststylometry/) — Path E
+  Burrows' Delta implementation; non-neural baseline.
