@@ -32,6 +32,17 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     /// `ProjectSession.listTemplateSceneSnapshots()`. Mirrors the
     /// references slot pattern.
     public let templateScenes: [SnapshotTemplateScene]
+    /// Whether the underlying project is persisted on disk. False for
+    /// "Untitled" in-memory sessions where `ProjectSession.url` is nil.
+    /// References + TemplateScenes are file-system entities; their
+    /// `addReference` / `addTemplateScene` paths silently drop on
+    /// in-memory sessions. The UI inspects this flag to disable the
+    /// corresponding Add buttons rather than firing intents that
+    /// no-op.
+    ///
+    /// Default true on legacy decode so older payloads (no field)
+    /// preserve the previous "always allow Add" behaviour.
+    public let isProjectOnDisk: Bool
 
     public init(
         projectTitle: String,
@@ -40,7 +51,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         scenes: [SceneSummary],
         suggestions: [PendingSuggestion],
         references: [SnapshotReference] = [],
-        templateScenes: [SnapshotTemplateScene] = []
+        templateScenes: [SnapshotTemplateScene] = [],
+        isProjectOnDisk: Bool = true
     ) {
         self.projectTitle = projectTitle
         self.characters = characters
@@ -49,6 +61,24 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.suggestions = suggestions
         self.references = references
         self.templateScenes = templateScenes
+        self.isProjectOnDisk = isProjectOnDisk
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case projectTitle, characters, lorebook, scenes, suggestions
+        case references, templateScenes, isProjectOnDisk
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.projectTitle = try c.decode(String.self, forKey: .projectTitle)
+        self.characters = try c.decode([SnapshotCharacter].self, forKey: .characters)
+        self.lorebook = try c.decode([LorebookEntry].self, forKey: .lorebook)
+        self.scenes = try c.decode([SceneSummary].self, forKey: .scenes)
+        self.suggestions = try c.decode([PendingSuggestion].self, forKey: .suggestions)
+        self.references = try c.decodeIfPresent([SnapshotReference].self, forKey: .references) ?? []
+        self.templateScenes = try c.decodeIfPresent([SnapshotTemplateScene].self, forKey: .templateScenes) ?? []
+        self.isProjectOnDisk = try c.decodeIfPresent(Bool.self, forKey: .isProjectOnDisk) ?? true
     }
 
     /// Builds a snapshot from the current `ProjectSession` state.
@@ -63,6 +93,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         scenes: [UUID: Scene],
         references: [SnapshotReference] = [],
         templateScenes: [SnapshotTemplateScene] = [],
+        isProjectOnDisk: Bool = true,
         suggestionsQueue: LedgerSuggestionsQueue
     ) -> BibleWorkspaceSnapshot {
         let sceneSummaries: [SceneSummary] = project.manuscript.flatSceneIds.compactMap { id in
@@ -89,7 +120,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             scenes: sceneSummaries,
             suggestions: pending,
             references: references,
-            templateScenes: templateScenes
+            templateScenes: templateScenes,
+            isProjectOnDisk: isProjectOnDisk
         )
     }
 }

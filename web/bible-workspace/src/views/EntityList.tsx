@@ -84,13 +84,12 @@ export function EntityList({
           title="References"
           count={snapshot.references.length}
           headerAction={
-            <button
-              type="button"
+            <AddButton
+              label="+ Add reference"
               onClick={onAddReference}
-              className="text-xs text-loom-accent hover:underline"
-            >
-              + Add reference
-            </button>
+              enabled={snapshot.isProjectOnDisk !== false}
+              disabledHint="Save the project (⌘S) to add references — they're stored on disk."
+            />
           }
         >
           {snapshot.references.length === 0 ? (
@@ -109,13 +108,12 @@ export function EntityList({
           title="Template Scenes"
           count={snapshot.templateScenes.length}
           headerAction={
-            <button
-              type="button"
+            <AddButton
+              label="+ Add template"
               onClick={onAddTemplateScene}
-              className="text-xs text-loom-accent hover:underline"
-            >
-              + Add template
-            </button>
+              enabled={snapshot.isProjectOnDisk !== false}
+              disabledHint="Save the project (⌘S) to add template scenes — they're stored on disk."
+            />
           }
         >
           {snapshot.templateScenes.length === 0 ? (
@@ -405,5 +403,38 @@ function TemplateSceneRow({
 function EmptyRow({ text }: { text: string }) {
   return (
     <div className="px-3 py-3 text-xs italic text-loom-fg-tertiary">{text}</div>
+  );
+}
+
+// References + TemplateScenes are file-system entities — they can't
+// be persisted while the project is in-memory (Untitled). Disable
+// the corresponding Add buttons in that state with a tooltip rather
+// than firing intents that no-op silently.
+function AddButton({
+  label,
+  onClick,
+  enabled,
+  disabledHint,
+}: {
+  label: string;
+  onClick: () => void;
+  enabled: boolean;
+  disabledHint: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={enabled ? onClick : undefined}
+      disabled={!enabled}
+      title={enabled ? undefined : disabledHint}
+      className={cn(
+        "text-xs",
+        enabled
+          ? "text-loom-accent hover:underline"
+          : "cursor-not-allowed text-loom-fg-tertiary",
+      )}
+    >
+      {label}
+    </button>
   );
 }

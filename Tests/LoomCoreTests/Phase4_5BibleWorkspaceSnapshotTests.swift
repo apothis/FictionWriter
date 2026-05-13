@@ -250,6 +250,72 @@ func phase4_5BibleWorkspaceSnapshotTests() -> TestSuite {
         )
     }
 
+    // MARK: - isProjectOnDisk discriminator
+    //
+    // References + TemplateScenes are file-system entities — both
+    // `ProjectSession.addReference` and `.addTemplateScene` silently
+    // no-op when the session has no on-disk URL ("Untitled" project).
+    // The React UI was firing the create intents anyway and getting
+    // dropped, leaving the user with non-functional buttons. The
+    // snapshot now carries an `isProjectOnDisk` discriminator so the
+    // UI can disable those Add buttons with a "Save the project
+    // first" hint.
+
+    s.test("BibleWorkspaceSnapshot.build defaults isProjectOnDisk to true") {
+        let snap = BibleWorkspaceSnapshot.build(
+            project: Project(title: "X"),
+            scenes: [:],
+            suggestionsQueue: LedgerSuggestionsQueue()
+        )
+        try expectTrue(snap.isProjectOnDisk)
+    }
+
+    s.test("BibleWorkspaceSnapshot.build threads isProjectOnDisk=false through") {
+        let snap = BibleWorkspaceSnapshot.build(
+            project: Project(title: "X"),
+            scenes: [:],
+            isProjectOnDisk: false,
+            suggestionsQueue: LedgerSuggestionsQueue()
+        )
+        try expectFalse(snap.isProjectOnDisk)
+    }
+
+    s.test("BibleWorkspaceSnapshot round-trips isProjectOnDisk through JSON") {
+        let snap = BibleWorkspaceSnapshot(
+            projectTitle: "X",
+            characters: [], lorebook: [], scenes: [], suggestions: [],
+            isProjectOnDisk: false
+        )
+        let data = try JSONEncoder().encode(snap)
+        let json = String(data: data, encoding: .utf8) ?? ""
+        try expectTrue(json.contains("\"isProjectOnDisk\":false"),
+            "expected isProjectOnDisk:false in: \(json)")
+        let decoded = try JSONDecoder().decode(BibleWorkspaceSnapshot.self, from: data)
+        try expectFalse(decoded.isProjectOnDisk)
+    }
+
+    s.test("BibleWorkspaceSnapshot decoding tolerates legacy payloads without isProjectOnDisk") {
+        // Pre-existing on-the-wire snapshots (or future Swift callers
+        // not yet wired through) shouldn't fail. Default = true since
+        // the legacy path was the "always allow Add" behaviour.
+        let legacy = """
+        {
+          "projectTitle": "X",
+          "characters": [],
+          "lorebook": [],
+          "scenes": [],
+          "suggestions": [],
+          "references": [],
+          "templateScenes": []
+        }
+        """
+        let decoded = try JSONDecoder().decode(
+            BibleWorkspaceSnapshot.self,
+            from: legacy.data(using: .utf8)!
+        )
+        try expectTrue(decoded.isProjectOnDisk)
+    }
+
     s.test("build is stable across repeated calls on unchanged inputs (snapshot equality)") {
         // The bridge pushes a fresh snapshot on every didChange; the
         // web side benefits from being able to bail out cheaply on

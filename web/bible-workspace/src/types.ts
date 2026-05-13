@@ -116,6 +116,12 @@ export interface BibleWorkspaceSnapshot {
   suggestions: PendingSuggestion[];
   references: SnapshotReference[];
   templateScenes: SnapshotTemplateScene[];
+  // False for "Untitled" in-memory projects with no on-disk URL.
+  // References + TemplateScenes are file-system entities that can't
+  // be persisted until the project is saved; UI disables the Add
+  // buttons when this is false. Optional in the type to tolerate
+  // pre-field snapshots; readers should default to true.
+  isProjectOnDisk?: boolean;
 }
 
 // Mirrors CharacterPatch.swift — every field optional. The React
