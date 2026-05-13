@@ -127,6 +127,8 @@ let suites: [TestSuite] = [
     phase4_5CharacterPatchTests(),
     phase4_5LorebookEntryPatchTests(),
     phase4_5RemoveKnownFactTests(),
+    phase5RagEmbeddingsTests(),
+    phase5RagRankingMetricsTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
