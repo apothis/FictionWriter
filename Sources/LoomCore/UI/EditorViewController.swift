@@ -241,7 +241,11 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         // PromptBuilder → KoboldClient.generateStream → didEmitToken
         // notifications. EditorVC inserts each token at the running
         // offset and unfreezes the text view on finish.
-        coordinator = GenerationCoordinator(session: session, registry: AppState.shared.registry)
+        coordinator = GenerationCoordinator(
+            session: session,
+            registry: AppState.shared.registry,
+            styleRetriever: AppState.shared.styleRetriever()
+        )
         generationStartObserver = NotificationCenter.default.addObserver(
             forName: GenerationCoordinator.didStartNotification,
             object: coordinator,

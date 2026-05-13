@@ -60,10 +60,27 @@ public final class AppState {
     /// an empty settings store.
     public var embedderProvider: () -> KoboldEmbedding?
 
+    /// Phase 5 production A1 — factory for the D `EmbeddingClient` used
+    /// by the per-project style-retrieval surface. Production wiring
+    /// (`AppState.shared`) defaults to a `PythonStyleDistanceClient`
+    /// bound to the repo's bundled venv; tests inject a stub so the
+    /// suite never spawns the StyleDistance subprocess. The factory is
+    /// called once per project-open, NOT per query.
+    public typealias EmbeddingClientFactory = (URL) -> EmbeddingClient
+    public var embeddingClientFactory: EmbeddingClientFactory
+
+    /// Phase 5 production A1 — the current project's retrieval service,
+    /// or nil for in-memory ("Untitled") sessions. Rebuilt on every
+    /// `openProject` / `createProject` / `saveCurrentSessionAs` call.
+    /// Releasing the old service deinits its `PythonStyleDistanceClient`,
+    /// which closes the subprocess's stdin and lets it exit cleanly.
+    public private(set) var currentRetrievalService: RetrievalService?
+
     /// Test-only init. Production code uses `.shared`.
     public init(
         settingsStore: AppSettingsStore = AppSettingsStore(),
-        embedderProvider: (() -> KoboldEmbedding?)? = nil
+        embedderProvider: (() -> KoboldEmbedding?)? = nil,
+        embeddingClientFactory: EmbeddingClientFactory? = nil
     ) {
         self.settingsStore = settingsStore
         self.settings = settingsStore.load()
@@ -105,6 +122,14 @@ public final class AppState {
         // is configured; otherwise nil (skip filtering). Set
         // pre-self-reference; rebound below to capture `self`.
         self.embedderProvider = { nil }
+
+        // Phase 5 production A1 — default factory spawns the
+        // Python+StyleDistance subprocess against the repo's bundled
+        // venv. Paths are relative to the current working directory,
+        // matching the self-use deployment model. Phase 5.5 sub-row
+        // will swap this for a `Loom.app/Contents/Resources/Python`
+        // bundled lookup.
+        self.embeddingClientFactory = embeddingClientFactory ?? AppState.defaultEmbeddingClientFactory
 
         // Now that all stored properties are initialized, rebind the
         // closures to reach `self` for live settings + session.
@@ -354,6 +379,7 @@ public final class AppState {
         try storage.saveProject(project, at: url)
         currentSession.replace(project: project, scenes: [starter.id: starter], url: url)
         try pushRecentAndSave(url)
+        reconfigureRetrieval(for: url)
         DebugLog.shared.write("[loom] createProject at=\(url.lastPathComponent)")
     }
 
@@ -365,6 +391,7 @@ public final class AppState {
         let loaded = try storage.loadProjectWithRecovery(from: url)
         currentSession.replace(project: loaded.project, scenes: loaded.scenes, url: url)
         try pushRecentAndSave(url)
+        reconfigureRetrieval(for: url)
         DebugLog.shared.write("[loom] openProject at=\(url.lastPathComponent) scenes=\(loaded.scenes.count)")
     }
 
@@ -405,6 +432,52 @@ public final class AppState {
         }
         currentSession.url = url
         currentSession.markCleanForTest()
+        reconfigureRetrieval(for: url)
         DebugLog.shared.write("[loom] saveAs at=\(url.lastPathComponent)")
+    }
+
+    // MARK: - Phase 5 production A1 — style retrieval
+
+    /// Returns a closure suitable for
+    /// `GenerationCoordinator.styleRetriever`. The closure resolves
+    /// the current `RetrievalService` on every call so the coordinator
+    /// — wired once at editor construction — keeps working across
+    /// project replacement. Empty `[]` is the no-op result for
+    /// in-memory sessions and for graceful retrieval failures.
+    public func styleRetriever() -> (String) -> [StyleExemplar] {
+        return { [weak self] query in
+            guard let self = self, let svc = self.currentRetrievalService else { return [] }
+            return (try? svc.retrieve(query: query, topK: 3)) ?? []
+        }
+    }
+
+    /// Release the old `RetrievalService` (which drops its Python
+    /// subprocess via `PythonStyleDistanceClient.deinit`) and install
+    /// a fresh one for the given project URL. Called from the three
+    /// project-lifecycle entry points: `createProject`, `openProject`,
+    /// `saveCurrentSessionAs`.
+    private func reconfigureRetrieval(for url: URL) {
+        if currentRetrievalService != nil {
+            currentRetrievalService = nil
+            DebugLog.shared.write("[retrieval] released previous service")
+        }
+        let client = embeddingClientFactory(url)
+        currentRetrievalService = RetrievalService(projectURL: url, dClient: client)
+        DebugLog.shared.write("[retrieval] installed service for project=\(url.lastPathComponent) model=\(client.modelId)")
+    }
+
+    /// Phase 5 production A1 — default factory: spawn a
+    /// `PythonStyleDistanceClient` against the repo's bundled venv.
+    /// Paths resolve relative to the current working directory (the
+    /// self-use deployment model). Phase 5.5 will swap this for a
+    /// `Loom.app/Contents/Resources/Python` lookup once the bundling
+    /// pipeline lands.
+    private static let defaultEmbeddingClientFactory: EmbeddingClientFactory = { projectURL in
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        return PythonStyleDistanceClient(
+            pythonExecutable: cwd.appendingPathComponent("Tools/RagSpike/Python/.venv/bin/python3"),
+            scriptPath: cwd.appendingPathComponent("Tools/RagSpike/Python/embed_subprocess.py"),
+            workingDirectory: projectURL
+        )
     }
 }
