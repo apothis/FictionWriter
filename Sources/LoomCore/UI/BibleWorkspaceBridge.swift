@@ -71,6 +71,11 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     case deleteKnownFact(characterId: UUID, sceneId: UUID, factId: UUID)
     case acceptSuggestion(factId: UUID)
     case rejectSuggestion(factId: UUID)
+    // Phase 5 production A2.1 — reference-text CRUD + ingest trigger.
+    case createReference(name: String)
+    case patchReference(id: UUID, patch: ReferencePatch)
+    case deleteReference(id: UUID)
+    case ingestReference(id: UUID)
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
@@ -84,6 +89,10 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case deleteKnownFact
         case acceptSuggestion
         case rejectSuggestion
+        case createReference
+        case patchReference
+        case deleteReference
+        case ingestReference
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -114,6 +123,19 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .rejectSuggestion(let factId):
             try c.encode(Kind.rejectSuggestion.rawValue, forKey: .kind)
             try c.encode(factId, forKey: .factId)
+        case .createReference(let name):
+            try c.encode(Kind.createReference.rawValue, forKey: .kind)
+            try c.encode(name, forKey: .name)
+        case .patchReference(let id, let patch):
+            try c.encode(Kind.patchReference.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+            try c.encode(patch, forKey: .patch)
+        case .deleteReference(let id):
+            try c.encode(Kind.deleteReference.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+        case .ingestReference(let id):
+            try c.encode(Kind.ingestReference.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
         }
     }
 
@@ -154,6 +176,19 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .rejectSuggestion:
             let factId = try c.decode(UUID.self, forKey: .factId)
             self = .rejectSuggestion(factId: factId)
+        case .createReference:
+            let name = try c.decode(String.self, forKey: .name)
+            self = .createReference(name: name)
+        case .patchReference:
+            let id = try c.decode(UUID.self, forKey: .id)
+            let patch = try c.decode(ReferencePatch.self, forKey: .patch)
+            self = .patchReference(id: id, patch: patch)
+        case .deleteReference:
+            let id = try c.decode(UUID.self, forKey: .id)
+            self = .deleteReference(id: id)
+        case .ingestReference:
+            let id = try c.decode(UUID.self, forKey: .id)
+            self = .ingestReference(id: id)
         }
     }
 }

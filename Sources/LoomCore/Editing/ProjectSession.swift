@@ -576,6 +576,98 @@ public final class ProjectSession {
         }
     }
 
+    // MARK: - Reference texts (Phase 5 production A2.1)
+
+    /// Create a fresh `ReferenceText` on disk with an empty body and
+    /// post `didChangeNotification` so the Bible Workspace snapshot
+    /// re-pushes. Returns `nil` for in-memory ("Untitled") sessions
+    /// where `references/` has no host directory.
+    ///
+    /// References don't live in the `Project` struct (see
+    /// `Project.swift` header comment) — they're file-system entities
+    /// from day one. So this proxy doesn't mutate `project`; it just
+    /// calls `markChanged()` to fan out the notification that the
+    /// snapshot push observes.
+    @discardableResult
+    public func addReference(name: String) -> ReferenceText? {
+        guard let url = self.url else {
+            DebugLog.shared.write("[reference] addReference skipped: in-memory session")
+            return nil
+        }
+        let ref = ReferenceText(id: UUID(), name: name)
+        do {
+            try ReferenceStorage.saveReference(ref, in: url)
+            markChanged()
+            DebugLog.shared.write("[reference] addReference id=\(ref.id) name=\(name)")
+            return ref
+        } catch {
+            DebugLog.shared.write("[reference] addReference write failed: \(error)")
+            return nil
+        }
+    }
+
+    /// Persist the given reference text to disk and post the change
+    /// notification. The body lives in the `.md` body via
+    /// `ReferenceFile` encoding; the metadata frontmatter carries
+    /// name / nsfw / createdAt.
+    public func updateReference(_ ref: ReferenceText) {
+        guard let url = self.url else { return }
+        do {
+            try ReferenceStorage.saveReference(ref, in: url)
+            markChanged()
+            DebugLog.shared.write("[reference] updateReference id=\(ref.id) name=\(ref.name)")
+        } catch {
+            DebugLog.shared.write("[reference] updateReference write failed: \(error)")
+        }
+    }
+
+    /// Delete a reference and its `.index` sidecar from disk. Idempotent
+    /// at the storage layer (missing files don't throw). Posts
+    /// `didChangeNotification` even on stale ids — cheap, and a fresh
+    /// snapshot push is the right "you tried to delete something that
+    /// wasn't there, here's the current state" response.
+    public func deleteReference(id: UUID) {
+        guard let url = self.url else { return }
+        do {
+            try ReferenceStorage.deleteReference(id: id, in: url)
+            markChanged()
+            DebugLog.shared.write("[reference] deleteReference id=\(id)")
+        } catch {
+            DebugLog.shared.write("[reference] deleteReference failed: \(error)")
+        }
+    }
+
+    /// Enumerate all references in `references/` and project each into
+    /// a `SnapshotReference`. The `chunkCount` is read from the
+    /// `.index` sidecar when present; nil otherwise (UI uses nil as
+    /// the "needs ingest" signal). Returns `[]` for in-memory sessions
+    /// or when `references/` doesn't exist yet.
+    ///
+    /// Sort order is alphabetical by name — disk enumeration via
+    /// `FileManager.contentsOfDirectory` is unordered, so this is the
+    /// stable presentation order for the React side.
+    public func listReferenceSnapshots() -> [SnapshotReference] {
+        guard let url = self.url else { return [] }
+        let ids: [UUID]
+        do {
+            ids = try ReferenceStorage.listReferenceIds(in: url)
+        } catch {
+            DebugLog.shared.write("[reference] listReferenceIds failed: \(error)")
+            return []
+        }
+        var snaps: [SnapshotReference] = []
+        for id in ids {
+            guard let ref = try? ReferenceStorage.loadReference(id: id, in: url) else {
+                DebugLog.shared.write("[reference] listReferenceSnapshots: skipped malformed id=\(id)")
+                continue
+            }
+            let chunkCount = ReferenceStorage.loadIndex(for: id, in: url)?.chunks.count
+            snaps.append(SnapshotReference(from: ref, chunkCount: chunkCount))
+        }
+        snaps.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return snaps
+    }
+
     // MARK: - Notes + inspector tab
 
     public func updateNotes(_ notes: String) {

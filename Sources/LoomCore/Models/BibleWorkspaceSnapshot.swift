@@ -18,19 +18,30 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     public let lorebook: [LorebookEntry]
     public let scenes: [SceneSummary]
     public let suggestions: [PendingSuggestion]
+    /// Phase 5 production A2.1 — reference texts available to the
+    /// style-RAG retriever. Populated by the caller (typically
+    /// `BibleWorkspaceWindowController`) via
+    /// `ProjectSession.listReferenceSnapshots()`, which enumerates
+    /// the `references/` directory on disk. The list comes in
+    /// here as an explicit parameter rather than read from disk
+    /// inside `build(...)` to keep this function pure-data and
+    /// preserve the existing Phase 4.5 testing pattern.
+    public let references: [SnapshotReference]
 
     public init(
         projectTitle: String,
         characters: [SnapshotCharacter],
         lorebook: [LorebookEntry],
         scenes: [SceneSummary],
-        suggestions: [PendingSuggestion]
+        suggestions: [PendingSuggestion],
+        references: [SnapshotReference] = []
     ) {
         self.projectTitle = projectTitle
         self.characters = characters
         self.lorebook = lorebook
         self.scenes = scenes
         self.suggestions = suggestions
+        self.references = references
     }
 
     /// Builds a snapshot from the current `ProjectSession` state.
@@ -38,10 +49,12 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     /// lorebook in `bible.lorebook` order, scenes in
     /// `manuscript.flatSceneIds` order, suggestions flattened across
     /// characters in `bible.characters` order then per-character
-    /// insertion order.
+    /// insertion order. References are caller-ordered (typically
+    /// alphabetical-by-name, since the disk enumeration is unordered).
     public static func build(
         project: Project,
         scenes: [UUID: Scene],
+        references: [SnapshotReference] = [],
         suggestionsQueue: LedgerSuggestionsQueue
     ) -> BibleWorkspaceSnapshot {
         let sceneSummaries: [SceneSummary] = project.manuscript.flatSceneIds.compactMap { id in
@@ -66,8 +79,34 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             characters: project.bible.characters.map(SnapshotCharacter.init(from:)),
             lorebook: project.bible.lorebook,
             scenes: sceneSummaries,
-            suggestions: pending
+            suggestions: pending,
+            references: references
         )
+    }
+}
+
+/// Bridge-specific projection of `ReferenceText`. The `body` field
+/// passes through unchanged — the React side renders an editable
+/// `<Textarea>` for it; truncating would force a round-trip on every
+/// edit. `chunkCount` is the derived "ingest state" signal: nil means
+/// "no `.index` sidecar exists yet" (the UI prompts to ingest);
+/// non-nil means the chunked vectors are on disk. `createdAt` is
+/// surfaced for the UI's "added X days ago" hint.
+public struct SnapshotReference: Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var nsfw: Bool
+    public var createdAt: Date
+    public var body: String
+    public var chunkCount: Int?
+
+    public init(from ref: ReferenceText, chunkCount: Int?) {
+        self.id = ref.id
+        self.name = ref.name
+        self.nsfw = ref.nsfw
+        self.createdAt = ref.createdAt
+        self.body = ref.body
+        self.chunkCount = chunkCount
     }
 }
 

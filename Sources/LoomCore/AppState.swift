@@ -480,4 +480,78 @@ public final class AppState {
             workingDirectory: projectURL
         )
     }
+
+    // MARK: - Phase 5 production A2.1 — reference ingest
+
+    /// Posted on the main queue when an ingest finishes (success or
+    /// failure). `userInfo` carries `["referenceId": UUID, "error":
+    /// Error?]`. The Bible Workspace listens for this to refresh the
+    /// snapshot so chunk counts surface as soon as the index sidecar
+    /// is on disk.
+    public static let referenceIngestDidFinishNotification = Notification.Name("LoomReference.ingestDidFinish")
+
+    /// Kick off a single-reference ingest on a background queue.
+    /// Builds a fresh D `EmbeddingClient` via `embeddingClientFactory`,
+    /// wires the production `KoboldNarrativeModeClassifier` against
+    /// the current writer server, and runs
+    /// `chunkAndEmbedD(referenceId:) + refitAllEVectors()`. On
+    /// completion, posts `referenceIngestDidFinishNotification` and
+    /// the session's `didChangeNotification` so the snapshot refreshes.
+    ///
+    /// No-op for in-memory sessions or when no default writer server
+    /// is configured (modality classifier can't run without it).
+    /// The transient `EmbeddingClient` is dropped at the end of the
+    /// closure — its `PythonStyleDistanceClient` deinit closes the
+    /// subprocess. Phase 5.5 may cache this if the per-ingest cold
+    /// start (~7.65s) becomes a UX concern in practice.
+    public func ingestReference(id: UUID) {
+        guard let projectURL = currentSession.url else {
+            DebugLog.shared.write("[ingest] skipped: in-memory session id=\(id)")
+            return
+        }
+        guard let defaultId = settings.defaultServerId,
+              let profile = settings.servers.first(where: { $0.id == defaultId }) else {
+            DebugLog.shared.write("[ingest] skipped: no default writer server configured id=\(id)")
+            return
+        }
+        let modalityLLM = KoboldNarrativeModeClassifier.makeClosure(baseURL: profile.baseURL)
+        let factory = self.embeddingClientFactory
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let dClient = factory(projectURL)
+            let pipeline = ReferenceIngestPipeline(
+                projectURL: projectURL,
+                chunkSize: 200,
+                chunkOverlap: 0,
+                dClient: dClient,
+                modalityLLM: modalityLLM
+            )
+            var thrown: Error?
+            do {
+                _ = try pipeline.chunkAndEmbedD(referenceId: id)
+                try pipeline.refitAllEVectors()
+                DebugLog.shared.write("[ingest] completed id=\(id)")
+            } catch {
+                thrown = error
+                DebugLog.shared.write("[ingest] failed id=\(id) error=\(error)")
+            }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                var info: [AnyHashable: Any] = ["referenceId": id]
+                if let thrown = thrown { info["error"] = thrown }
+                NotificationCenter.default.post(
+                    name: Self.referenceIngestDidFinishNotification,
+                    object: self,
+                    userInfo: info
+                )
+                // Trigger a snapshot refresh by re-pushing didChange.
+                // The session itself wasn't mutated, but the disk did
+                // — listReferenceSnapshots will now see the .index
+                // sidecar.
+                NotificationCenter.default.post(
+                    name: ProjectSession.didChangeNotification,
+                    object: self.currentSession
+                )
+            }
+        }
+    }
 }

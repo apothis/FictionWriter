@@ -189,6 +189,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         let snap = BibleWorkspaceSnapshot.build(
             project: session.project,
             scenes: session.scenes,
+            references: session.listReferenceSnapshots(),
             suggestionsQueue: appState.ledgerSuggestionsQueue
         )
         do {
@@ -286,7 +287,41 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         case .rejectSuggestion(let factId):
             appState.rejectLedgerSuggestion(factId: factId)
             DebugLog.shared.write("[workspace] rejectSuggestion factId=\(factId)")
+        case .createReference(let name):
+            if let ref = session.addReference(name: name) {
+                DebugLog.shared.write("[workspace] createReference id=\(ref.id) name=\(name)")
+            } else {
+                DebugLog.shared.write("[workspace] createReference dropped — in-memory session or write failed")
+            }
+        case .patchReference(let id, let patch):
+            guard let url = session.url else {
+                DebugLog.shared.write("[workspace] patchReference dropped — in-memory session id=\(id)")
+                return
+            }
+            guard var ref = try? ReferenceStorage.loadReference(id: id, in: url) else {
+                DebugLog.shared.write("[workspace] patchReference ignored — stale id=\(id)")
+                return
+            }
+            ref = patch.apply(to: ref)
+            session.updateReference(ref)
+            DebugLog.shared.write("[workspace] patchReference applied id=\(id) fields=\(referencePatchFieldSummary(patch))")
+        case .deleteReference(let id):
+            session.deleteReference(id: id)
+            DebugLog.shared.write("[workspace] deleteReference id=\(id)")
+        case .ingestReference(let id):
+            appState.ingestReference(id: id)
+            DebugLog.shared.write("[workspace] ingestReference id=\(id) kicked off")
         }
+    }
+
+    /// Compact log-friendly summary of which reference-patch fields
+    /// were non-nil.
+    private func referencePatchFieldSummary(_ patch: ReferencePatch) -> String {
+        var fields: [String] = []
+        if patch.name != nil { fields.append("name") }
+        if patch.nsfw != nil { fields.append("nsfw") }
+        if patch.body != nil { fields.append("body") }
+        return fields.isEmpty ? "<empty>" : fields.joined(separator: ",")
     }
 
     /// Compact log-friendly summary of which lorebook-patch fields
