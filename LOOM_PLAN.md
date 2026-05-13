@@ -35,6 +35,7 @@ A **local-LLM-powered fiction-writing app for macOS**, built on the same kobold 
 | L5b | Canon-brief storage on Bible entities; user-paste fandom canon ingestion (re-uses L5 pipeline) | pending | 5.b | [`LOOM_FANFIC.md`](LOOM_FANFIC.md) §3.2 |
 | L5c | Fanfic Mode — Project kind, ATTG header, Ship/AU/Trope schemas, bundled trope library, fandom templates, fanfic-specific generation modes | pending | 5.c | [`LOOM_FANFIC.md`](LOOM_FANFIC.md) §9 |
 | L6 | Polish + export (Markdown / RTF / .docx / ePub; search; autosave + version history; AO3-conformant frontmatter export) | pending | 6 | TBD |
+| L7 | **Scene-Template Generation** — ingest a scene-sized prose chunk (500–5000 words) as a *template scene*; user asks Loom to write a new scene that preserves the source's beat ordering, modality flow, and pacing curve but with new characters / setting / surface content. Two-pass DOC-style architecture (extract structural skeleton via Ollama side-task with GBNF; per-beat instantiation via writer LLM with template framed as voice-exemplar-only). New `TemplateScene` entity (mirrors Phase 5 A2 References pattern); new `.generateFromTemplate` mode; reuses `NarrativeModeClassifier` for per-beat modality verification (Phase 5 carry); reuses `OllamaLedgerExtractor` JSON-schema pattern (Phase 4 carry). Closes a market gap identified in extensive 2026-05-13 prior-art research: no current tool (Sudowrite Match-My-Style, NovelCrafter Codex, NovelAI Modules-defunct, SillyTavern Lorebook, DreamGen Opus) ships a "scene-as-structural-blueprint" primitive distinct from outline-down planning or voice-only style matching. Documented failure modes (surface mimicry overriding voice with long exemplars per Tripto 2025; plot leakage per Krishna 2020 STRAP; pacing flattening per Re3/DOC ablations) each have a concrete mitigation locked in the design. | pending | 7 | [`LOOM_SCENE_TEMPLATE.md`](LOOM_SCENE_TEMPLATE.md) |
 
 **Deferred indefinitely:** voice/TTS, multi-user collab, cloud sync, mobile companion.
 
@@ -97,6 +98,7 @@ In dependency order. Every doc cites [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) for 
 | 6 | [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) | ✅ landing 2026-05-10 | The consistency engine: entity stamping, fact pinning, knowledge-state evolution per scene per character, prompt injection mechanics. Builds on Re3 Edit module (research §L.2). |
 | 7 | [`LOOM_PHASE1_EDITOR_MVP.md`](LOOM_PHASE1_EDITOR_MVP.md) | ✅ landing 2026-05-10 | First-shippable slice. Sub-step contracts (mirrors V2_UI_OVERHAUL.md §4.11). |
 | 8 | `HANDOFF.md` | ✅ landing 2026-05-10 | What's settled, what's open, sub-step ordering, where research changed PLAN.md's strawman. |
+| 9 | [`LOOM_SCENE_TEMPLATE.md`](LOOM_SCENE_TEMPLATE.md) | ✅ landing 2026-05-13 | Phase 7 design lock proposal: ingest-scene-then-generate-like-it feature. Prior-art-grounded architectural decisions (two-pass DOC-style, STRAP content stripping, per-beat modality verification), failure-mode catalogue with mitigations, scope locks, sub-row breakdown, spike plan. ~2100 LOC new + ~1400 LOC leveraged from Phases 4/4.5/5. |
 
 ---
 
@@ -184,6 +186,22 @@ This is still Loom's largest single phase. The spike collapses the R&D risk that
 
 ### Phase 6 — Polish + export
 Markdown / RTF / .docx / ePub via Compile-style pipeline[J1]. Search across project. Find/replace. Autosave + version history.
+
+### Phase 7 — Scene-Template Generation
+
+Ingest a scene-sized prose chunk (500–5000 words) as a *template scene*; user asks Loom to write a new scene that preserves the source's beat ordering, modality flow, and pacing curve but with new characters and surface content.
+
+**Product positioning** (2026-05-13 prior-art research, full citations in [`LOOM_SCENE_TEMPLATE.md`](LOOM_SCENE_TEMPLATE.md) §3): no current tool ships a "scene-as-structural-blueprint" primitive. Sudowrite's Match-My-Style handles voice with a 2k cap; NovelCrafter is outline-down (beat description → prose); NovelAI Modules — the closest historical analog — was discontinued in Oct 2024 and has no announced replacement; SillyTavern's Lorebook is keyword-triggered retrieval, not structural priming; DreamGen Opus is instruction-driven, not example-driven. Loom occupies the gap.
+
+**Architecture** (DOC Yang et al. ACL 2023 pattern, scoped to scene granularity): two-pass — Pass A extracts structural skeleton (beat list with function + modality + target words + pacing stats) via Ollama side-task with GBNF-constrained JSON; Pass B instantiates per-beat on the writer with the template framed explicitly as voice-exemplar-only. STRAP-style content stripping (Krishna et al. 2020) defends against plot leakage; per-beat modality verification via [`NarrativeModeClassifier`](Sources/LoomCore/Retrieval/NarrativeModeClassifier.swift) (Phase 5 carry) catches modality drift; positive numerical pacing constraints (ZeroStylus 2025) preserve cadence where adjectival prompts collapse to model default.
+
+**Phase 7.a — Spike.** Empirical validation gates on 3 axes (extraction quality, generation quality, long-exemplar pitfalls) over 5 hand-curated scenes. Mirrors the Phase 5 RAG + Narrative Mode spike discipline. Decision gate at exit: ship v1 production architecture as-is, refine, or pivot.
+
+**Phase 7.b — Production v1.** Scope locks contingent on 7.a outcomes. Anticipated: TemplateScene entity + storage; BeatExtractionPipeline; `.generateFromTemplate` mode with per-beat loop; Bible Workspace surface (Template Scenes section, mirrors Phase 5 A2 References); in-editor picker + free-form cast hint field. ~60–70% leveraged from existing infrastructure (RagChunker, NarrativeModeClassifier, OllamaLedgerExtractor pattern, BibleWorkspace bridge pattern, GenerationCoordinator); ~2100–2300 LOC new (data model, pipeline, per-beat loop, UI).
+
+**Phase 7.c — v2 features.** Two-dial UI (match-shape / match-voice), structured cast-mapping table, modality flow editor, per-beat re-roll, character-voice integration with Bible. Contingent on 7.b production validation.
+
+**Authoritative scope, prior-art summary, failure-mode catalogue with mitigations, sub-row breakdown, and citations live in [`LOOM_SCENE_TEMPLATE.md`](LOOM_SCENE_TEMPLATE.md).**
 
 ---
 
