@@ -468,16 +468,9 @@ func renderReport(_ r: ExtractionResult) -> String {
         return out
     }
 
-    out += "## Extractor-reported pacing\n\n"
-    out += pacingStatsLines(parsed.pacingStats)
-    out += "\n"
-
-    out += "**Pacing divergence (extractor vs. computed):**\n\n"
-    let g = r.groundTruthPacing
-    let e = parsed.pacingStats
-    out += "- sentenceCount: \(g.sentenceCount) vs \(e.sentenceCount) (Δ \(e.sentenceCount - g.sentenceCount))\n"
-    out += "- meanSentenceLengthWords: \(String(format: "%.2f", g.meanSentenceLengthWords)) vs \(String(format: "%.2f", e.meanSentenceLengthWords)) (Δ \(String(format: "%+.2f", e.meanSentenceLengthWords - g.meanSentenceLengthWords)))\n"
-    out += "- dialogueRatio: \(String(format: "%.2f", g.dialogueRatio)) vs \(String(format: "%.2f", e.dialogueRatio)) (Δ \(String(format: "%+.2f", e.dialogueRatio - g.dialogueRatio)))\n\n"
+    // Phase 7.b prompt-revision item 4: pacingStats dropped from
+    // the extractor schema (§7.a.1 finding). Computed pacing only.
+    _ = r.groundTruthPacing  // already rendered above as ground-truth
 
     out += "## Source characters\n\n"
     out += parsed.sourceCharacters.isEmpty ? "_(none extracted)_\n\n" : "- " + parsed.sourceCharacters.joined(separator: "\n- ") + "\n\n"
@@ -492,7 +485,7 @@ func renderReport(_ r: ExtractionResult) -> String {
         out += "| # | function | modality | target | tension | summary |\n"
         out += "|---|---|---|---|---|---|\n"
         for b in parsed.beats {
-            out += "| \(b.index) | \(b.function.rawValue) | \(b.modality.rawValue) | \(b.targetWords)w | \(b.tensionDelta > 0 ? "+" : "")\(b.tensionDelta) | \(b.summary.replacingOccurrences(of: "|", with: "\\|")) |\n"
+            out += "| \(b.index) | \(b.function.rawValue) | \(b.modality.rawValue) | \(b.targetWords)w | \(b.beatTensionChange > 0 ? "+" : "")\(b.beatTensionChange) | \(b.summary.replacingOccurrences(of: "|", with: "\\|")) |\n"
         }
         out += "\n"
         // Modality distribution.

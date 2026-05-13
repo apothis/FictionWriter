@@ -25,11 +25,21 @@ func phase7BeatExtractionTests() -> TestSuite {
             targetWords: 120,
             wordRangeStart: 240,
             wordRangeEnd: 350,
-            tensionDelta: 1
+            beatTensionChange: 1
         )
         let data = try JSONEncoder().encode(beat)
         let decoded = try JSONDecoder().decode(SceneBeat.self, from: data)
         try expectEqual(decoded, beat)
+    }
+
+    // Phase 7.b prompt-revision punchlist item 5: tensionDelta renamed.
+    s.test("SceneBeat decodes both `beatTensionChange` (new) and `tensionDelta` (legacy) keys") {
+        let newKey = #"{"index":0,"summary":"x","modality":"action","function":"arrival","targetWords":50,"wordRangeStart":0,"wordRangeEnd":50,"beatTensionChange":2}"#
+        let legacyKey = #"{"index":0,"summary":"x","modality":"action","function":"arrival","targetWords":50,"wordRangeStart":0,"wordRangeEnd":50,"tensionDelta":2}"#
+        let a = try JSONDecoder().decode(SceneBeat.self, from: newKey.data(using: .utf8)!)
+        let b = try JSONDecoder().decode(SceneBeat.self, from: legacyKey.data(using: .utf8)!)
+        try expectEqual(a.beatTensionChange, 2)
+        try expectEqual(b.beatTensionChange, 2)
     }
 
     // MARK: - BeatFunction enum
@@ -104,7 +114,11 @@ func phase7BeatExtractionTests() -> TestSuite {
         try expectNotNil(props?["beats"])
         try expectNotNil(props?["sourceCharacters"])
         try expectNotNil(props?["sourceSettingMarkers"])
-        try expectNotNil(props?["pacingStats"])
+        // Phase 7.b prompt-revision punchlist item 4: pacingStats
+        // dropped — LLM-reported pacing was unreliable (under-counts
+        // sentences by 40-60% in §7.a.1). Computed via
+        // `PacingStats.compute(text:)` from the source instead.
+        try expectTrue(props?["pacingStats"] == nil, "pacingStats should not be in the schema (dropped post-§7.a.1)")
     }
 
     s.test("BeatExtraction.jsonSchema constrains beat function + modality to enums") {
@@ -126,25 +140,15 @@ func phase7BeatExtractionTests() -> TestSuite {
 
     // MARK: - Response parser
 
-    s.test("BeatExtraction.parseExtractedSkeleton parses a clean response") {
+    s.test("BeatExtraction.parseExtractedSkeleton parses a clean response (post-§7.a.1: no pacingStats)") {
         let raw = """
         {
           "beats": [
-            {"index": 0, "function": "setup", "modality": "description", "summary": "Empty room.", "targetWords": 60, "wordRangeStart": 0, "wordRangeEnd": 60, "tensionDelta": 0},
-            {"index": 1, "function": "arrival", "modality": "action", "summary": "{PROTAGONIST} enters.", "targetWords": 80, "wordRangeStart": 60, "wordRangeEnd": 140, "tensionDelta": 1}
+            {"index": 0, "function": "setup", "modality": "description", "summary": "Empty room.", "targetWords": 60, "wordRangeStart": 0, "wordRangeEnd": 60, "beatTensionChange": 0},
+            {"index": 1, "function": "arrival", "modality": "action", "summary": "{PROTAGONIST} enters.", "targetWords": 80, "wordRangeStart": 60, "wordRangeEnd": 140, "beatTensionChange": 1}
           ],
           "sourceCharacters": ["Maya", "John"],
-          "sourceSettingMarkers": ["kitchen", "winter"],
-          "pacingStats": {
-            "sentenceCount": 12,
-            "meanSentenceLengthWords": 9.5,
-            "sentenceLengthStdDev": 4.2,
-            "shortSentenceRatio": 0.35,
-            "longSentenceRatio": 0.15,
-            "paragraphLengthMean": 28.0,
-            "paragraphLengthStdDev": 10.0,
-            "dialogueRatio": 0.4
-          }
+          "sourceSettingMarkers": ["kitchen", "winter"]
         }
         """
         let skeleton = try BeatExtraction.parseExtractedSkeleton(raw)
@@ -152,7 +156,6 @@ func phase7BeatExtractionTests() -> TestSuite {
         try expectEqual(skeleton.beats[0].function, .setup)
         try expectEqual(skeleton.beats[1].modality, .action)
         try expectEqual(skeleton.sourceCharacters, ["Maya", "John"])
-        try expectTrue(abs(skeleton.pacingStats.meanSentenceLengthWords - 9.5) < 0.01)
     }
 
     s.test("BeatExtraction.parseExtractedSkeleton tolerates preamble + postamble") {
@@ -163,11 +166,10 @@ func phase7BeatExtractionTests() -> TestSuite {
 
         {
           "beats": [
-            {"index": 0, "function": "arrival", "modality": "action", "summary": "x", "targetWords": 50, "wordRangeStart": 0, "wordRangeEnd": 50, "tensionDelta": 0}
+            {"index": 0, "function": "arrival", "modality": "action", "summary": "x", "targetWords": 50, "wordRangeStart": 0, "wordRangeEnd": 50, "beatTensionChange": 0}
           ],
           "sourceCharacters": [],
-          "sourceSettingMarkers": [],
-          "pacingStats": {"sentenceCount": 1, "meanSentenceLengthWords": 1, "sentenceLengthStdDev": 0, "shortSentenceRatio": 1, "longSentenceRatio": 0, "paragraphLengthMean": 1, "paragraphLengthStdDev": 0, "dialogueRatio": 0}
+          "sourceSettingMarkers": []
         }
 
         That should cover the structural skeleton.

@@ -19,7 +19,13 @@ public struct SceneBeat: Codable, Equatable {
     public let targetWords: Int
     public let wordRangeStart: Int
     public let wordRangeEnd: Int
-    public let tensionDelta: Int
+    /// Per-beat *change* in narrative tension, integer in [-3, +3].
+    /// Renamed from `tensionDelta` post-§7.a.1 — the legacy name read
+    /// as cumulative-level on one run of fixture 01 (the model emitted
+    /// monotonically-increasing 0..11 values), and the rename forces
+    /// semantic clarity in the prompt. Decoder accepts both keys for
+    /// forward-load of legacy `.beats.json` sidecars.
+    public let beatTensionChange: Int
 
     public init(
         index: Int,
@@ -29,7 +35,7 @@ public struct SceneBeat: Codable, Equatable {
         targetWords: Int,
         wordRangeStart: Int,
         wordRangeEnd: Int,
-        tensionDelta: Int
+        beatTensionChange: Int
     ) {
         self.index = index
         self.summary = summary
@@ -38,7 +44,45 @@ public struct SceneBeat: Codable, Equatable {
         self.targetWords = targetWords
         self.wordRangeStart = wordRangeStart
         self.wordRangeEnd = wordRangeEnd
-        self.tensionDelta = tensionDelta
+        self.beatTensionChange = beatTensionChange
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case index, summary, modality, function, targetWords
+        case wordRangeStart, wordRangeEnd, beatTensionChange
+        case tensionDelta  // legacy alias accepted on decode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.index = try c.decode(Int.self, forKey: .index)
+        self.summary = try c.decode(String.self, forKey: .summary)
+        self.modality = try c.decode(NarrativeMode.self, forKey: .modality)
+        self.function = try c.decode(BeatFunction.self, forKey: .function)
+        self.targetWords = try c.decode(Int.self, forKey: .targetWords)
+        self.wordRangeStart = try c.decode(Int.self, forKey: .wordRangeStart)
+        self.wordRangeEnd = try c.decode(Int.self, forKey: .wordRangeEnd)
+        // Prefer beatTensionChange (current name); fall back to
+        // tensionDelta (legacy). Default to 0 if neither present.
+        if let v = try c.decodeIfPresent(Int.self, forKey: .beatTensionChange) {
+            self.beatTensionChange = v
+        } else if let v = try c.decodeIfPresent(Int.self, forKey: .tensionDelta) {
+            self.beatTensionChange = v
+        } else {
+            self.beatTensionChange = 0
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(index, forKey: .index)
+        try c.encode(summary, forKey: .summary)
+        try c.encode(modality, forKey: .modality)
+        try c.encode(function, forKey: .function)
+        try c.encode(targetWords, forKey: .targetWords)
+        try c.encode(wordRangeStart, forKey: .wordRangeStart)
+        try c.encode(wordRangeEnd, forKey: .wordRangeEnd)
+        try c.encode(beatTensionChange, forKey: .beatTensionChange)
     }
 }
 
@@ -64,18 +108,38 @@ public struct ExtractedSceneSkeleton: Codable, Equatable {
     public var beats: [SceneBeat]
     public var sourceCharacters: [String]
     public var sourceSettingMarkers: [String]
-    public var pacingStats: PacingStats
 
     public init(
         beats: [SceneBeat],
         sourceCharacters: [String],
-        sourceSettingMarkers: [String],
-        pacingStats: PacingStats
+        sourceSettingMarkers: [String]
     ) {
         self.beats = beats
         self.sourceCharacters = sourceCharacters
         self.sourceSettingMarkers = sourceSettingMarkers
-        self.pacingStats = pacingStats
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case beats, sourceCharacters, sourceSettingMarkers
+        case pacingStats  // legacy; ignored on decode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.beats = try c.decode([SceneBeat].self, forKey: .beats)
+        self.sourceCharacters = try c.decode([String].self, forKey: .sourceCharacters)
+        self.sourceSettingMarkers = try c.decode([String].self, forKey: .sourceSettingMarkers)
+        // Legacy pacingStats key is silently ignored if present —
+        // post-§7.a.1 we compute pacing from source via
+        // `PacingStats.compute(text:)` rather than trusting the
+        // LLM's self-reported numbers.
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(beats, forKey: .beats)
+        try c.encode(sourceCharacters, forKey: .sourceCharacters)
+        try c.encode(sourceSettingMarkers, forKey: .sourceSettingMarkers)
     }
 }
 

@@ -45,8 +45,10 @@ public enum BeatExtraction {
           casts; literal names must not leak through.
         - targetWords: approximate word count for this beat
         - wordRangeStart, wordRangeEnd: word offsets in the source (0-indexed)
-        - tensionDelta: integer in [-3, +3] representing the change in
-          narrative tension caused by this beat
+        - beatTensionChange: integer in [-3, +3] representing this beat's
+          CHANGE in narrative tension (not a cumulative level). Negative
+          values are allowed when the beat eases tension. 0 means
+          tension does not move.
 
         Also extract:
 
@@ -54,12 +56,6 @@ public enum BeatExtraction {
           scene (so the new-scene caller can map them to a target cast)
         - sourceSettingMarkers: place / time / object tokens that anchor
           the setting and would need substitution
-        - pacingStats: numerical pacing fingerprint with these fields:
-          sentenceCount, meanSentenceLengthWords, sentenceLengthStdDev,
-          shortSentenceRatio (sentences under 8 words / total),
-          longSentenceRatio (sentences over 20 words / total),
-          paragraphLengthMean, paragraphLengthStdDev,
-          dialogueRatio (words inside quotes / total words)
 
         Scene:
         \(sourceProse)
@@ -92,35 +88,19 @@ public enum BeatExtraction {
                 "targetWords": ["type": "integer"],
                 "wordRangeStart": ["type": "integer"],
                 "wordRangeEnd": ["type": "integer"],
-                "tensionDelta": ["type": "integer"],
+                "beatTensionChange": ["type": "integer"],
             ],
             "required": [
                 "index", "function", "modality", "summary",
                 "targetWords", "wordRangeStart", "wordRangeEnd",
-                "tensionDelta",
+                "beatTensionChange",
             ],
         ]
 
-        let pacingSchema: [String: Any] = [
-            "type": "object",
-            "properties": [
-                "sentenceCount": ["type": "integer"],
-                "meanSentenceLengthWords": ["type": "number"],
-                "sentenceLengthStdDev": ["type": "number"],
-                "shortSentenceRatio": ["type": "number"],
-                "longSentenceRatio": ["type": "number"],
-                "paragraphLengthMean": ["type": "number"],
-                "paragraphLengthStdDev": ["type": "number"],
-                "dialogueRatio": ["type": "number"],
-            ],
-            "required": [
-                "sentenceCount", "meanSentenceLengthWords",
-                "sentenceLengthStdDev", "shortSentenceRatio",
-                "longSentenceRatio", "paragraphLengthMean",
-                "paragraphLengthStdDev", "dialogueRatio",
-            ],
-        ]
-
+        // Phase 7.b prompt-revision punchlist item 4: pacingStats
+        // dropped post-§7.a.1. The LLM under-counted sentences by
+        // 40-60% in spike runs; computed ground-truth via
+        // `PacingStats.compute(text:)` is exact + free.
         return [
             "type": "object",
             "properties": [
@@ -136,11 +116,9 @@ public enum BeatExtraction {
                     "type": "array",
                     "items": ["type": "string"],
                 ],
-                "pacingStats": pacingSchema,
             ],
             "required": [
-                "beats", "sourceCharacters",
-                "sourceSettingMarkers", "pacingStats",
+                "beats", "sourceCharacters", "sourceSettingMarkers",
             ],
         ]
     }

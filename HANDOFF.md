@@ -922,3 +922,54 @@ These are concerns for when Loom ships to other users, not blockers for self-use
 - The MLX research-verification lesson: **research agents can verify library state but cannot verify local toolchain state**. Worth a memory note (added this session).
 
 933 → 1075 tests passing across the Phase 5 production arc. The TDD discipline held — every Swift module has pure-data tests; subprocess management, MLX runtime, network glue, and orchestration are integration-test territory and that's intentional.
+
+### 15.13 Session ledger — 2026-05-13 (Phase 5 production close-out A1+A2 + Phase 7 design lock + Phase 7.a spike)
+
+This session shipped three discrete arcs:
+
+**1. Phase 5 production close-out** — the two remaining items from §15.12's punchlist:
+
+- **A1** (`964f242`) — `AppState.styleRetriever()` closure injection into `GenerationCoordinator`. Lazy `PythonStyleDistanceClient` (subprocess spawns on first `embed`, ~7.65s cold start), explicit shutdown on project switch (release service → deinit closes stdin → subprocess exits). 4 new tests; full Phase 5 retrieval pipeline now active for any project with ingested references.
+- **A2.1** (`cd9a476`) Swift side — Bible Workspace References entity. `ReferencePatch`, `SnapshotReference`, `references: [SnapshotReference]` snapshot field, 4 intent cases (`createReference` / `patchReference` / `deleteReference` / `ingestReference`), `ProjectSession` reference proxies, `BibleWorkspaceWindowController` dispatch + snapshot push wiring, `AppState.ingestReference` background-queue pipeline run + finish notification. 19 new tests.
+- **A2.2** (`3081579`) React side — `SnapshotReference` + `ReferencePatch` TS types, References section in `EntityList.tsx` with chunk-count badge + nsfw chip + word count, `ReferenceEditor.tsx` with name / NSFW / body fields + Ingest / Re-ingest / Delete header actions, `App.tsx` reference Selection branch + intent dispatch. Smoke-tested via Vite-dev server + injected fake snapshot (preview tool); list renders, editor opens, Ingest fires `{kind:"ingestReference",id}` intent, NSFW toggle fires `{kind:"patchReference",id,patch:{nsfw:true}}` intent — both round-trip correctly through Swift wire format.
+
+**2. Phase 7 design lock** (`c3a8f87`) — Scene-Template Generation feature. Major-feature-win candidate: ingest a scene-sized prose chunk as a *template*, then generate a new scene preserving its structure, pacing, and modality flow but with new characters and surface content. Backed by extensive 2026-05-13 prior-art research (academic + commercial + technical + in-codebase, 4 parallel agents). Key research finding: **no current tool ships a "scene-as-structural-blueprint" primitive** distinct from outline-down planning (Sudowrite Story Engine, NovelCrafter Codex) or voice-only style matching (Sudowrite Match-My-Style — 2k cap; NovelAI Modules — defunct Oct 2024). The market third row is empty. Doc: [`LOOM_SCENE_TEMPLATE.md`](LOOM_SCENE_TEMPLATE.md) (532 lines). LOOM_PLAN.md §1 / §4 / §5 updated.
+
+**3. Phase 7.a spike — empirical validation pass** — three sub-rows landed:
+
+- **7.a.1** (`31aeb5a`) Extraction quality. 5 hand-authored fixtures (dialogue/interiority/description/action/summary, 450–600w each); CLI runner `swift run SceneTemplateSpike --extract-all` hits Ollama gemma4_2b with GBNF-constrained schema; Markdown reports + hand-grading. Verdict SHIP to 7.a.2: STRAP content stripping (D4) perfect on 5/5 fixtures (zero name leakage); schema decoding 5/5 clean; modality match 76% / 43% / 83% / 38% / 0% (interiority + summary reproduce the Phase 5 narrative-mode floor). 8 new pure-data tests.
+- **7.a.2** (`5d2a3e2`) Generation quality. 3 fixtures, deliberately-distant cast mappings (tech-office IP / abandoned-shipyard / flooded-data-centre). Pass B per-beat loop, 5 new tests. **31/31 beats zero source-character leakage** (D4 confirmed under generation pressure). Cast substitution renders cleanly. BUT 6/31 empty beats from `[` stop sequence + model echoing future-beat enumeration verbatim + `***` scene-break emission. Voice transfer weak (gemma's default register dominates in both arms).
+- **7.a.3** (`7f5b219`) Long-exemplar ablation. A/B on 2 fixtures: template included (Arm A) vs skeleton-only (Arm B). **Tripto 2025 hypothesis NOT reproduced.** Arm A wins on words generated, empty-beat rate, modality match across both fixtures, AND pacing fidelity on fixture 03. Template prose acts as task anchor not style donor. Voice transfer weak in both arms — not a Tripto effect. **v2 voice-weight dial DEFERRED.** D3 (template as first-class slot) empirically confirmed across 2 fixtures × 2 arms × 18 beats. 2 new pure-data tests.
+
+**Phase 7.a complete. SHIP to 7.b production.** 6-item mandatory prompt-revision punchlist queued for 7.b:
+
+1. Hide beats N+1..M from the prompt (model echoes future-beat enumeration verbatim).
+2. Remove `[` prefix from stop sequences (catches `[silence]` openings).
+3. Retry-on-empty.
+4. Drop `pacingStats` from Pass A schema; compute from source.
+5. Rename `tensionDelta` → `beatTensionChange`.
+6. Investigate explicit voice-descriptor injection as v2 voice-transfer mechanism (instead of v2 voice-weight dial).
+
+Test count: 1075 → 1116 across this session's arcs.
+
+#### Pending live-app smoke tests (carried into the future)
+
+This session's work has been verified at the test-suite + spike-runner level (1116/1116 tests green; spike CLI hits live extractor + writer servers). The following paths have **NOT** been driven end-to-end inside the actual `Loom.app`. Each is a known-good-on-paper-but-unverified-in-the-GUI flow that needs a real user-driven exercise before being declared shipped:
+
+1. **A1 — full retrieval pipeline in the running app.** Open the app → create or open a project → Bible Workspace → References → add a reference → click Ingest → wait for subprocess cold start (~7.65s) → confirm the index sidecar appears on disk → write a scene → trigger Continue or Expand → watch debug log for `[gen] style-retrieval: N exemplars (Xms)` and `[ingest] completed id=...`. **Without this run, we don't know the Bible Workspace ingest button actually fires the production pipeline + that the writer prompt actually receives style exemplars.**
+2. **A2.2 — React UI in the real WKWebView.** The dev-server smoke (Vite + injected snapshot) confirms rendering + intent wire format, but the production WKWebView path through `webView(_:didFinish:)` snapshot push timing is unchanged from Phase 4.5 — low risk but worth confirming.
+3. **A2.1 — `AppState.ingestReference` end-to-end.** Background-queue pipeline run + `referenceIngestDidFinishNotification` posting. Reads the snapshot back from disk on completion. Not exercised against the writer-server-side Kobold modality classifier in any test.
+4. **Phase 5 retrieval cold-start UX.** The 7.65s cold-start latency was characterised in the Phase 5 spike, but no UX surface signals it. First-generation in a project with references should show some "loading retrieval…" feedback; today it just sits silent for ~8s on first call.
+5. **Phase 7 Scene-Template Generation** is not yet integrated into `Loom.app` at all. The spike runner stays as a CLI tool. Phase 7.b is where production wiring lands.
+
+#### Carried into the next session
+
+Phase 7.b production v1. Inherits the 6-item prompt-revision punchlist from §15.13 above. Anticipated scope (mirrors §15.12 Phase 5 production discipline):
+
+- 7.b.1: `TemplateScene` entity + `TemplateSceneStorage` (mirrors `ReferenceText`/`ReferenceStorage`).
+- 7.b.2: `BeatExtractionPipeline` (mirrors `ReferenceIngestPipeline`).
+- 7.b.3: `.generateFromTemplate` mode in `GenerationMode` + `PromptBuilder` branches.
+- 7.b.4: Per-beat generation loop in `GenerationCoordinator`.
+- 7.b.5: Bible Workspace Template Scenes surface (mirrors Phase 5 A2 References).
+- 7.b.6: In-editor flow (generation tray entry + inline picker).
+- 7.b.7: Empirical validation pass (3 templates × 3 cast mappings, hand-grade).

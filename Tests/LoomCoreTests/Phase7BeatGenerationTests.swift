@@ -17,33 +17,36 @@ func phase7BeatGenerationTests() -> TestSuite {
                     index: 0, summary: "{PROTAGONIST} arrives in {INDOOR_PRIVATE_SPACE}.",
                     modality: .description, function: .setup,
                     targetWords: 80, wordRangeStart: 0, wordRangeEnd: 80,
-                    tensionDelta: 0
+                    beatTensionChange: 0
                 ),
                 SceneBeat(
                     index: 1, summary: "{ANTAGONIST} confronts {PROTAGONIST} about the missed call.",
                     modality: .dialogue, function: .conflict,
                     targetWords: 120, wordRangeStart: 80, wordRangeEnd: 200,
-                    tensionDelta: 2
+                    beatTensionChange: 2
                 ),
                 SceneBeat(
                     index: 2, summary: "{PROTAGONIST} reveals what was actually happening.",
                     modality: .dialogue, function: .reveal,
                     targetWords: 100, wordRangeStart: 200, wordRangeEnd: 300,
-                    tensionDelta: 1
+                    beatTensionChange: 1
                 ),
             ],
             sourceCharacters: ["Mara", "Daniel"],
-            sourceSettingMarkers: ["doorway", "rain"],
-            pacingStats: PacingStats(
-                sentenceCount: 24, meanSentenceLengthWords: 12.0,
-                sentenceLengthStdDev: 6.0, shortSentenceRatio: 0.4,
-                longSentenceRatio: 0.15, paragraphLengthMean: 30,
-                paragraphLengthStdDev: 10, dialogueRatio: 0.5
-            )
+            sourceSettingMarkers: ["doorway", "rain"]
         )
     }
 
-    s.test("BeatGeneration.buildBeatPrompt includes template body, skeleton, cast, beat instruction") {
+    func samplePacing() -> PacingStats {
+        PacingStats(
+            sentenceCount: 24, meanSentenceLengthWords: 12.0,
+            sentenceLengthStdDev: 6.0, shortSentenceRatio: 0.4,
+            longSentenceRatio: 0.15, paragraphLengthMean: 30,
+            paragraphLengthStdDev: 10, dialogueRatio: 0.5
+        )
+    }
+
+    s.test("BeatGeneration.buildBeatPrompt includes template body, current+past beats, cast, instruction") {
         let skeleton = makeSkeleton()
         let prompt = BeatGeneration.buildBeatPrompt(
             templateBody: "She walked into the doorway.",
@@ -51,13 +54,23 @@ func phase7BeatGenerationTests() -> TestSuite {
             castMapping: "Maya is the protagonist; the setting is a server room.",
             currentBeatIndex: 0,
             priorBeatsProse: "",
-            groundTruthPacing: skeleton.pacingStats
+            groundTruthPacing: samplePacing()
         )
         // Template prose present (D3 - first-class slot).
         try expectTrue(prompt.contains("She walked into the doorway."))
-        // Skeleton present.
+        // Current beat summary present.
         try expectTrue(prompt.contains("{PROTAGONIST} arrives in {INDOOR_PRIVATE_SPACE}."))
-        try expectTrue(prompt.contains("{ANTAGONIST} confronts"))
+        // Phase 7.b prompt-revision punchlist item 1: future beats
+        // (N+1..M) NOT shown — model echoed them verbatim in §7.a.2.
+        // For beat 0, future beats are 1 and 2; their full summaries
+        // must NOT appear.
+        try expectFalse(prompt.contains("{ANTAGONIST} confronts {PROTAGONIST} about the missed call."))
+        try expectFalse(prompt.contains("{PROTAGONIST} reveals what was actually happening."))
+        // A short hint about WHAT IS COMING NEXT is permitted — by
+        // function+modality+target only, no plot summary. The next-
+        // beat hint helps the model land its ending so the transition
+        // works.
+        try expectTrue(prompt.contains("next beat") || prompt.contains("Next beat"))
         // Cast mapping present.
         try expectTrue(prompt.contains("Maya is the protagonist"))
         // Beat-specific instruction at recency.
@@ -70,6 +83,23 @@ func phase7BeatGenerationTests() -> TestSuite {
         try expectTrue(prompt.lowercased().contains("do not reuse"))
     }
 
+    s.test("BeatGeneration.buildBeatPrompt at last beat does not show 'next beat' hint") {
+        let skeleton = makeSkeleton()
+        let prompt = BeatGeneration.buildBeatPrompt(
+            templateBody: "T",
+            skeleton: skeleton,
+            castMapping: "C",
+            currentBeatIndex: 2,  // last beat — no next
+            priorBeatsProse: "X",
+            groundTruthPacing: samplePacing()
+        )
+        // No future-beat hint when there isn't one.
+        try expectFalse(prompt.lowercased().contains("next beat"))
+        // Past beats can still appear (as context).
+        try expectTrue(prompt.contains("{PROTAGONIST} arrives in {INDOOR_PRIVATE_SPACE}.")
+                    || prompt.contains("{ANTAGONIST} confronts"))
+    }
+
     s.test("BeatGeneration.buildBeatPrompt for middle beat includes prior-beat prose") {
         let skeleton = makeSkeleton()
         let prompt = BeatGeneration.buildBeatPrompt(
@@ -78,7 +108,7 @@ func phase7BeatGenerationTests() -> TestSuite {
             castMapping: "C",
             currentBeatIndex: 1,
             priorBeatsProse: "Maya walked into the server room. The lights were off.",
-            groundTruthPacing: skeleton.pacingStats
+            groundTruthPacing: samplePacing()
         )
         try expectTrue(prompt.contains("Maya walked into the server room."))
         try expectTrue(prompt.contains("Write beat 1"))
@@ -92,7 +122,7 @@ func phase7BeatGenerationTests() -> TestSuite {
             castMapping: "C",
             currentBeatIndex: 0,
             priorBeatsProse: "",
-            groundTruthPacing: skeleton.pacingStats
+            groundTruthPacing: samplePacing()
         )
         // Pacing constraints expressed as positive numerical targets (D6).
         try expectTrue(prompt.contains("12") || prompt.contains("12.0"))  // mean sentence length
@@ -107,7 +137,7 @@ func phase7BeatGenerationTests() -> TestSuite {
             castMapping: "C",
             currentBeatIndex: 2,  // last beat (index 2 of 3 beats)
             priorBeatsProse: "X",
-            groundTruthPacing: skeleton.pacingStats
+            groundTruthPacing: samplePacing()
         )
         // Final beat should not say "leads into beat N+1".
         try expectFalse(prompt.contains("leads into beat 3"))
@@ -125,7 +155,7 @@ func phase7BeatGenerationTests() -> TestSuite {
             castMapping: "C",
             currentBeatIndex: 99,
             priorBeatsProse: "",
-            groundTruthPacing: skeleton.pacingStats
+            groundTruthPacing: samplePacing()
         )
         try expectEqual(prompt, "")
     }
@@ -140,7 +170,7 @@ func phase7BeatGenerationTests() -> TestSuite {
             castMapping: "C",
             currentBeatIndex: 0,
             priorBeatsProse: "",
-            groundTruthPacing: skeleton.pacingStats,
+            groundTruthPacing: samplePacing(),
             includeTemplateBody: false
         )
         // Template body NOT present.
@@ -162,13 +192,13 @@ func phase7BeatGenerationTests() -> TestSuite {
             templateBody: "She walked.",
             skeleton: skeleton, castMapping: "C",
             currentBeatIndex: 0, priorBeatsProse: "",
-            groundTruthPacing: skeleton.pacingStats
+            groundTruthPacing: samplePacing()
         )
         let explicit = BeatGeneration.buildBeatPrompt(
             templateBody: "She walked.",
             skeleton: skeleton, castMapping: "C",
             currentBeatIndex: 0, priorBeatsProse: "",
-            groundTruthPacing: skeleton.pacingStats,
+            groundTruthPacing: samplePacing(),
             includeTemplateBody: true
         )
         try expectEqual(withDefault, explicit)

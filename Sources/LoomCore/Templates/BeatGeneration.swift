@@ -48,15 +48,32 @@ public enum BeatGeneration {
         let beat = skeleton.beats[currentBeatIndex]
         let isLastBeat = currentBeatIndex == skeleton.beats.count - 1
 
-        // Skeleton listing — all M beats, with the current beat marked.
+        // Skeleton listing — beats 0..currentBeatIndex with full
+        // summary; current beat marked. Future beats (N+1..M) are
+        // NOT shown by full summary per Phase 7.b prompt-revision
+        // punchlist item 1 — in §7.a.2 the model echoed beat N+1's
+        // skeleton line verbatim into beat N's output. A short
+        // "next beat will be ..." hint is appended separately so the
+        // model still knows where to land the transition.
         var skeletonLines: [String] = []
-        for (i, b) in skeleton.beats.enumerated() {
+        for (i, b) in skeleton.beats.enumerated() where i <= currentBeatIndex {
             let marker = (i == currentBeatIndex) ? " <-- CURRENT" : ""
             skeletonLines.append(
                 "Beat \(i) (\(b.function.rawValue), \(b.modality.rawValue), target \(b.targetWords) words): \(b.summary)\(marker)"
             )
         }
         let skeletonBlock = skeletonLines.joined(separator: "\n")
+
+        // Future-beat hint: function + modality + target only, no
+        // plot summary. Only present when there IS a next beat.
+        let nextBeatHint: String
+        let nextIdx = currentBeatIndex + 1
+        if nextIdx < skeleton.beats.count {
+            let next = skeleton.beats[nextIdx]
+            nextBeatHint = "\n\n[NEXT-BEAT HINT — do not write it, just land your ending so it can follow]\nThe next beat (beat \(nextIdx)) will be a \(next.function.rawValue) in \(next.modality.rawValue) modality, roughly \(next.targetWords) words long. The current beat should end at a sentence boundary that flows into that."
+        } else {
+            nextBeatHint = ""
+        }
 
         // Pacing target — positive numerical (D6). Uses the ground-truth
         // computed pacing rather than the LLM-reported one (per 7.a.1
@@ -118,8 +135,8 @@ public enum BeatGeneration {
         return """
             \(systemFraming)
 
-            \(templateBlock)[BEAT SKELETON for the new scene — \(skeleton.beats.count) beats total]
-            \(skeletonBlock)
+            \(templateBlock)[BEAT SKELETON — current and past beats only — \(skeleton.beats.count) beats total in the scene]
+            \(skeletonBlock)\(nextBeatHint)
 
             [NEW CAST]
             \(castMapping)
