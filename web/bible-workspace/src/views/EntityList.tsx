@@ -4,6 +4,7 @@ import type {
   LorebookEntry,
   PendingSuggestion,
   SnapshotReference,
+  SnapshotTemplateScene,
 } from "../types";
 import { cn } from "../lib/cn";
 
@@ -16,8 +17,10 @@ interface Props {
   onSelectCharacter: (id: string) => void;
   onSelectLorebookEntry: (id: string) => void;
   onSelectReference: (id: string) => void;
+  onSelectTemplateScene: (id: string) => void;
   onAddLorebookEntry: () => void;
   onAddReference: () => void;
+  onAddTemplateScene: () => void;
   onOpenSuggestions: () => void;
 }
 
@@ -26,8 +29,10 @@ export function EntityList({
   onSelectCharacter,
   onSelectLorebookEntry,
   onSelectReference,
+  onSelectTemplateScene,
   onAddLorebookEntry,
   onAddReference,
+  onAddTemplateScene,
   onOpenSuggestions,
 }: Props) {
   return (
@@ -96,6 +101,31 @@ export function EntityList({
                 key={ref.id}
                 reference={ref}
                 onClick={() => onSelectReference(ref.id)}
+              />
+            ))
+          )}
+        </Section>
+        <Section
+          title="Template Scenes"
+          count={snapshot.templateScenes.length}
+          headerAction={
+            <button
+              type="button"
+              onClick={onAddTemplateScene}
+              className="text-xs text-loom-accent hover:underline"
+            >
+              + Add template
+            </button>
+          }
+        >
+          {snapshot.templateScenes.length === 0 ? (
+            <EmptyRow text="No template scenes yet. Templates are scene-sized prose blocks the writer can use as a structural blueprint for new scenes." />
+          ) : (
+            snapshot.templateScenes.map((scene) => (
+              <TemplateSceneRow
+                key={scene.id}
+                template={scene}
+                onClick={() => onSelectTemplateScene(scene.id)}
               />
             ))
           )}
@@ -314,6 +344,58 @@ function ReferenceRow({
       {reference.body && (
         <p className="mt-1 line-clamp-2 text-xs leading-snug text-loom-fg-secondary">
           {reference.body.trim().slice(0, 200)}
+        </p>
+      )}
+    </button>
+  );
+}
+
+function TemplateSceneRow({
+  template,
+  onClick,
+}: {
+  template: SnapshotTemplateScene;
+  onClick: () => void;
+}) {
+  const wordCount = template.body
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+  const extractState =
+    template.beatCount === null
+      ? { label: "not extracted", className: "text-loom-fg-tertiary" }
+      : {
+          label: `${template.beatCount} beat${template.beatCount === 1 ? "" : "s"}`,
+          className: "text-loom-accent",
+        };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group block w-full cursor-pointer rounded-lg px-3 py-2.5 text-left hover:bg-loom-bg-elevated focus:bg-loom-bg-elevated focus:outline-none focus:ring-1 focus:ring-loom-accent"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="truncate text-sm font-medium text-loom-fg">
+          {template.name || "(unnamed template)"}
+        </span>
+        <div className="flex shrink-0 items-baseline gap-2 text-[11px] text-loom-fg-tertiary">
+          {template.nsfw && (
+            <span
+              className="rounded bg-loom-bg-elevated px-1.5 py-0.5 text-loom-fg-secondary"
+              title="Marked NSFW."
+            >
+              nsfw
+            </span>
+          )}
+          <span title="Word count of the template body.">
+            {wordCount} word{wordCount === 1 ? "" : "s"}
+          </span>
+          <span className={extractState.className}>{extractState.label}</span>
+        </div>
+      </div>
+      {template.body && (
+        <p className="mt-1 line-clamp-2 text-xs leading-snug text-loom-fg-secondary">
+          {template.body.trim().slice(0, 200)}
         </p>
       )}
     </button>

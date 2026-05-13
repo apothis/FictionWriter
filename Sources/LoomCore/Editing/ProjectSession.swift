@@ -668,6 +668,92 @@ public final class ProjectSession {
         return snaps
     }
 
+    // MARK: - Template scenes (Phase 7.b.5)
+
+    /// Create a fresh `TemplateScene` on disk with an empty body and
+    /// post `didChangeNotification` so the Bible Workspace snapshot
+    /// re-pushes. Returns `nil` for in-memory ("Untitled") sessions
+    /// where `templates/` has no host directory.
+    ///
+    /// Mirrors `addReference` — template scenes live on disk only
+    /// (not in the `Project` struct).
+    @discardableResult
+    public func addTemplateScene(name: String) -> TemplateScene? {
+        guard let url = self.url else {
+            DebugLog.shared.write("[template] addTemplateScene skipped: in-memory session")
+            return nil
+        }
+        let scene = TemplateScene(id: UUID(), name: name)
+        do {
+            try TemplateSceneStorage.saveTemplate(scene, in: url)
+            markChanged()
+            DebugLog.shared.write("[template] addTemplateScene id=\(scene.id) name=\(name)")
+            return scene
+        } catch {
+            DebugLog.shared.write("[template] addTemplateScene write failed: \(error)")
+            return nil
+        }
+    }
+
+    /// Persist the given template scene to disk and post the change
+    /// notification. The body lives in the `.md` body via
+    /// `TemplateSceneFile` encoding; frontmatter carries name + nsfw
+    /// + createdAt.
+    public func updateTemplateScene(_ scene: TemplateScene) {
+        guard let url = self.url else { return }
+        do {
+            try TemplateSceneStorage.saveTemplate(scene, in: url)
+            markChanged()
+            DebugLog.shared.write("[template] updateTemplateScene id=\(scene.id) name=\(scene.name)")
+        } catch {
+            DebugLog.shared.write("[template] updateTemplateScene write failed: \(error)")
+        }
+    }
+
+    /// Delete a template scene and its `.beats.json` sidecar from
+    /// disk. Idempotent at the storage layer. Posts didChange even
+    /// on stale ids — cheap, and a fresh snapshot push is the right
+    /// "here's the current state" response.
+    public func deleteTemplateScene(id: UUID) {
+        guard let url = self.url else { return }
+        do {
+            try TemplateSceneStorage.deleteTemplate(id: id, in: url)
+            markChanged()
+            DebugLog.shared.write("[template] deleteTemplateScene id=\(id)")
+        } catch {
+            DebugLog.shared.write("[template] deleteTemplateScene failed: \(error)")
+        }
+    }
+
+    /// Enumerate all template scenes in `templates/` and project each
+    /// into a `SnapshotTemplateScene`. `beatCount` is read from the
+    /// `.beats.json` sidecar when present; nil otherwise (UI uses
+    /// nil as the "needs Extract" signal). Returns `[]` for
+    /// in-memory sessions.
+    ///
+    /// Sort order is alphabetical by name — matches references.
+    public func listTemplateSceneSnapshots() -> [SnapshotTemplateScene] {
+        guard let url = self.url else { return [] }
+        let ids: [UUID]
+        do {
+            ids = try TemplateSceneStorage.listTemplateIds(in: url)
+        } catch {
+            DebugLog.shared.write("[template] listTemplateIds failed: \(error)")
+            return []
+        }
+        var snaps: [SnapshotTemplateScene] = []
+        for id in ids {
+            guard let scene = try? TemplateSceneStorage.loadTemplate(id: id, in: url) else {
+                DebugLog.shared.write("[template] listTemplateSceneSnapshots: skipped malformed id=\(id)")
+                continue
+            }
+            let beatCount = TemplateSceneStorage.loadSkeleton(for: id, in: url)?.beats.count
+            snaps.append(SnapshotTemplateScene(from: scene, beatCount: beatCount))
+        }
+        snaps.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return snaps
+    }
+
     // MARK: - Notes + inspector tab
 
     public func updateNotes(_ notes: String) {

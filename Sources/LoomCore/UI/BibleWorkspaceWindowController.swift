@@ -190,6 +190,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             project: session.project,
             scenes: session.scenes,
             references: session.listReferenceSnapshots(),
+            templateScenes: session.listTemplateSceneSnapshots(),
             suggestionsQueue: appState.ledgerSuggestionsQueue
         )
         do {
@@ -311,7 +312,41 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         case .ingestReference(let id):
             appState.ingestReference(id: id)
             DebugLog.shared.write("[workspace] ingestReference id=\(id) kicked off")
+        case .createTemplateScene(let name):
+            if let scene = session.addTemplateScene(name: name) {
+                DebugLog.shared.write("[workspace] createTemplateScene id=\(scene.id) name=\(name)")
+            } else {
+                DebugLog.shared.write("[workspace] createTemplateScene dropped — in-memory session or write failed")
+            }
+        case .patchTemplateScene(let id, let patch):
+            guard let url = session.url else {
+                DebugLog.shared.write("[workspace] patchTemplateScene dropped — in-memory session id=\(id)")
+                return
+            }
+            guard var scene = try? TemplateSceneStorage.loadTemplate(id: id, in: url) else {
+                DebugLog.shared.write("[workspace] patchTemplateScene ignored — stale id=\(id)")
+                return
+            }
+            scene = patch.apply(to: scene)
+            session.updateTemplateScene(scene)
+            DebugLog.shared.write("[workspace] patchTemplateScene applied id=\(id) fields=\(templateScenePatchFieldSummary(patch))")
+        case .deleteTemplateScene(let id):
+            session.deleteTemplateScene(id: id)
+            DebugLog.shared.write("[workspace] deleteTemplateScene id=\(id)")
+        case .extractTemplateScene(let id):
+            appState.extractTemplateScene(id: id)
+            DebugLog.shared.write("[workspace] extractTemplateScene id=\(id) kicked off")
         }
+    }
+
+    /// Compact log-friendly summary of which template-scene patch
+    /// fields were non-nil.
+    private func templateScenePatchFieldSummary(_ patch: TemplateScenePatch) -> String {
+        var fields: [String] = []
+        if patch.name != nil { fields.append("name") }
+        if patch.nsfw != nil { fields.append("nsfw") }
+        if patch.body != nil { fields.append("body") }
+        return fields.isEmpty ? "<empty>" : fields.joined(separator: ",")
     }
 
     /// Compact log-friendly summary of which reference-patch fields

@@ -4,21 +4,25 @@ import type {
   CharacterPatch,
   LorebookEntryPatch,
   ReferencePatch,
+  TemplateScenePatch,
 } from "./types";
 import { postIntent, subscribeToSnapshots } from "./bridge";
 import { EntityList } from "./views/EntityList";
 import { CharacterEditor } from "./views/CharacterEditor";
 import { LorebookEditor } from "./views/LorebookEditor";
 import { ReferenceEditor } from "./views/ReferenceEditor";
+import { TemplateSceneEditor } from "./views/TemplateSceneEditor";
 import { SuggestionsQueue } from "./views/SuggestionsQueue";
 
 // Top-level routing. Sessions 2-5 extended the Selection union as
-// each editor surface landed. Phase 5 production A2.2 adds the
-// `reference` kind for the style-RAG reference-text editor.
+// each editor surface landed. Phase 5 production A2.2 added the
+// `reference` kind; Phase 7.b.5 adds `template` for the Scene-
+// Template Generation feature.
 type Selection =
   | { kind: "character"; id: string }
   | { kind: "lorebook"; id: string }
   | { kind: "reference"; id: string }
+  | { kind: "template"; id: string }
   | { kind: "suggestions" }
   | null;
 
@@ -101,6 +105,27 @@ export function App() {
     );
   }
 
+  if (selection?.kind === "template") {
+    const template = snapshot.templateScenes.find((t) => t.id === selection.id);
+    if (!template) return renderList();
+    return (
+      <TemplateSceneEditor
+        template={template}
+        dispatchPatch={(patch: TemplateScenePatch) =>
+          postIntent({ kind: "patchTemplateScene", id: template.id, patch })
+        }
+        onBack={() => setSelection(null)}
+        onDelete={() => {
+          postIntent({ kind: "deleteTemplateScene", id: template.id });
+          setSelection(null);
+        }}
+        onExtract={() =>
+          postIntent({ kind: "extractTemplateScene", id: template.id })
+        }
+      />
+    );
+  }
+
   if (selection?.kind === "suggestions") {
     return (
       <SuggestionsQueue
@@ -123,6 +148,7 @@ export function App() {
         onSelectCharacter={(id) => setSelection({ kind: "character", id })}
         onSelectLorebookEntry={(id) => setSelection({ kind: "lorebook", id })}
         onSelectReference={(id) => setSelection({ kind: "reference", id })}
+        onSelectTemplateScene={(id) => setSelection({ kind: "template", id })}
         onOpenSuggestions={() => setSelection({ kind: "suggestions" })}
         onAddLorebookEntry={() => {
           const name = `Entry ${snapshot!.lorebook.length + 1}`;
@@ -131,6 +157,10 @@ export function App() {
         onAddReference={() => {
           const name = `Reference ${snapshot!.references.length + 1}`;
           postIntent({ kind: "createReference", name });
+        }}
+        onAddTemplateScene={() => {
+          const name = `Template ${snapshot!.templateScenes.length + 1}`;
+          postIntent({ kind: "createTemplateScene", name });
         }}
       />
     );

@@ -27,6 +27,11 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     /// inside `build(...)` to keep this function pure-data and
     /// preserve the existing Phase 4.5 testing pattern.
     public let references: [SnapshotReference]
+    /// Phase 7.b.5 — template scenes for the `.generateFromTemplate`
+    /// mode. Populated by the caller via
+    /// `ProjectSession.listTemplateSceneSnapshots()`. Mirrors the
+    /// references slot pattern.
+    public let templateScenes: [SnapshotTemplateScene]
 
     public init(
         projectTitle: String,
@@ -34,7 +39,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         lorebook: [LorebookEntry],
         scenes: [SceneSummary],
         suggestions: [PendingSuggestion],
-        references: [SnapshotReference] = []
+        references: [SnapshotReference] = [],
+        templateScenes: [SnapshotTemplateScene] = []
     ) {
         self.projectTitle = projectTitle
         self.characters = characters
@@ -42,6 +48,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.scenes = scenes
         self.suggestions = suggestions
         self.references = references
+        self.templateScenes = templateScenes
     }
 
     /// Builds a snapshot from the current `ProjectSession` state.
@@ -55,6 +62,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         project: Project,
         scenes: [UUID: Scene],
         references: [SnapshotReference] = [],
+        templateScenes: [SnapshotTemplateScene] = [],
         suggestionsQueue: LedgerSuggestionsQueue
     ) -> BibleWorkspaceSnapshot {
         let sceneSummaries: [SceneSummary] = project.manuscript.flatSceneIds.compactMap { id in
@@ -80,8 +88,33 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             lorebook: project.bible.lorebook,
             scenes: sceneSummaries,
             suggestions: pending,
-            references: references
+            references: references,
+            templateScenes: templateScenes
         )
+    }
+}
+
+/// Bridge-specific projection of `TemplateScene`. Mirrors
+/// `SnapshotReference` shape: id + metadata + body + a derived
+/// `beatCount` that's nil when the .beats.json sidecar hasn't been
+/// generated yet (UI surfaces a "needs Extract" prompt). The full
+/// body is shipped so the React editor's textarea can edit it
+/// in place.
+public struct SnapshotTemplateScene: Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var nsfw: Bool
+    public var createdAt: Date
+    public var body: String
+    public var beatCount: Int?
+
+    public init(from scene: TemplateScene, beatCount: Int?) {
+        self.id = scene.id
+        self.name = scene.name
+        self.nsfw = scene.nsfw
+        self.createdAt = scene.createdAt
+        self.body = scene.body
+        self.beatCount = beatCount
     }
 }
 

@@ -76,6 +76,11 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     case patchReference(id: UUID, patch: ReferencePatch)
     case deleteReference(id: UUID)
     case ingestReference(id: UUID)
+    // Phase 7.b.5 — template-scene CRUD + extract trigger.
+    case createTemplateScene(name: String)
+    case patchTemplateScene(id: UUID, patch: TemplateScenePatch)
+    case deleteTemplateScene(id: UUID)
+    case extractTemplateScene(id: UUID)
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
@@ -93,6 +98,10 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case patchReference
         case deleteReference
         case ingestReference
+        case createTemplateScene
+        case patchTemplateScene
+        case deleteTemplateScene
+        case extractTemplateScene
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -135,6 +144,19 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             try c.encode(id, forKey: .id)
         case .ingestReference(let id):
             try c.encode(Kind.ingestReference.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+        case .createTemplateScene(let name):
+            try c.encode(Kind.createTemplateScene.rawValue, forKey: .kind)
+            try c.encode(name, forKey: .name)
+        case .patchTemplateScene(let id, let patch):
+            try c.encode(Kind.patchTemplateScene.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+            try c.encode(patch, forKey: .patch)
+        case .deleteTemplateScene(let id):
+            try c.encode(Kind.deleteTemplateScene.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+        case .extractTemplateScene(let id):
+            try c.encode(Kind.extractTemplateScene.rawValue, forKey: .kind)
             try c.encode(id, forKey: .id)
         }
     }
@@ -189,6 +211,19 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .ingestReference:
             let id = try c.decode(UUID.self, forKey: .id)
             self = .ingestReference(id: id)
+        case .createTemplateScene:
+            let name = try c.decode(String.self, forKey: .name)
+            self = .createTemplateScene(name: name)
+        case .patchTemplateScene:
+            let id = try c.decode(UUID.self, forKey: .id)
+            let patch = try c.decode(TemplateScenePatch.self, forKey: .patch)
+            self = .patchTemplateScene(id: id, patch: patch)
+        case .deleteTemplateScene:
+            let id = try c.decode(UUID.self, forKey: .id)
+            self = .deleteTemplateScene(id: id)
+        case .extractTemplateScene:
+            let id = try c.decode(UUID.self, forKey: .id)
+            self = .extractTemplateScene(id: id)
         }
     }
 }

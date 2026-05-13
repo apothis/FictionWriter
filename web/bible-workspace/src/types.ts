@@ -94,6 +94,20 @@ export interface SnapshotReference {
   chunkCount: number | null;
 }
 
+// Phase 7.b.5 — bridge projection of `TemplateScene`. Mirrors
+// `SnapshotReference` shape exactly. `beatCount: null` = no
+// `.beats.json` sidecar yet (UI surfaces an "Extract" prompt);
+// non-null = the skeleton is on disk and ready for use as the
+// structural blueprint in `.generateFromTemplate` mode.
+export interface SnapshotTemplateScene {
+  id: string;
+  name: string;
+  nsfw: boolean;
+  createdAt: string;
+  body: string;
+  beatCount: number | null;
+}
+
 export interface BibleWorkspaceSnapshot {
   projectTitle: string;
   characters: Character[];
@@ -101,6 +115,7 @@ export interface BibleWorkspaceSnapshot {
   scenes: SceneSummary[];
   suggestions: PendingSuggestion[];
   references: SnapshotReference[];
+  templateScenes: SnapshotTemplateScene[];
 }
 
 // Mirrors CharacterPatch.swift — every field optional. The React
@@ -131,6 +146,14 @@ export interface CharacterPatch {
 // `id` is carried at the intent envelope; createdAt / extraFrontmatter
 // are not patchable from the workspace.
 export interface ReferencePatch {
+  name?: string;
+  nsfw?: boolean;
+  body?: string;
+}
+
+// Mirrors TemplateScenePatch.swift — identical shape to ReferencePatch.
+// Phase 7.b.5.
+export interface TemplateScenePatch {
   name?: string;
   nsfw?: boolean;
   body?: string;
