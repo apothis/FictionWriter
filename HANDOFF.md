@@ -973,3 +973,67 @@ Phase 7.b production v1. Inherits the 6-item prompt-revision punchlist from §15
 - 7.b.5: Bible Workspace Template Scenes surface (mirrors Phase 5 A2 References).
 - 7.b.6: In-editor flow (generation tray entry + inline picker).
 - 7.b.7: Empirical validation pass (3 templates × 3 cast mappings, hand-grade).
+
+### 15.14 Session ledger — 2026-05-13 (Phase 7 production v1 + 7.a.4 voice-descriptor followup)
+
+This session shipped the remaining Phase 7.b production architecture (5 sub-rows) plus an unplanned 7.a.4 spike that addressed §7.a.3's weakest finding.
+
+**Phase 7.b production v1 — all sub-rows landed:**
+
+- **7.b.1 + 7.b.2** (`05b4f99`) — prompt-revision punchlist items 1, 4, 5 from §7.a applied to pure-data layer (hide-future-beats, drop pacingStats, rename tensionDelta→beatTensionChange); `TemplateScene` entity + `TemplateSceneFile` + `TemplateSceneStorage` mirroring Phase 5 A2 References pattern; `BeatExtractionPipeline` with async-callback `BeatExtractor` protocol + tests using deferred-completion stubs. 13 new tests.
+- **7.b.3** (`f84f254`) — `OllamaBeatExtractor` production wrapper mirroring `OllamaLedgerExtractor` (scaled num_predict, retry-on-empty, strong-self capture). Spike runner refactored to use it via semaphore wrap — confirmed parity. `AppState.extractTemplateScene(id:)` background-queue entry point mirroring `ingestReference`. 5 new tests with snapshot-then-clear-then-fire stub pattern (fixed a latent test-stub bug where `removeAll()` dropped retry completions).
+- **7.b.4** (`b75474c`) — `TemplateGenerationCoordinator`. Per-beat loop, M sequential writer calls via injected `KoboldGenerating`, prose accumulated in rolling buffer, each beat emitted as one `didEmitToken` with the same userInfo shape as `GenerationCoordinator` (editor's existing token-inserter handles it verbatim). Punchlist items 2 + 3 (drop bare `[` stop, retry-on-empty + `***`-only detection). 7 new tests.
+- **7.b.5** (`3fa6cb0`) — Bible Workspace surface for Template Scenes. Swift: `TemplateScenePatch`, `SnapshotTemplateScene`, snapshot field, 4 intent cases, `ProjectSession` proxies, `BibleWorkspaceWindowController` dispatch. React: TS types, EntityList Template Scenes section with beat-count badge, `TemplateSceneEditor.tsx`, `App.tsx` route. Smoke-tested via Vite preview tool — intents round-trip cleanly through `BibleWorkspaceBridge.decodeIntent`. 18 new tests.
+- **7.b.6** (`510c1f5`) — EditorViewController owns `TemplateGenerationCoordinator` parallel to its existing `GenerationCoordinator`; 3 parallel observers share insertion logic (same userInfo shape by design). `requestStartTemplateGenerationNotification` trigger channel. `startTemplateGeneration(templateId:castMapping:)` public method. AppDelegate Bible menu → "Write Scene From Template…" with NSAlert + NSStackView accessory containing NSPopUpButton + cast-mapping NSTextField.
+
+**Unplanned 7.a.4 spike — voice descriptor:**
+
+- (`254e462`) `VoiceDescriptor` struct (5 fields: 3 enums + register + bullets). Pass A schema now requires it. Pass B prompt injects `[VOICE TARGET]` block at recency when present. Empirical A/B on fixtures 01 + 03 via `--ablate-voice` subcommand: voice descriptor measurably moves prose toward target style (fixture 01 mean sentence 5.7w vs 7.6w baseline; fixture 03 mean 11.3w vs 19.6w baseline) but increases empty-beat rate (35% vs 13% on fixture 01). Verdict: SHIP with documented empty-beat caveat. 9 new tests. Full writeup in [`LOOM_SCENE_TEMPLATE_SPIKE.md`](LOOM_SCENE_TEMPLATE_SPIKE.md) §4.
+
+**Phase 7 commit chain on top of `838292d`:**
+
+| # | Commit | Slice |
+|---|---|---|
+| 1 | `c3a8f87` | Phase 7 design lock — `LOOM_SCENE_TEMPLATE.md` (532 LOC) |
+| 2 | `31aeb5a` | 7.a.1 extraction-quality spike (5 fixtures, hand-graded) |
+| 3 | `5d2a3e2` | 7.a.2 generation-quality spike (3 fixtures × Pass B) |
+| 4 | `7f5b219` | 7.a.3 long-exemplar ablation (Tripto 2025 NOT reproduced; D3 confirmed) |
+| 5 | `05b4f99` | 7.b prep + TemplateScene entity + BeatExtractionPipeline |
+| 6 | `f84f254` | 7.b.3 OllamaBeatExtractor + AppState.extractTemplateScene |
+| 7 | `b75474c` | 7.b.4 TemplateGenerationCoordinator |
+| 8 | `3fa6cb0` | 7.b.5 Bible Workspace Template Scenes (Swift + React) |
+| 9 | `510c1f5` | 7.b.6 In-editor trigger (menu + NSAlert picker) |
+| 10 | `254e462` | 7.a.4 voice-descriptor extraction + injection |
+
+Test count: 1161 → 1170 across this session's arcs. Cumulative for the multi-session day: 1075 → 1170 (+95 tests).
+
+#### Updated pending live-app smoke tests
+
+The §15.13 list carries forward, augmented with Phase 7 production wiring:
+
+**Phase 5 carry-over (unchanged from §15.13):**
+1. A1 — full retrieval pipeline in the running app
+2. A2.2 — React UI in the real WKWebView (not just Vite-dev preview)
+3. A2.1 — `AppState.ingestReference` end-to-end
+4. Phase 5 retrieval cold-start UX surfacing
+
+**Phase 7 production wiring — NEW:**
+5. **Template scene extraction in the running app.** Bible Workspace → add a Template Scene → paste prose → click Extract → wait ~40–60s → confirm "N beats" badge appears in the list view + voice descriptor present in the on-disk `.beats.json` (peek with `jq` if needed).
+6. **In-editor template generation.** Editor with cursor placed → Bible menu → "Write Scene From Template…" → pick template + type cast → click Generate → confirm beats accumulate at cursor over ~30–90s. Watch debug log for `[template-gen] beat N/M` lines + the `[gen] style-retrieval` lines if the project also has references ingested (the Phase 5 retrieval pipeline composes with template generation on the same generation event).
+7. **Voice-descriptor end-to-end.** Pick a clearly-voiced template (e.g. Hemingway-clipped). Confirm prose output IS in that voice (subjective) AND that Pass A's `voiceDescriptor` in the .beats.json sidecar matches your read of the source.
+8. **Cancel mid-generation.** Esc / ⌘. during a template generation → confirm in-flight beat completes (KoboldGenerating doesn't expose `cancel()`) but subsequent beats don't fire. `isGeneratingForTesting` returns false after.
+9. **No-template gate.** Open the menu with no extracted templates → confirm the "no extracted templates available" alert fires.
+10. **Concurrent-generation gate.** Trigger a Continue while a template generation is in flight (or vice versa) → confirm the second is rejected (`startTemplateGeneration` no-ops when either coordinator is busy).
+
+The §15.13 + §15.14 smoke-test queue is now the single coherent live-app validation pass that gates Phase 7's "actually ships" claim.
+
+#### Carried into the next session
+
+Either (a) you-driven empirical validation pass against the live app, OR (b) more pre-validation polish:
+
+- **TemplateGenerationCoordinator generation-log entry on finish** — Continue writes one to `generation-log/<ts>.json`; template gen doesn't yet. Parity gap; concrete observability win. ~30 LOC. [LANDED IN §15.14 SUB-COMMIT — see history if this header is bumped.]
+- **Section/Field layout primitives hoist** — Character/Lorebook/Reference/TemplateScene editors inline identical Section + Field components. With this 4th user, hoisting into `web/bible-workspace/src/components/EditorLayout.tsx` is now overdue.
+- **Cancel-task improvement** — `KoboldGenerating` doesn't expose `cancel()`. Adding it (or a parallel cancellable channel) would let `TemplateGenerationCoordinator.cancel()` abort the in-flight beat's URLSession task, not just prevent subsequent beats.
+- **Punchlist item 7 (added in §4.6)** — drop the example bullets from `BeatExtraction.buildExtractionPrompt` to test whether voice-descriptor `distinctiveTechniques` are model-invented or prompt-echo on fixtures where the examples don't fit. Cheap to test.
+
+**Architecturally complete.** Phase 7's design — Pass A extraction with structured voice fingerprint, Pass B per-beat generation with template-as-anchor + voice-as-positive-constraint + STRAP-stripped skeleton — is fully in production code. The live-app pass is the next gating step.

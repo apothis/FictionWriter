@@ -35,6 +35,12 @@ public final class TemplateGenerationCoordinator {
     /// ["insertedRange": NSRange, "elapsedMs": Int, "beatCount": Int,
     /// "cancelled": Bool, "error": Error?]`.
     public static let didFinishNotification = Notification.Name("LoomTemplateGenerationCoordinator.didFinish")
+    /// Phase 7.b followup — posted after a `GenerationLogEntry` is
+    /// persisted to `<project>/generation-log/`. `userInfo:
+    /// ["entry": GenerationLogEntry, "url": URL]`. The History
+    /// inspector listens for this same shape from `GenerationCoordinator`;
+    /// adding it here gives template gens parity with Continue.
+    public static let didWriteLogEntryNotification = Notification.Name("LoomTemplateGenerationCoordinator.didWriteLogEntry")
 
     public private(set) var isGenerating: Bool = false
     public private(set) var currentBeatIndex: Int = 0
@@ -54,6 +60,12 @@ public final class TemplateGenerationCoordinator {
     private var pendingCastMapping: String = ""
     private var pendingPacing: PacingStats = .zero
     private var pendingTemplateBody: String = ""
+    private var pendingTemplateName: String = ""
+    /// Captured per-beat for the generation-log entry. Each entry is
+    /// the full prompt sent for that beat — so the History tab can
+    /// show "what was sent" for each per-beat call, not just the
+    /// final one.
+    private var pendingBeatPrompts: [String] = []
 
     public init(
         session: ProjectSession,
@@ -111,7 +123,9 @@ public final class TemplateGenerationCoordinator {
         pendingSkeleton = skeleton
         pendingCastMapping = castMapping
         pendingTemplateBody = template.body
+        pendingTemplateName = template.name
         pendingPacing = PacingStats.compute(text: template.body)
+        pendingBeatPrompts = []
 
         DebugLog.shared.write("[template-gen] start id=\(templateId) beats=\(skeleton.beats.count) cursor=\(cursorOffset)")
 
@@ -162,6 +176,14 @@ public final class TemplateGenerationCoordinator {
             priorBeatsProse: insertedText,
             groundTruthPacing: pendingPacing
         )
+        // Capture per-beat prompt for the generation-log entry. Append
+        // on the FIRST attempt of each beat (retries reuse the slot
+        // rather than create duplicate entries).
+        if retryAttemptsRemaining == 1 {
+            pendingBeatPrompts.append(prompt)
+        } else if let lastIdx = pendingBeatPrompts.indices.last {
+            pendingBeatPrompts[lastIdx] = prompt
+        }
         // Punchlist item 2 (§7.a.2): NO bare `[` in the stop list — the
         // model opens beats with `[silence]` / `[the protagonist…]`
         // patterns and a bare `[` triggered immediate empty completion.
@@ -261,8 +283,91 @@ public final class TemplateGenerationCoordinator {
             object: self,
             userInfo: info
         )
+
+        // Phase 7.b followup — persist a GenerationLogEntry to
+        // `<project>/generation-log/` so template gens appear in the
+        // History tab with the same shape as Continue. Skip when:
+        // - error (no real response)
+        // - in-memory session (no URL to write to)
+        // - zero prose accumulated (cancelled before any beat completed)
+        if error == nil,
+           !insertedText.isEmpty,
+           let projectURL = session.url,
+           let sceneId = pendingSceneId,
+           let templateId = pendingTemplateId,
+           let skeleton = pendingSkeleton
+        {
+            writeLogEntry(
+                projectURL: projectURL,
+                sceneId: sceneId,
+                templateId: templateId,
+                skeleton: skeleton,
+                elapsedMs: elapsedMs
+            )
+        }
+
         pendingSkeleton = nil
         pendingSceneId = nil
         pendingTemplateId = nil
+        pendingBeatPrompts = []
+    }
+
+    private func writeLogEntry(
+        projectURL: URL,
+        sceneId: UUID,
+        templateId: UUID,
+        skeleton: ExtractedSceneSkeleton,
+        elapsedMs: Int
+    ) {
+        // Synthesise a PromptAssembly that captures the per-beat
+        // prompts concatenated with `=== BEAT N ===` separators. The
+        // History tab can scroll through to see what was sent for
+        // each beat. Token counts are estimates from the assembled
+        // text.
+        let fullPrompt = pendingBeatPrompts.enumerated().map { (i, p) in
+            "=== BEAT \(i) ===\n\(p)"
+        }.joined(separator: "\n\n")
+        let promptTokens = TokenEstimator.estimate(fullPrompt)
+        let assembly = PromptAssembly(
+            contextChiclets: [],
+            fullPrompt: fullPrompt,
+            promptTokens: promptTokens,
+            aboveCacheTokens: 0,
+            belowCacheTokens: promptTokens,
+            evictedLayers: [],
+            template: .raw
+        )
+        let response = GenerationResponse(
+            rawText: insertedText,
+            completionTokens: TokenEstimator.estimate(insertedText),
+            stopReason: cancelled ? "cancelled" : nil,
+            refusalDetected: RefusalDetector.looksLikeRefusal(insertedText),
+            elapsedMs: elapsedMs
+        )
+        let info = TemplateGenerationInfo(
+            templateId: templateId,
+            templateName: pendingTemplateName,
+            castMapping: pendingCastMapping,
+            beatCount: skeleton.beats.count,
+            beatModalitySequence: skeleton.beats.map(\.modality.rawValue),
+            voiceDescriptor: skeleton.voiceDescriptor
+        )
+        let entry = GenerationLogEntry(
+            sceneId: sceneId,
+            mode: .continueProse, // pragmatic stand-in; templateGenerationInfo is the authoritative discriminator
+            promptAssembly: assembly,
+            response: response,
+            templateGenerationInfo: info
+        )
+        do {
+            let url = try logStore.write(entry, in: projectURL)
+            NotificationCenter.default.post(
+                name: Self.didWriteLogEntryNotification,
+                object: self,
+                userInfo: ["entry": entry, "url": url]
+            )
+        } catch {
+            DebugLog.shared.write("[template-gen] log-write failed: \(error)")
+        }
     }
 }
