@@ -46,14 +46,38 @@ public final class GenerationCoordinator {
     private var pendingServerProfileId: UUID?
     private let logStore: GenerationLogStore
 
+    /// Phase 5 — optional style-RAG retriever. When set, the
+    /// coordinator runs this closure with the current scene's query
+    /// text (per-mode, via `RetrievalQueryBuilder`) before assembling
+    /// the prompt; the returned exemplars flow into
+    /// `PromptContext.styleExemplars` and render as the
+    /// `[STYLE EXEMPLARS]` block in the writer prompt (see
+    /// `StyleExemplarsLayer`).
+    ///
+    /// Closure shape: `(query) -> [StyleExemplar]`. Wired by the app
+    /// at project-open to a `RetrievalService` instance bound to the
+    /// project's reference corpus + the production
+    /// `PythonStyleDistanceClient`. nil → no retrieval, empty
+    /// exemplars (matches pre-Phase-5 behaviour).
+    ///
+    /// Synchronous: the coordinator blocks on this call before
+    /// firing the generation request. Production retrievers may take
+    /// 5-10s on cold start (Python subprocess load); subsequent calls
+    /// are ~0.1s. Acceptable for ingest-and-generate workflows; not
+    /// for interactive token-by-token retrieval, which is out of
+    /// scope for Phase 5 v1.
+    public var styleRetriever: ((_ query: String) -> [StyleExemplar])?
+
     public init(
         session: ProjectSession,
         registry: KoboldClientRegistry,
-        logStore: GenerationLogStore = GenerationLogStore()
+        logStore: GenerationLogStore = GenerationLogStore(),
+        styleRetriever: ((_ query: String) -> [StyleExemplar])? = nil
     ) {
         self.session = session
         self.registry = registry
         self.logStore = logStore
+        self.styleRetriever = styleRetriever
     }
 
     // MARK: - Lifecycle
@@ -85,7 +109,7 @@ public final class GenerationCoordinator {
         // Build the prompt. PromptBuilder is pure; no network yet.
         // Pass the last-probed model name so `.auto` template detection
         // resolves against the live model (e.g. "Qwen3.6-..." → .chatml).
-        let context = PromptContext(
+        var preliminaryContext = PromptContext(
             mode: mode,
             project: session.project,
             scenes: session.scenes,
@@ -97,6 +121,24 @@ public final class GenerationCoordinator {
             replyBudgetTokens: session.project.settings.generationDefaults.maxOutputTokens,
             perCallInstruction: perCallInstruction
         )
+        // Phase 5 — style-RAG retrieval. Per-mode query extraction
+        // via RetrievalQueryBuilder; results inject into
+        // PromptContext.styleExemplars and render as the
+        // [STYLE EXEMPLARS] layer (StyleExemplarsLayer). Empty /
+        // nil-retriever / nil-query → no layer added.
+        var styleExemplars: [StyleExemplar] = []
+        if let retriever = self.styleRetriever,
+           let query = RetrievalQueryBuilder.queryText(for: preliminaryContext),
+           !query.isEmpty {
+            let retrievalStart = Date()
+            styleExemplars = retriever(query)
+            let retrievalMs = Int(Date().timeIntervalSince(retrievalStart) * 1000)
+            DebugLog.shared.write(
+                "[gen] style-retrieval: \(styleExemplars.count) exemplars (\(retrievalMs)ms)"
+            )
+        }
+        preliminaryContext.styleExemplars = styleExemplars
+        let context = preliminaryContext
         let assembled = PromptBuilder.build(context)
 
         // Diagnostic logs from day 1 (LOOM_MEMORY.md §7.2).

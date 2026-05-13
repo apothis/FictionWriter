@@ -144,6 +144,7 @@ let suites: [TestSuite] = [
     phase5KoboldNarrativeModeTests(),
     phase5PythonSubprocessTests(),
     phase5StyleExemplarsLayerTests(),
+    phase5RetrievalQueryBuilderTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
