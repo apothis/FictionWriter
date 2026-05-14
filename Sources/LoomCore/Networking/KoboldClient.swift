@@ -197,6 +197,49 @@ public final class KoboldClient: NSObject, URLSessionDataDelegate, KoboldGenerat
         )
     }
 
+    /// Streaming overload — overrides the default protocol-extension
+    /// fallback (which would deliver the entire response as a single
+    /// `onToken` call). Each chunk from
+    /// `/api/extra/generate/stream` is forwarded straight to
+    /// `onToken`; `completion` fires once at the end with the
+    /// concatenated full text.
+    public func generate(
+        prompt: String,
+        stopSequences: [String],
+        params: SamplerParams,
+        maxContextLength: Int,
+        onToken: @escaping (String) -> Void,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let request = GenerateRequest(
+            prompt: prompt,
+            stopSequences: stopSequences,
+            params: params,
+            maxContextLength: maxContextLength
+        )
+        var accumulated = ""
+        generateStream(
+            request: request,
+            onToken: { token in
+                accumulated += token
+                // generateStream's URLSession delegate runs on a
+                // private serial queue (delegateQueue: nil). Marshal
+                // to main here so callers don't have to repeat the
+                // hop in every onToken closure.
+                DispatchQueue.main.async { onToken(token) }
+            },
+            onFinish: { error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        completion(.failure(error))
+                    } else {
+                        completion(.success(accumulated))
+                    }
+                }
+            }
+        )
+    }
+
     /// Non-streaming generation taking a full `GenerateRequest`. Use
     /// this overload when you need to pass fields beyond the basic
     /// prompt/sampler set — specifically `grammar` for GBNF-constrained

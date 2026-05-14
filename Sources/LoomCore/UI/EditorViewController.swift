@@ -316,6 +316,9 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             session: session,
             writerResolver: { profileId in
                 AppState.shared.registry.client(forProfileId: profileId)
+            },
+            appDefaultProfileIdProvider: {
+                AppState.shared.settings.defaultServerId
             }
         )
         templateGenStartObserver = NotificationCenter.default.addObserver(

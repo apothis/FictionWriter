@@ -124,10 +124,16 @@ func phase7TemplateGenerationCoordinatorTests() -> TestSuite {
         // (or near-synchronously); flush drains it + advances loop.
         for _ in 0..<3 { stub.flush() }
 
-        try expectEqual(emittedTokens.count, 3)
-        try expectTrue(emittedTokens[0].contains("Beat zero prose"))
-        try expectTrue(emittedTokens[1].contains("Beat one prose"))
-        try expectTrue(emittedTokens[2].contains("Beat two prose"))
+        // Streaming: token count is N×beats + (N-1) inter-beat
+        // separators rather than 1-per-beat. Assert on the joined
+        // sequence — that's the actual behavioural contract.
+        let joined = emittedTokens.joined()
+        try expectTrue(joined.contains("Beat zero prose"))
+        try expectTrue(joined.contains("Beat one prose"))
+        try expectTrue(joined.contains("Beat two prose"))
+        // And the inter-beat separator landed between adjacent beats.
+        try expectTrue(joined.contains("prose.\n\nBeat one"))
+        try expectTrue(joined.contains("prose.\n\nBeat two"))
         try expectTrue(finished)
         try expectEqual(coord.isGenerating, false)
         // Per-beat prompts include current beat index hints.
@@ -199,11 +205,15 @@ func phase7TemplateGenerationCoordinatorTests() -> TestSuite {
 
         // Writer called 3 times total: beat 0 empty + beat 0 retry + beat 1.
         try expectEqual(stub.capturedPrompts.count, 3)
-        // Two emitted tokens (one per beat); the retry'd beat 0 produced
-        // the second-attempt prose.
-        try expectEqual(emittedTokens.count, 2)
-        try expectTrue(emittedTokens[0].contains("retry prose"))
-        try expectTrue(emittedTokens[1].contains("Beat one prose"))
+        // Streaming: assert on the joined sequence — the retry should
+        // not double-emit the inter-beat separator (would produce
+        // "...retry prose.\n\n\n\nBeat one..." instead of one \n\n).
+        let joined = emittedTokens.joined()
+        try expectTrue(joined.contains("retry prose"))
+        try expectTrue(joined.contains("Beat one prose"))
+        try expectFalse(joined.contains("\n\n\n\n"), "inter-beat separator should not double on retry")
+        try expectTrue(joined.contains("retry prose.\n\nBeat one"),
+            "exactly one \\n\\n between beats; got: \(joined)")
     }
 
     s.test("Coordinator gives up after one empty retry and continues to next beat") {
@@ -255,6 +265,13 @@ func phase7TemplateGenerationCoordinatorTests() -> TestSuite {
         try expectFalse(coord.lastStopSequences.contains("["))
         // Longer markers starting with `===` are fine to keep (won't
         // false-positive on prose that opens with a bracket).
+        // Smoke-test finding: the writer hallucinates "[END BEAT N
+        // PROSE]" markers at the end of the last beat. Stop on the
+        // "[END" prefix so the artifact doesn't leak into the
+        // editor; this is narrower than a bare "[" so legitimate
+        // dialogue-tag-like prose ("[he leaned in]") still streams.
+        try expectTrue(coord.lastStopSequences.contains("[END"),
+            "expected [END as a stop marker; got: \(coord.lastStopSequences)")
         try expectTrue(coord.lastStopSequences.contains(where: { $0.hasPrefix("===") }))
     }
 
@@ -273,6 +290,146 @@ func phase7TemplateGenerationCoordinatorTests() -> TestSuite {
         coord.start(templateId: UUID(), castMapping: "x", cursorOffset: 0)
         try expectEqual(coord.isGenerating, false)
         try expectEqual(stub.capturedPrompts.count, 0)
+    }
+
+    // Per-beat streaming: previously TemplateGenerationCoordinator
+    // called the non-streaming `generate(...)` overload and emitted
+    // each completed beat as one large `didEmitToken` event — the
+    // user saw ~100-word chunks appear all at once. Switch to the
+    // streaming `generate(..., onToken:, completion:)` overload and
+    // forward every token chunk straight to `didEmitToken` so the
+    // editor renders character-by-character like the normal
+    // GenerationCoordinator path.
+    final class StreamingStubWriter: KoboldGenerating {
+        let streamedTokens: [String]
+        let finalError: Error?
+        private var pending: [() -> Void] = []
+
+        init(streamedTokens: [String], finalError: Error? = nil) {
+            self.streamedTokens = streamedTokens
+            self.finalError = finalError
+        }
+
+        func generate(
+            prompt: String, stopSequences: [String],
+            params: SamplerParams, maxContextLength: Int,
+            completion: @escaping (Result<String, Error>) -> Void
+        ) {
+            // Should not be called when streaming overload is used —
+            // fallback path; deliver the whole concatenation in one shot.
+            let full = streamedTokens.joined()
+            pending.append { [self] in
+                if let err = finalError { completion(.failure(err)) }
+                else { completion(.success(full)) }
+            }
+        }
+
+        func generate(
+            prompt: String, stopSequences: [String],
+            params: SamplerParams, maxContextLength: Int,
+            onToken: @escaping (String) -> Void,
+            completion: @escaping (Result<String, Error>) -> Void
+        ) {
+            pending.append { [self] in
+                for tok in streamedTokens { onToken(tok) }
+                if let err = finalError { completion(.failure(err)) }
+                else { completion(.success(streamedTokens.joined())) }
+            }
+        }
+
+        func flush() {
+            let snapshot = pending
+            pending.removeAll()
+            for f in snapshot { f() }
+        }
+    }
+
+    s.test("Coordinator forwards every streamed token as didEmitToken (not one chunk per beat)") {
+        let (projectURL, templateId) = try bootstrap(beatCount: 1)
+        defer { try? FileManager.default.removeItem(at: projectURL) }
+        let session = ProjectSession(project: Project(title: "T"), url: projectURL)
+        _ = session.addScene()
+        let stub = StreamingStubWriter(
+            streamedTokens: ["Hello", " ", "world", " ", "today."]
+        )
+        let coord = TemplateGenerationCoordinator(
+            session: session,
+            writerResolver: { _ in stub }
+        )
+
+        var emittedTokens: [String] = []
+        let obs = NotificationCenter.default.addObserver(
+            forName: TemplateGenerationCoordinator.didEmitTokenNotification,
+            object: coord, queue: nil
+        ) { note in
+            if let t = note.userInfo?["token"] as? String { emittedTokens.append(t) }
+        }
+        defer { NotificationCenter.default.removeObserver(obs) }
+
+        coord.start(templateId: templateId, castMapping: "x", cursorOffset: 0)
+        for _ in 0..<3 { stub.flush() }
+
+        // Five streamed tokens → five didEmitToken events. The old
+        // behaviour would have produced one event with the joined
+        // string ("Hello world today.").
+        try expectEqual(emittedTokens, ["Hello", " ", "world", " ", "today."])
+    }
+
+    // Bug from Phase 7 smoke testing: TemplateGenerationCoordinator
+    // resolved the writer profile from `session.project.settings.
+    // serverProfileId` directly, with no fallback when the project
+    // had no override (typical for newly-created projects). The
+    // KoboldClientRegistry then returned its localhost sentinel and
+    // beat 0 failed with `Could not connect to the server`. Mirror
+    // GenerationCoordinator's `?? appDefault` chain so the project-
+    // level override is optional rather than required.
+    s.test("Coordinator falls back to app default when project has no serverProfileId") {
+        let (projectURL, templateId) = try bootstrap(beatCount: 1)
+        defer { try? FileManager.default.removeItem(at: projectURL) }
+        let session = ProjectSession(project: Project(title: "T"), url: projectURL)
+        _ = session.addScene()
+        // session.project.settings.serverProfileId is nil by default.
+        let appDefaultId = UUID()
+        var capturedProfileId: UUID? = nil
+        var capturedCount = 0
+        let stub = StubWriter(responses: [.success("beat zero")])
+        let coord = TemplateGenerationCoordinator(
+            session: session,
+            writerResolver: { id in
+                capturedProfileId = id
+                capturedCount += 1
+                return stub
+            },
+            appDefaultProfileIdProvider: { appDefaultId }
+        )
+        coord.start(templateId: templateId, castMapping: "x", cursorOffset: 0)
+        stub.flush()
+        try expectEqual(capturedCount, 1)
+        try expectEqual(capturedProfileId, appDefaultId)
+    }
+
+    s.test("Coordinator prefers project-level serverProfileId over app default") {
+        let (projectURL, templateId) = try bootstrap(beatCount: 1)
+        defer { try? FileManager.default.removeItem(at: projectURL) }
+        var project = Project(title: "T")
+        let projectId = UUID()
+        project.settings.serverProfileId = projectId
+        let session = ProjectSession(project: project, url: projectURL)
+        _ = session.addScene()
+        let appDefaultId = UUID()
+        var capturedProfileId: UUID? = nil
+        let stub = StubWriter(responses: [.success("beat zero")])
+        let coord = TemplateGenerationCoordinator(
+            session: session,
+            writerResolver: { id in
+                capturedProfileId = id
+                return stub
+            },
+            appDefaultProfileIdProvider: { appDefaultId }
+        )
+        coord.start(templateId: templateId, castMapping: "x", cursorOffset: 0)
+        stub.flush()
+        try expectEqual(capturedProfileId, projectId)
     }
 
     s.test("Coordinator.start no-ops when project has no current scene") {

@@ -22,6 +22,17 @@ import Foundation
 public final class TemplateGenerationCoordinator {
     public let session: ProjectSession
     public let writerResolver: (UUID?) -> KoboldGenerating
+    /// Resolves the app-level default writer profile id, consulted
+    /// when `session.project.settings.serverProfileId` is nil
+    /// (typical for newly-created projects). Mirrors
+    /// `GenerationCoordinator`'s `?? AppState.shared.settings.
+    /// defaultServerId` chain — without this, the registry returned
+    /// its localhost sentinel and beat 0 failed with `Could not
+    /// connect to the server`.
+    ///
+    /// Default `{ nil }` so existing test call sites don't have to
+    /// pass it (they preserve the previous "no fallback" behaviour).
+    public let appDefaultProfileIdProvider: () -> UUID?
     private let logStore: GenerationLogStore
 
     /// Posted when a template generation starts. Object is `self`.
@@ -70,10 +81,12 @@ public final class TemplateGenerationCoordinator {
     public init(
         session: ProjectSession,
         writerResolver: @escaping (UUID?) -> KoboldGenerating,
+        appDefaultProfileIdProvider: @escaping () -> UUID? = { nil },
         logStore: GenerationLogStore = GenerationLogStore()
     ) {
         self.session = session
         self.writerResolver = writerResolver
+        self.appDefaultProfileIdProvider = appDefaultProfileIdProvider
         self.logStore = logStore
     }
 
@@ -189,31 +202,66 @@ public final class TemplateGenerationCoordinator {
         // patterns and a bare `[` triggered immediate empty completion.
         // The longer markers below catch genuine prompt-structure
         // echoes without false-positives on prose openings.
-        let stops = ["=== END", "[BEAT SKELETON", "[INSTRUCTION", "[SYSTEM]", "[NEW CAST]", "[NEXT-BEAT HINT"]
+        // `[END` catches hallucinated end-markers like
+        // `[END BEAT 7 PROSE]` the writer emits at the final beat
+        // (mimicking the prompt's structural label shape). Narrower
+        // than a bare `[` so prose bracketed openings still stream.
+        let stops = ["=== END", "[BEAT SKELETON", "[INSTRUCTION", "[SYSTEM]", "[NEW CAST]", "[NEXT-BEAT HINT", "[END"]
         self.lastStopSequences = stops
 
         let params = SamplerParams(
             maxLength: max(64, beat.targetWords * 2)
         )
 
-        let writer = writerResolver(session.project.settings.serverProfileId)
+        let profileId = session.project.settings.serverProfileId
+            ?? appDefaultProfileIdProvider()
+        let writer = writerResolver(profileId)
         DebugLog.shared.write("[template-gen] beat \(index)/\(skeleton.beats.count - 1) (\(beat.modality.rawValue), \(beat.function.rawValue), target \(beat.targetWords)w)")
 
         writer.generate(
             prompt: prompt,
             stopSequences: stops,
             params: params,
-            maxContextLength: session.project.settings.contextBudgetTokens
-        ) { [weak self] result in
-            // Marshal completion handling to main so notification +
-            // state mutation are deterministic. Tests verify state
-            // post-flush so this main-hop is fine for them too.
-            self?.handleBeatResult(
-                result: result,
-                beatIndex: index,
-                retryAttemptsRemaining: retryAttemptsRemaining
-            )
-        }
+            maxContextLength: session.project.settings.contextBudgetTokens,
+            // KoboldClient's streaming overload marshals onToken +
+            // completion to main itself, so we don't double-hop here.
+            // Test stubs deliver synchronously on whatever queue
+            // their `flush()` is called from.
+            onToken: { [weak self] token in
+                self?.handleStreamedToken(token, beatIndex: index)
+            },
+            completion: { [weak self] result in
+                self?.handleBeatResult(
+                    result: result,
+                    beatIndex: index,
+                    retryAttemptsRemaining: retryAttemptsRemaining
+                )
+            }
+        )
+    }
+
+    /// Append a token to the rolling buffer + post didEmitToken with
+    /// the offset where this token will land. Mirrors
+    /// `GenerationCoordinator.handleToken`'s shape so the editor's
+    /// insertion logic is identical for both coordinators.
+    private func emitToken(_ token: String, beatIndex: Int) {
+        guard isGenerating, !cancelled, !token.isEmpty else { return }
+        let offset = insertionOffset
+        insertedText += token
+        insertionOffset += (token as NSString).length
+        NotificationCenter.default.post(
+            name: Self.didEmitTokenNotification,
+            object: self,
+            userInfo: [
+                "token": token,
+                "insertionOffset": offset,
+                "beatIndex": beatIndex,
+            ]
+        )
+    }
+
+    private func handleStreamedToken(_ token: String, beatIndex: Int) {
+        emitToken(token, beatIndex: beatIndex)
     }
 
     private func handleBeatResult(
@@ -229,31 +277,25 @@ public final class TemplateGenerationCoordinator {
         switch result {
         case .success(let raw):
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Punchlist item 3: empty output and `***`-only output
-            // both count as "the model didn't commit"; retry once
-            // before accepting whatever the model gave.
-            let isDegenerate = trimmed.isEmpty || trimmed == "***" || trimmed == "* * *"
-            if isDegenerate, retryAttemptsRemaining > 0 {
-                DebugLog.shared.write("[template-gen] beat \(beatIndex) returned degenerate output (\(trimmed.isEmpty ? "empty" : "scene-break")); retrying")
+            // Punchlist item 3: empty output retries once. Streaming
+            // means we can only retry safely when NO tokens were
+            // emitted for this beat — `***`-only output would have
+            // already landed in the editor as streamed tokens, and we
+            // can't unwind that without a delete instruction (out of
+            // scope). Empty-output retry stays.
+            if trimmed.isEmpty, retryAttemptsRemaining > 0 {
+                DebugLog.shared.write("[template-gen] beat \(beatIndex) returned empty output; retrying")
                 fireBeat(index: beatIndex, retryAttemptsRemaining: retryAttemptsRemaining - 1)
                 return
             }
-            // Append the beat's prose to the rolling buffer + emit
-            // as a token event. Add a paragraph break between beats
-            // so the editor's inserted prose has structure.
-            let toEmit = beatIndex == 0 ? trimmed : "\n\n" + trimmed
-            let offsetForThisBeat = insertionOffset
-            insertedText += toEmit
-            insertionOffset += (toEmit as NSString).length
-            NotificationCenter.default.post(
-                name: Self.didEmitTokenNotification,
-                object: self,
-                userInfo: [
-                    "token": toEmit,
-                    "insertionOffset": offsetForThisBeat,
-                    "beatIndex": beatIndex,
-                ]
-            )
+            // Tokens were already emitted via the streaming onToken
+            // callback. Advance to the next beat — first emit the
+            // inter-beat paragraph break so the next beat's tokens
+            // land cleanly. Emitting here (after success, not on
+            // retry) avoids double-separator-on-retry.
+            if beatIndex + 1 < totalBeatCount {
+                emitToken("\n\n", beatIndex: beatIndex)
+            }
             // Advance to next beat (fresh retry budget per beat).
             fireBeat(index: beatIndex + 1, retryAttemptsRemaining: 1)
         case .failure(let err):
