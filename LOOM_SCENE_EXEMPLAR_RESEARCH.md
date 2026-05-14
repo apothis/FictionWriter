@@ -129,6 +129,29 @@ Per the HF README and Linq Alpha blog [no NSFW disclosure]: built on E5-mistral-
 
 ---
 
+## Addendum — 2026-05-14 availability check (post-audit, pre-spike)
+
+Pre-implementation toolchain verification surfaced two corrections to the audit's recommendations:
+
+1. **iBERT is paper-only.** GitHub repo `vishalanand/iBERT` (linked from arXiv:2510.09882) explicitly states "Code and model will be released in April 2026" — the April target has slipped as of 2026-05-14; HF user profile has 0 public models. The audit's recommendation to "add iBERT to the §6.1 probe" is blocked. Even when iBERT ships, integration is non-trivial: Backpack-formulation with k=8 sparse sense vectors + three custom pooling variants — not a `SentenceTransformer(...)` drop-in.
+
+2. **Substitute for the style-alternate slot: `AnnaWegmann/Style-Embedding`.** It is the SBERT-style baseline iBERT positions itself against on STEL — so any benchmark built around it is directly comparable when iBERT eventually ships. Sentence-transformers-compatible, drop-in, available now.
+
+3. **LUAR (`gabrielloiseau/LUAR-MUD-sentence-transformers`) added as a predicted negative control.** Available, ungated, ST-compatible, 512-dim, 82M params. Trained on Pushshift Reddit; NSFW filtering is **not** documented (Band-C risk profile similar to mxbai/bge). The load-bearing caveat: LUAR optimizes "same author across posts" — per Wegmann et al. TACL ("Can Authorship Representation Learning Capture Stylistic Features?") and the StyleDistance paper, LUAR conflates style with author/topical signal, scoring same-register-different-author pairs as dissimilar. For §6.1's "same register, different authors → high cosine" criterion, LUAR is **expected to fail**. It enters the spike as a contrastive datapoint, not a primary candidate.
+
+### Revised §6.1 candidate set
+
+| Slot | Model | Type | Role | HF id |
+|---|---|---|---|---|
+| Incumbent | StyleDistance | Style | Hypothesis-under-test | `StyleDistance/styledistance` |
+| Style alternate | Wegmann Style-Embedding | Style | Primary §6.1 candidate (canonical STEL baseline; iBERT substitute) | `AnnaWegmann/Style-Embedding` |
+| Authorship alternate | LUAR-MUD (sentence-transformers wrapper) | Authorship | Predicted negative control | `gabrielloiseau/LUAR-MUD-sentence-transformers` |
+| Retrieval baseline | mxbai-embed-large | Retrieval | Topical-cosine baseline | served via Ollama |
+
+The Phase 8.a §6.1 spike runner (`Tools/SceneExemplarSpike`) iterates all four against the 20-fixture set and reports same-axis-vs-cross-axis separation scores per embedder.
+
+---
+
 ## Sources
 
 1. Hatzel & Biemann, "Story Embeddings — Narrative-Focused Representations of Fictional Stories," EMNLP 2024 main. https://aclanthology.org/2024.emnlp-main.339/ — Story-similarity embedder; useful as *contrast* to what Loom wants.

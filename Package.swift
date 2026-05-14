@@ -78,5 +78,18 @@ let package = Package(
             path: "Tools/SceneTemplateSpike",
             exclude: ["Fixtures", "last-run"]
         ),
+        // Phase 8.a §6.1 embedder discrimination spike runner
+        // (LOOM_SCENE_EXEMPLAR.md §6.1 + LOOM_SCENE_EXEMPLAR_RESEARCH.md).
+        // Loads the 20-fixture register/style set, embeds each fixture
+        // with each candidate embedder (StyleDistance / Wegmann / LUAR /
+        // mxbai), and emits a per-embedder cosine matrix + separation
+        // score to LOOM_SCENE_EXEMPLAR_SPIKE.md.
+        //   swift run SceneExemplarSpike cosine-matrix --embedder=<id>
+        .executableTarget(
+            name: "SceneExemplarSpike",
+            dependencies: ["LoomCore"],
+            path: "Tools/SceneExemplarSpike",
+            exclude: ["fixtures", "last-run", "Python"]
+        ),
     ]
 )
