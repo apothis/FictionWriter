@@ -312,6 +312,12 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         // Closures mirror the GenerationCoordinator handlers above; the
         // didEmitToken userInfo shape is identical by design so the
         // streaming insertion logic is verbatim-reused.
+        //
+        // Phase 8.b.4 — wire `styleRetriever` to the project's
+        // retrieval service so per-beat writer calls receive
+        // [STYLE EXEMPLARS] blocks drawn from the project's
+        // References. Same shape as GenerationCoordinator's retriever
+        // (AppState.styleRetriever() resolves the service every call).
         templateCoordinator = TemplateGenerationCoordinator(
             session: session,
             writerResolver: { profileId in
@@ -319,7 +325,8 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             },
             appDefaultProfileIdProvider: {
                 AppState.shared.settings.defaultServerId
-            }
+            },
+            styleRetriever: AppState.shared.styleRetriever()
         )
         templateGenStartObserver = NotificationCenter.default.addObserver(
             forName: TemplateGenerationCoordinator.didStartNotification,

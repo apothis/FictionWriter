@@ -33,6 +33,14 @@ public final class TemplateGenerationCoordinator {
     /// Default `{ nil }` so existing test call sites don't have to
     /// pass it (they preserve the previous "no fallback" behaviour).
     public let appDefaultProfileIdProvider: () -> UUID?
+    /// Phase 8.b.4 — per-beat style retriever closure. Called once per
+    /// beat with the query produced by `BeatRetrievalQuery.build`; the
+    /// returned exemplars feed into `BeatGeneration.buildBeatPrompt`'s
+    /// `styleExemplars:` parameter. nil → no retrieval (Phase 7
+    /// behaviour preserved). Wired by AppState at project-open to a
+    /// closure over the project's `RetrievalService` (the same shape
+    /// as `GenerationCoordinator.styleRetriever`).
+    public let styleRetriever: ((_ query: String) -> [StyleExemplar])?
     private let logStore: GenerationLogStore
 
     /// Posted when a template generation starts. Object is `self`.
@@ -82,12 +90,14 @@ public final class TemplateGenerationCoordinator {
         session: ProjectSession,
         writerResolver: @escaping (UUID?) -> KoboldGenerating,
         appDefaultProfileIdProvider: @escaping () -> UUID? = { nil },
-        logStore: GenerationLogStore = GenerationLogStore()
+        logStore: GenerationLogStore = GenerationLogStore(),
+        styleRetriever: ((_ query: String) -> [StyleExemplar])? = nil
     ) {
         self.session = session
         self.writerResolver = writerResolver
         self.appDefaultProfileIdProvider = appDefaultProfileIdProvider
         self.logStore = logStore
+        self.styleRetriever = styleRetriever
     }
 
     // MARK: - Lifecycle
@@ -181,13 +191,28 @@ public final class TemplateGenerationCoordinator {
 
         currentBeatIndex = index
         let beat = skeleton.beats[index]
+        // Phase 8.b.4 — per-beat retrieval. Build the query, ask the
+        // retriever (if wired), pass the result into buildBeatPrompt.
+        // nil retriever → empty exemplars → no [STYLE EXEMPLARS] block.
+        let styleExemplars: [StyleExemplar]
+        if let retrieve = styleRetriever {
+            let query = BeatRetrievalQuery.build(
+                beat: beat,
+                castMapping: pendingCastMapping,
+                priorBeatsProse: insertedText
+            )
+            styleExemplars = retrieve(query)
+        } else {
+            styleExemplars = []
+        }
         let prompt = BeatGeneration.buildBeatPrompt(
             templateBody: pendingTemplateBody,
             skeleton: skeleton,
             castMapping: pendingCastMapping,
             currentBeatIndex: index,
             priorBeatsProse: insertedText,
-            groundTruthPacing: pendingPacing
+            groundTruthPacing: pendingPacing,
+            styleExemplars: styleExemplars
         )
         // Capture per-beat prompt for the generation-log entry. Append
         // on the FIRST attempt of each beat (retries reuse the slot

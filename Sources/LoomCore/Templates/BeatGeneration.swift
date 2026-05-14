@@ -38,7 +38,8 @@ public enum BeatGeneration {
         currentBeatIndex: Int,
         priorBeatsProse: String,
         groundTruthPacing: PacingStats,
-        includeTemplateBody: Bool = true
+        includeTemplateBody: Bool = true,
+        styleExemplars: [StyleExemplar] = []
     ) -> String {
         // Bounds-check the index — out-of-range returns empty so the
         // caller fails loudly (the spike runner catches + logs).
@@ -158,6 +159,20 @@ public enum BeatGeneration {
             templateBlock = ""
         }
 
+        // Phase 8.b.3 — per-beat retrieved style exemplars (D4 lock:
+        // Wegmann). Block is empty when no exemplars are supplied,
+        // preserving Phase 7 callers' output. Renders BEFORE the
+        // [INSTRUCTION] block so style cues are visible at decision
+        // time (cf. "Lost in the Middle" — instructional content at
+        // recency, but style cues benefit from proximity too).
+        let styleExemplarsBlock: String
+        let formattedExemplars = StyleExemplarsLayer.format(styleExemplars)
+        if formattedExemplars.isEmpty {
+            styleExemplarsBlock = ""
+        } else {
+            styleExemplarsBlock = "\n\n\(formattedExemplars)"
+        }
+
         return """
             \(systemFraming)
 
@@ -171,7 +186,7 @@ public enum BeatGeneration {
             \(pacingLine)
 
             \(priorBeatsSection)
-            \(voiceTargetBlock)
+            \(voiceTargetBlock)\(styleExemplarsBlock)
 
             [INSTRUCTION]
             Write beat \(currentBeatIndex). Modality: \(beat.modality.rawValue). Function: \(beat.function.rawValue). Target length: \(beat.targetWords) words. \(endingInstruction)
