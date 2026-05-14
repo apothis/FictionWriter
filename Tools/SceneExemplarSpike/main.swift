@@ -422,6 +422,68 @@ case "cosine-matrix":
         log("[spike] failed to persist report: \(error)")
     }
 
+case "extract":
+    // §6.3 / Phase 8 sanity probe — does gemma4_2b Pass-A extraction work
+    // on NSFW fixtures? If extraction refuses or fails on the NSFW set,
+    // the entire Phase 8 design has a load-bearing assumption to fix.
+    var only: [String] = []
+    for arg in args.dropFirst(2) {
+        if arg.hasPrefix("--fixture=") {
+            only.append(String(arg.dropFirst("--fixture=".count)))
+        }
+    }
+    log("[spike] loading fixtures...")
+    let allFixtures: [SceneExemplarFixture]
+    do { allFixtures = try loadAllFixtures() } catch {
+        log("[spike] fixture load failed: \(error)"); exit(1)
+    }
+    let target = only.isEmpty
+        ? allFixtures
+        : allFixtures.filter { only.contains($0.id) }
+    let ollamaBase = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_URL"]
+        ?? "http://localhost:11434/"
+    let model = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_MODEL"]
+        ?? "gemma4_2b:latest"
+    guard let baseURL = URL(string: ollamaBase) else { exit(1) }
+    let extractor = OllamaBeatExtractor(baseURL: baseURL, model: model)
+
+    try? FileManager.default.createDirectory(
+        at: URL(fileURLWithPath: outputDir),
+        withIntermediateDirectories: true
+    )
+
+    for fixture in target {
+        log("[extract] \(fixture.id) (\(fixture.body.split(whereSeparator: { $0.isWhitespace }).count) words)...")
+        let sem = DispatchSemaphore(value: 0)
+        var result: Result<ExtractedSceneSkeleton, Error>?
+        let started = Date()
+        extractor.extractSkeleton(from: fixture.body) { res in
+            result = res
+            sem.signal()
+        }
+        sem.wait()
+        let elapsed = Date().timeIntervalSince(started)
+        switch result {
+        case .success(let skeleton):
+            log(String(format: "[extract] %@ → %d beats in %.1fs",
+                       fixture.id, skeleton.beats.count, elapsed))
+            // Persist the skeleton + a short summary line.
+            let outURL = URL(fileURLWithPath: outputDir)
+                .appendingPathComponent("\(fixture.id).beats.json")
+            if let data = try? JSONEncoder().encode(skeleton) {
+                try? data.write(to: outURL)
+            }
+            let summaryLines: [String] = skeleton.beats.map { beat in
+                "  beat \(beat.index) (\(beat.modality.rawValue)/\(beat.function.rawValue), \(beat.targetWords)w): \(beat.summary.prefix(70))..."
+            }
+            for line in summaryLines { log(line) }
+        case .failure(let err):
+            log("[extract] \(fixture.id) FAILED: \(err)")
+        case .none:
+            log("[extract] \(fixture.id) — no result")
+        }
+    }
+
 default:
     usageAndExit()
 }

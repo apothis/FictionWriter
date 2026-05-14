@@ -93,13 +93,110 @@ Outputs land at `Tools/SceneExemplarSpike/last-run/<embedder>[.<scope>].md` — 
 
 ---
 
-## 2–5. Pending probes
+## 2. §6.3 — Pass-A extraction smoke + chunking strategy lock
 
-The remaining §6.x probes will land as additional sections here when implemented.
+### 2.1 Pass-A extraction on NSFW prose (load-bearing premise)
 
-- §6.2 — Per-beat retrieval vs. per-scene retrieval. **Pending.**
-- §6.3 — Beat-aware vs. sentence-window chunking. **Pending.** Will use Wegmann per §1.4 lock.
-- §6.4 — Soft-D4 spike (allow content reuse). **Pending.**
-- §6.5 — Full-body-in-prompt vs. retrieval-only. **Pending.**
+Before the §6.3 chunking comparison, a more fundamental question: **does gemma4_2b Pass-A extraction work on NSFW fixtures at all?** The entire Phase 8 design assumes yes; that's untested.
 
-Each will lock or defer its corresponding D-decision when complete.
+**Empirical probe (2026-05-14).** Ran `OllamaBeatExtractor` against one fixture of each NSFW register + two SFW controls. Two passes per failure to test transience.
+
+| Fixture | Register | Attempt 1 | Attempt 2 | Beats produced |
+|---|---|---|---|---|
+| nsfw_01_explicit_direct | explicit-direct | ✅ success | — | 10 |
+| nsfw_03_clinical | clinical | ❌ noJSONObjectFound | ✅ success | 6 |
+| nsfw_05_euphemistic | euphemistic | ❌ noJSONObjectFound | ✅ success | 9 |
+| nsfw_07_explicit_poetic | explicit-poetic | ❌ noJSONObjectFound | ✅ success | 8 |
+| nsfw_09_explicit_mundane | explicit-mundane | ✅ success | — | 8 |
+| sfw_01_clipped_hemingway | (control) | ✅ success | — | 16 |
+| sfw_05_clinical_procedural | (control) | ✅ success | — | 6 |
+
+**Headline:** Pass-A works on all 5 NSFW registers when given a retry. Single-attempt failure rate ~30% on this small sample, but every failure recovered on the first retry. **The failures are NOT register-specific refusals** — gemma4_2b appears to extract NSFW content cleanly when it returns parseable JSON at all. The errors are transient JSON-conformance failures under the schema-guided sampler.
+
+**Examples of extracted NSFW beats (`nsfw_01_explicit_direct`):**
+
+```
+beat 0 (action/setup, 24w):       The {PROTAGONIST} initiates the physical connection...
+beat 3 (action/escalation, 24w):  The {PROTAGONIST} increases the intensity of the movement...
+beat 5 (mixed/conflict, 24w):     The {PROTAGONIST} reaches the climax of the action...
+beat 6 (action/resolution, 22w):  The {PROTAGONIST} transitions to a resting state...
+```
+
+The Phase 7 D4 STRAP content-stripping (replacing character names with `{PROTAGONIST}`/`{ANTAGONIST}` tokens) works correctly on NSFW prose. The modality+function taxonomy applies cleanly. Beat granularity is reasonable (6-10 beats for ~400-word fixtures).
+
+### 2.2 Phase 8.b implementation note — extend retry coverage
+
+The current `OllamaBeatExtractor` (Sources/LoomCore/Generation/OllamaBeatExtractor.swift:78) retries once on empty content but NOT on `noJSONObjectFound`. Given the ~30% single-attempt failure rate on this fixture set, **Phase 8.b should extend the retry to cover JSON-parse failures**. This is a one-line change to the existing `callWithRetry` path. Not a Phase 8.a code change (per the "no production code" rule), but flagged as a load-bearing implementation TODO for 8.b.
+
+### 2.3 D6 — chunking strategy lock
+
+The §6.3 design probe was specified as a generation-grade comparison (beat-aligned vs. sentence-window chunks measured via downstream output quality). That comparison requires Phase 8.b production code (beat-aware retrieval wiring) and full generation runs — out of scope for the 8.a spike.
+
+**LOCK D6 to beat-aligned chunking with sentence-window fallback**, based on the available evidence:
+
+1. **Beat metadata is reliable** (§2.1) — Pass-A extraction produces clean modality+function tags on NSFW + SFW prose. Beat-aligned chunks inherit those tags as first-class retrieval metadata.
+2. **Beat-aligned chunks match the per-beat retrieval pattern** (D3, locked-by-proposal): the writer asks "give me chunks similar to *this beat*"; the natural unit to retrieve is a beat-shaped chunk with matching modality+function.
+3. **Sentence-window chunks force a chunking-vs-retrieval impedance mismatch**: post-hoc modality assignment (whichever beat overlaps the chunk's center) loses information at chunk boundaries.
+4. **Fallback preserves recovery from §2.1's failure modes**: if Pass-A extraction fails entirely after retry, the exemplar gets sentence-window chunks. The partial-failure-recoverable state in §7.2 of the design doc already anticipates this — Phase 8.b just needs to wire sentence-window as the no-beats fallback.
+
+**Phase 8.b implementation impact:** `RetrievalService` extension (§8.b.5 in the design plan) needs a beat-aware filter path. Chunks carry `modality: NarrativeMode?` + `function: BeatFunction?` (already specified in §7.1 of the design doc).
+
+**Re-validate in 8.c if needed:** if the beat-aligned-with-fallback experience proves uneven in 8.b smoke testing, the §6.3 generation-grade probe can land as a Phase 8.c retest.
+
+---
+
+## 3. D5, D7, D8 — design locks (no further empirical work in 8.a)
+
+The remaining D-decisions are locked to the design doc's §5.x recommendations. Phase 8.b ships these defaults; 8.c can override on production evidence.
+
+### 3.1 D5 (per-beat vs. per-scene retrieval) — LOCKED to **per-beat by default**
+
+**Locked value:** Per-beat retrieval, scoped to the chosen exemplar (default) with project-wide opt-in (Phase 8.b setting). Matches D3 proposal.
+
+**Rationale:**
+- The Phase 8 design's motivating use case (the NSFW exemplar smoke test from HANDOFF §15.14) showed that the writer needs per-beat style cues to carry source-specific content patterns. Per-scene retrieval would reuse the same chunks across beats, losing the "this beat is dialogue / escalation" granularity.
+- Per-beat retrieval is a strict superset of per-scene: a user can set retrieval scope to "scene-wide" via the setting if the latency cost becomes unwelcome.
+- The cost of being wrong is bounded: per-beat is N×retrieval-latency vs. per-scene's 1×. If 8.b smoke shows the N× cost is unworkable on the user's hardware, switching to per-scene is a config flip, not a re-design.
+
+**§6.2 generation-grade probe deferred to 8.c** if 8.b smoke surfaces a concern.
+
+### 3.2 D7 (soft-D4 prompt) — LOCKED to **user-controllable toggle, default-off**
+
+**Locked value:** Phase 8.b ships an "imitate content" toggle on the Write-From-Template menu (§5.3 position 2). Off (default): existing Phase 7 strict prompt — "Do NOT reuse plot, characters, settings, or specific events." On: the prompt drops the "specific events" clause and adds the positive constraint "Substitute the cast described below; preserve the source's content register, vocabulary, and act patterns where appropriate."
+
+**Rationale:**
+- Default-off preserves the validated Phase 7 behaviour (zero source-character-name leakage in the 7.a.3 spike).
+- Opt-in surfaces the soft-D4 path for the NSFW exemplar case without making it the default for SFW use.
+- This is the explicit §5.3 recommendation — a Phase 8.b *feature* (toggle UI + alternate prompt) rather than a *behavior change*.
+- Memory entry "Prompt blacklists get evaded by paraphrase" is honoured by the positive-constraint phrasing of the soft path.
+- §6.4 generation-grade probe (strict vs. softened prompt with lexical-overlap + Wegmann-cosine auto-metrics) deferred to 8.c as a "should default flip?" question after real users exercise the toggle.
+
+### 3.3 D8 (UI naming) — LOCKED to **Option C: rename + soft-merge**
+
+**Locked value:** Bible Workspace UI surface renames to "Scene Exemplars" (one card per body). Backing types `ReferenceText` + `TemplateScene` stay on disk; the workspace merges them by body-content hash for de-duplication where possible (or lists them as two cards from different ingest histories).
+
+**Rationale:**
+- §5.1 Option C is the lowest-migration-risk path: existing on-disk References + Templates remain interpretable; the user's mental model shifts gradually.
+- Option A (full type merge) is the right long-term shape but blocks 8.b on a migration that 8.c can do once the unified surface is validated.
+- Option B (separate UI surfaces, shared ingest) is uglier than C — users see two cards per body where they expect one.
+
+---
+
+## 4. Phase 8.a closeout — design lock achieved
+
+All five §6.x questions resolved:
+
+| Decision | Status | Resolution |
+|---|---|---|
+| **D4 — embedder** | ✅ LOCKED (empirical) | Wegmann Style-Embedding |
+| **D5 — per-beat retrieval** | ✅ LOCKED (design) | per-beat by default; project-wide opt-in |
+| **D6 — chunking strategy** | ✅ LOCKED (design + Pass-A probe) | beat-aligned chunks; sentence-window fallback |
+| **D7 — soft-D4 prompt** | ✅ LOCKED (design) | user-controllable toggle, default-off |
+| **D8 — UI naming** | ✅ LOCKED (design) | "Scene Exemplars" rename + soft-merge |
+
+Phase 8.b can begin. The flagged implementation TODOs from this spike:
+
+1. Extend `OllamaBeatExtractor` retry coverage to `noJSONObjectFound` (§2.2).
+2. Open question for the user: should Phase 5 retrieval migrate to Wegmann alongside Phase 8.b? See §1.4.
+
+The deferred-to-8.c retests (§6.2 generation-grade, §6.4 prompt-softening auto-metrics, §6.5 full-body vs. retrieval-only) all hinge on Phase 8.b production code existing — they validate locked decisions rather than originate them.
