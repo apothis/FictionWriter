@@ -1038,3 +1038,60 @@ Either (a) you-driven empirical validation pass against the live app, OR (b) mor
 - **History tab rendering of template gens** — the `GenerationLogEntry` now carries `templateGenerationInfo`, but `HistoryInspectorViewController` still renders the entry as "Continue" (since mode is `.continueProse`). The data is on disk; the UI just doesn't pull from the new side-table yet. Small follow-up: add a "Template: {name}" subheader when `templateGenerationInfo != nil`.
 
 **Architecturally complete.** Phase 7's design — Pass A extraction with structured voice fingerprint, Pass B per-beat generation with template-as-anchor + voice-as-positive-constraint + STRAP-stripped skeleton — is fully in production code. The live-app pass is the next gating step.
+
+### 15.15 Session ledger — 2026-05-14 (Phase 8.a + 8.b — Unified Scene Exemplar)
+
+Single-session arc from "Phase 8 design proposal, not yet locked" to "Phase 8.b code complete + ready for live smoke." See [`LOOM_SCENE_EXEMPLAR.md`](LOOM_SCENE_EXEMPLAR.md) for the locked design, [`LOOM_SCENE_EXEMPLAR_RESEARCH.md`](LOOM_SCENE_EXEMPLAR_RESEARCH.md) for the §6.6 audit, [`LOOM_SCENE_EXEMPLAR_SPIKE.md`](LOOM_SCENE_EXEMPLAR_SPIKE.md) for the empirical findings.
+
+#### Phase 8.a — design lock
+
+1. **§6.6 prior-art + embedder audit** (19 cited 2024-2026 sources): no prior-art surfaced that obsoletes the unified-exemplar concept. iBERT (the audit's primary additional candidate) turned out paper-only — April 2026 release slipped; HF user has 0 public models. Substituted with `AnnaWegmann/Style-Embedding` (the SBERT baseline iBERT positions against on STEL) + added LUAR as a predicted negative control.
+2. **20 hand-authored fixtures** at `Tools/SceneExemplarSpike/fixtures/` — 10 NSFW × 5 register axes + 10 SFW × 5 matched style axes. ~400 words each.
+3. **§6.1 4-candidate embedder probe** at `Tools/SceneExemplarSpike/` (Swift runner + parameterized `embed_st.py` over the bundled venv). `style_axis` separation:
+   - **Wegmann +0.285** ← winner
+   - LUAR +0.173 (predicted-failure framing was partially wrong)
+   - mxbai +0.162 (topical baseline)
+   - **StyleDistance +0.086** ← Phase 5 incumbent, lost to all three alternatives including the topical baseline. NSFW-only: Wegmann +0.183 / StyleDistance +0.048.
+4. **Pass-A on NSFW smoke**: gemma4_2b extracts cleanly across all 5 NSFW registers when given a retry. ~30% single-attempt JSON-parse failure rate — sampling, not refusal (gemma4_2b is fully uncensored). Flagged for a Phase 8.b.x follow-up: extend `OllamaBeatExtractor.callWithRetry` to cover `noJSONObjectFound`.
+5. **D-decisions all locked**: D4 = Wegmann (empirical); D5 = per-beat retrieval default; D6 = beat-aligned chunks with sentence-window fallback; D7 = user-controllable "imitate content" toggle, default-off; D8 = "Scene Exemplars" rename + soft-merge per §5.1 Option C.
+
+#### Phase 5 retrieval migration (mid-arc)
+
+The §6.1 result motivated migrating Phase 5 retrieval from StyleDistance to Wegmann in the same session. `PythonStyleDistanceClient` → `PythonEmbeddingClient` (parameterized via `--model`); `embed_subprocess.py` deleted in favour of one `embed_st.py` that serves production + the spike. Existing References on disk are now stale (`ModelFingerprint.id` mismatch) — user re-ingests via the new Scene Exemplar pane (or the legacy References pane) to refresh `.index` sidecars under Wegmann.
+
+#### Phase 8.b — production code
+
+End-to-end "Write Scene From Template" now uses per-beat retrieval, beat-aware filtering, and an optional "imitate content" toggle:
+
+- **8.b.3** `BeatGeneration.buildBeatPrompt` accepts `styleExemplars: [StyleExemplar]` (default empty preserves Phase 7); renders `[STYLE EXEMPLARS]` via `StyleExemplarsLayer` immediately before `[INSTRUCTION]`.
+- **8.b.4** `BeatRetrievalQuery.build` (pure-data) produces per-beat queries from beat modality+function+summary, cast mapping, last-prior-sentence anchor. `TemplateGenerationCoordinator` accepts a `styleRetriever` closure called once per beat. `EditorViewController` wires `AppState.styleRetriever()` at instantiation.
+- **8.b.5** Closure signature extends to `(String, NarrativeMode?) -> [StyleExemplar]`; `RetrievalService.retrieve` gains soft-fallback semantics (zero same-modality matches → unfiltered top-K rather than empty result).
+- **8.b.6** Bible Workspace: new "Scene Exemplars" pane at top of entity list; `SceneExemplarEditor.tsx` mirrors ReferenceEditor + adds dual status pills (chunks/beats). Bridge gains `createSceneExemplar` / `patchSceneExemplar` / `deleteSceneExemplar` / `ingestSceneExemplar` intents. `ProjectSession.addSceneExemplar` writes a Reference + Template with shared UUID; `AppState.ingestSceneExemplar` fans out to both pipelines.
+- **8.b.7** Unified in-flight indicator: `AppState.ingestingReferenceIds` parallel to `extractingTemplateIds`; React derives `isIngesting` from EITHER set so the unified editor shows one "Ingesting…" state across the full fan-out.
+- **8.b.8** D4 soft-toggle: `BeatGeneration.buildBeatPrompt` accepts `imitateContent: Bool = false`. When true, the SYSTEM framing drops the strict "Do NOT reuse plot, characters, settings, or specific events" prohibition and uses positive-constraint phrasing instead. UI: checkbox on the Write-Scene-From-Template NSAlert.
+- **8.b.2 deferred to 8.c**: Pass-A on References at ingest. Chunk-level modality from `NarrativeModeClassifier` suffices for v1 beat-aware filtering; running Pass-A on every reference body is an optional accuracy improvement that can land if smoke surfaces a need.
+
+Tests at 1253/1253. ~30 commits in the arc.
+
+#### Smoke-test queue — live-app validation pending
+
+The §15.14 list (items 1-10) carries forward unchanged. Phase 8 adds:
+
+**Phase 8 smoke checklist:**
+11. **Add scene exemplar end-to-end.** Bible Workspace → "+ Add scene exemplar" at the top of the entity list → opens the new editor with `name`, `nsfw`, and `body` fields. Paste an NSFW exemplar (one of the `Tools/SceneExemplarSpike/fixtures/` pieces works well). Confirm status pills show "no chunks / no beats" before ingest.
+12. **Unified ingest.** Click "Ingest" → button flips to "Ingesting…" + disabled. The fan-out fires both `ingestReference` (Wegmann embed) and `extractTemplateScene` (Pass-A) on background queues. Watch debug log for `[scene-exemplar] ingest fan-out` + the two sub-pipeline lines. Expect ~30-90s end-to-end depending on writer/extractor latency.
+13. **Pass-A retry behaviour.** If Pass-A fails with `noJSONObjectFound` (~30% transient sampling per the §6.1 spike), the current extractor doesn't retry that error case — the user has to hit "Re-ingest" manually. Flag for a Phase 8.b.x follow-up: extend `OllamaBeatExtractor.callWithRetry` to cover JSON-parse failures.
+14. **Both sidecars present.** After ingest completes, confirm status pills flip to "N chunks ✓ / M beats ✓" in both the editor and the list row.
+15. **Generate from scene exemplar.** Editor at cursor → "Write Scene From Template…" → confirm the new exemplar appears in the template picker → pick it + type a cast → click Generate. Confirm per-beat retrieval fires (watch for `[STYLE EXEMPLARS]` blocks in the prompt via debug log or History tab) and that retrieved chunks come from THIS exemplar's reference side.
+16. **Imitate-content toggle.** Re-run #15 with the "Imitate content" checkbox **on**. Confirm output carries source vocabulary + content register (the strategic-anchor case: NSFW act patterns transfer). Cast names should still substitute correctly — the STRAP content-stripping in Pass-A is independent of the soft toggle.
+17. **Legacy Reference re-ingest under Wegmann.** Existing Phase 5 References ingested under StyleDistance are now stale (`ModelFingerprint.id` mismatch from the current Wegmann client). Open one in the legacy References pane → click "Re-ingest" → confirm it re-runs against Wegmann and the cosines update. Subsequent retrievals should be Wegmann-cosine.
+18. **Legacy orphan visibility.** A Reference with no matching Template UUID should appear in the new Scene Exemplars pane with "no beats" badge; clicking it opens the unified editor; clicking "Ingest" runs Pass-A to fill in the missing beats sidecar (and re-runs the embed pass — that's the unified ingest behaviour).
+
+#### Carried forward — open follow-ups
+
+- **`OllamaBeatExtractor` retry-on-JSON-parse**: one-line change to `callWithRetry`; flagged in #13 above + spike doc §2.2.
+- **Phase 5 → Wegmann re-ingest UX**: `RetrievalService` doesn't currently check `ModelFingerprint.id` at retrieval time, so stale StyleDistance vectors silently retrieve. Adding a fingerprint check + a "needs re-ingest" UI badge is Phase 8.c material.
+- **Pass-A on References (8.b.2)**: deferred. Could improve beat-aware retrieval if chunk-level modality from `NarrativeModeClassifier` turns out under-accurate in live smoke.
+- **Generation-grade probes (§6.2 / §6.4 / §6.5)**: deferred to 8.c. They validate locked decisions (D5, D7) and require live exercise of Phase 8.b code to be meaningful.
+
+**Architecturally complete (modulo smoke).** Phase 8.b's design — unified data model + per-beat retrieval + beat-aware filtering + soft-D4 toggle — is fully in production code. The live-app pass is the next gating step.
