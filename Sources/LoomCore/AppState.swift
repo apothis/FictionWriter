@@ -591,6 +591,24 @@ public final class AppState {
         }
     }
 
+    /// Phase 8.b.2 — unified scene-exemplar ingest. Fans out to both
+    /// reference ingest (chunks + Wegmann embed) AND template
+    /// extraction (Pass-A skeleton). The Reference and Template must
+    /// already exist on disk under the shared UUID (created by
+    /// `ProjectSession.addSceneExemplar`).
+    ///
+    /// Both sub-pipelines fire on independent background queues. Each
+    /// posts its own finish notification + a `didChangeNotification`,
+    /// so the workspace UI sees state advance as either side completes.
+    /// Partial-failure recovery is the §7.2 design contract: if one
+    /// sub-pass fails, the other can still land; user re-triggers
+    /// ingest to retry the failed side.
+    public func ingestSceneExemplar(id: UUID) {
+        DebugLog.shared.write("[scene-exemplar] ingest fan-out id=\(id)")
+        ingestReference(id: id)
+        extractTemplateScene(id: id)
+    }
+
     public func ingestReference(id: UUID) {
         guard let projectURL = currentSession.url else {
             DebugLog.shared.write("[ingest] skipped: in-memory session id=\(id)")

@@ -617,6 +617,83 @@ public final class ProjectSession {
         }
     }
 
+    // MARK: - Scene Exemplars (Phase 8.b.1)
+
+    /// Create a unified scene exemplar — a Reference + Template pair
+    /// that share a UUID + body. The new pane shows one card per
+    /// exemplar; the per-beat writer call retrieves chunks from the
+    /// Reference and uses the Template's Pass-A skeleton for shape.
+    /// Returns `nil` for in-memory sessions where storage is unavailable.
+    ///
+    /// The Reference and Template are saved separately to their
+    /// existing storage paths (references/<id>.md and templates/<id>.md).
+    /// Both await ingest — `AppState.ingestSceneExemplar(id:)` fans
+    /// out to `ingestReference` + `extractTemplateScene` with the
+    /// shared id.
+    @discardableResult
+    public func addSceneExemplar(name: String, body: String, nsfw: Bool) -> SceneExemplar? {
+        guard let url = self.url else {
+            DebugLog.shared.write("[scene-exemplar] add skipped: in-memory session")
+            return nil
+        }
+        let id = UUID()
+        let ref = ReferenceText(id: id, name: name, nsfw: nsfw, body: body)
+        let tmpl = TemplateScene(id: id, name: name, nsfw: nsfw, body: body)
+        do {
+            try ReferenceStorage.saveReference(ref, in: url)
+            try TemplateSceneStorage.saveTemplate(tmpl, in: url)
+            markChanged()
+            DebugLog.shared.write("[scene-exemplar] addSceneExemplar id=\(id) name=\(name) nsfw=\(nsfw)")
+            return SceneExemplar(
+                id: id, name: name, nsfw: nsfw,
+                hasIndex: false, hasBeats: false
+            )
+        } catch {
+            DebugLog.shared.write("[scene-exemplar] addSceneExemplar write failed: \(error)")
+            return nil
+        }
+    }
+
+    /// Enumerate the project's references + templates and project
+    /// onto the unified `SceneExemplar` list. Returns `[]` for
+    /// in-memory sessions. Items with matching UUIDs across both
+    /// storage surfaces merge into one card; legacy orphans appear
+    /// with the corresponding `hasIndex` / `hasBeats` flag false.
+    public func listSceneExemplars() -> [SceneExemplar] {
+        guard let url = self.url else { return [] }
+        // Gather raw References + Templates.
+        let refIds = (try? ReferenceStorage.listReferenceIds(in: url)) ?? []
+        let tmplIds = (try? TemplateSceneStorage.listTemplateIds(in: url)) ?? []
+        let refs: [ReferenceText] = refIds.compactMap {
+            try? ReferenceStorage.loadReference(id: $0, in: url)
+        }
+        let tmpls: [TemplateScene] = tmplIds.compactMap {
+            try? TemplateSceneStorage.loadTemplate(id: $0, in: url)
+        }
+        // Probe sidecars (caller of the composer treats id-sets as
+        // source of truth).
+        var indexedIds = Set<UUID>()
+        for id in refIds {
+            if ReferenceStorage.loadIndex(for: id, in: url) != nil {
+                indexedIds.insert(id)
+            }
+        }
+        var skeletonIds = Set<UUID>()
+        for id in tmplIds {
+            if TemplateSceneStorage.loadSkeleton(for: id, in: url) != nil {
+                skeletonIds.insert(id)
+            }
+        }
+        var exemplars = SceneExemplarComposer.merge(
+            references: refs,
+            templates: tmpls,
+            indexedReferenceIds: indexedIds,
+            skeletonTemplateIds: skeletonIds
+        )
+        exemplars.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return exemplars
+    }
+
     /// Persist the given reference text to disk and post the change
     /// notification. The body lives in the `.md` body via
     /// `ReferenceFile` encoding; the metadata frontmatter carries
