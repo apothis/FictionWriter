@@ -29,6 +29,14 @@ public final class AppState {
     /// persisted, cleared on app relaunch.
     public private(set) var extractingTemplateIds: Set<UUID> = []
 
+    /// Phase 8.b.7 — References whose chunk+embed pipeline is
+    /// currently in flight. Mutated by `ingestReference`. The Bible
+    /// Workspace bridge reads this on every snapshot push so the
+    /// React UI can show "Ingesting…" on the reference editor + the
+    /// unified Scene Exemplar editor. Transient — never persisted,
+    /// cleared on app relaunch.
+    public private(set) var ingestingReferenceIds: Set<UUID> = []
+
     /// Phase 4 #7 sub-task 2 — debounced post-scene knowledge-ledger
     /// side-call coordinator. Constructed once at app init; the
     /// extractorProvider closure consults `settings.extractorServer()`
@@ -619,6 +627,19 @@ public final class AppState {
             DebugLog.shared.write("[ingest] skipped: no default writer server configured id=\(id)")
             return
         }
+        // Phase 8.b.7 — de-dupe in-flight + mark for the React UI.
+        // Same pattern extractTemplateScene uses: insert before kicking
+        // off the async pipeline, re-push a snapshot so the editor's
+        // Ingest button flips to "Ingesting…" immediately.
+        guard !ingestingReferenceIds.contains(id) else {
+            DebugLog.shared.write("[ingest] ignored: already in flight id=\(id)")
+            return
+        }
+        ingestingReferenceIds.insert(id)
+        NotificationCenter.default.post(
+            name: ProjectSession.didChangeNotification,
+            object: currentSession
+        )
         let modalityLLM = KoboldNarrativeModeClassifier.makeClosure(baseURL: profile.baseURL)
         let factory = self.embeddingClientFactory
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -641,6 +662,7 @@ public final class AppState {
             }
             DispatchQueue.main.async {
                 guard let self = self else { return }
+                self.ingestingReferenceIds.remove(id)
                 var info: [AnyHashable: Any] = ["referenceId": id]
                 if let thrown = thrown { info["error"] = thrown }
                 NotificationCenter.default.post(

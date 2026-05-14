@@ -28,6 +28,8 @@ interface Props {
   onBack: () => void;
   onDelete: () => void;
   onIngest: () => void;
+  // Phase 8.b.7 — true while the embed pipeline is running.
+  isIngesting?: boolean;
 }
 
 export function ReferenceEditor({
@@ -36,6 +38,7 @@ export function ReferenceEditor({
   onBack,
   onDelete,
   onIngest,
+  isIngesting = false,
 }: Props) {
   const [draft, setDraft] = useState<SnapshotReference>(reference);
 
@@ -83,8 +86,12 @@ export function ReferenceEditor({
         <span className="ml-auto text-[10px] uppercase tracking-wider text-loom-fg-tertiary">
           Edits autosave
         </span>
-        <Button variant="ghost" onClick={onIngest}>
-          {chunkCount == null ? "Ingest" : "Re-ingest"}
+        <Button variant="ghost" onClick={onIngest} disabled={isIngesting}>
+          {isIngesting
+            ? "Ingesting…"
+            : chunkCount == null
+              ? "Ingest"
+              : "Re-ingest"}
         </Button>
         <Button variant="destructive" onClick={onDelete}>
           Delete reference

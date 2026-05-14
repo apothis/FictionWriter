@@ -26,6 +26,11 @@ interface Props {
   onBack: () => void;
   onDelete: () => void;
   onIngest: () => void;
+  // Phase 8.b.7 — true while EITHER sub-pipeline (chunk+embed or
+  // Pass-A extraction) is in flight for this exemplar's UUID. The
+  // button flips to "Ingesting…" + disabled; the snapshot push on
+  // completion clears it.
+  isIngesting?: boolean;
 }
 
 export function SceneExemplarEditor({
@@ -34,6 +39,7 @@ export function SceneExemplarEditor({
   onBack,
   onDelete,
   onIngest,
+  isIngesting = false,
 }: Props) {
   const [draft, setDraft] = useState<SnapshotSceneExemplar>(exemplar);
 
@@ -67,8 +73,11 @@ export function SceneExemplarEditor({
     exemplar.beatCount == null
       ? "no beats"
       : `${exemplar.beatCount} beat${exemplar.beatCount === 1 ? "" : "s"}`;
-  const ingestButtonLabel =
-    exemplar.hasIndex && exemplar.hasBeats ? "Re-ingest" : "Ingest";
+  const ingestButtonLabel = isIngesting
+    ? "Ingesting…"
+    : exemplar.hasIndex && exemplar.hasBeats
+      ? "Re-ingest"
+      : "Ingest";
 
   return (
     <div className="flex h-full flex-col">
@@ -82,7 +91,11 @@ export function SceneExemplarEditor({
         <span className="ml-auto text-[10px] uppercase tracking-wider text-loom-fg-tertiary">
           Edits autosave
         </span>
-        <Button variant="ghost" onClick={onIngest}>
+        <Button
+          variant="ghost"
+          onClick={onIngest}
+          disabled={isIngesting}
+        >
           {ingestButtonLabel}
         </Button>
         <Button variant="destructive" onClick={onDelete}>

@@ -194,6 +194,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             sceneExemplars: session.listSceneExemplarSnapshots(),
             isProjectOnDisk: session.url != nil,
             extractingTemplateIds: Array(appState.extractingTemplateIds),
+            ingestingReferenceIds: Array(appState.ingestingReferenceIds),
             suggestionsQueue: appState.ledgerSuggestionsQueue
         )
         do {

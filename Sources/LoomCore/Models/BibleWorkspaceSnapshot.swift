@@ -51,6 +51,12 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     /// Encoded as a JSON array of uppercase UUID strings so the JS
     /// side can `Array.includes(id)` against `template.id` directly.
     public let extractingTemplateIds: [UUID]
+    /// Phase 8.b.7 — References with a chunk+embed pipeline currently
+    /// in flight. Parallel to `extractingTemplateIds`. The unified
+    /// Scene Exemplar editor reads BOTH lists and flips its
+    /// "Ingest" button to "Ingesting…" when its id appears in
+    /// either (one ingest action fans out to both).
+    public let ingestingReferenceIds: [UUID]
     /// Whether the underlying project is persisted on disk. False for
     /// "Untitled" in-memory sessions where `ProjectSession.url` is nil.
     /// References + TemplateScenes are file-system entities; their
@@ -73,7 +79,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         templateScenes: [SnapshotTemplateScene] = [],
         sceneExemplars: [SnapshotSceneExemplar] = [],
         isProjectOnDisk: Bool = true,
-        extractingTemplateIds: [UUID] = []
+        extractingTemplateIds: [UUID] = [],
+        ingestingReferenceIds: [UUID] = []
     ) {
         self.projectTitle = projectTitle
         self.characters = characters
@@ -85,12 +92,13 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.sceneExemplars = sceneExemplars
         self.isProjectOnDisk = isProjectOnDisk
         self.extractingTemplateIds = extractingTemplateIds
+        self.ingestingReferenceIds = ingestingReferenceIds
     }
 
     private enum CodingKeys: String, CodingKey {
         case projectTitle, characters, lorebook, scenes, suggestions
         case references, templateScenes, sceneExemplars, isProjectOnDisk
-        case extractingTemplateIds
+        case extractingTemplateIds, ingestingReferenceIds
     }
 
     public init(from decoder: Decoder) throws {
@@ -108,6 +116,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         // JS side can do `Array.includes(template.id)` directly.
         let idStrings = try c.decodeIfPresent([String].self, forKey: .extractingTemplateIds) ?? []
         self.extractingTemplateIds = idStrings.compactMap(UUID.init(uuidString:))
+        let ingestStrings = try c.decodeIfPresent([String].self, forKey: .ingestingReferenceIds) ?? []
+        self.ingestingReferenceIds = ingestStrings.compactMap(UUID.init(uuidString:))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -124,6 +134,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         // Emit uppercase UUID strings — UUID.uuidString is uppercase
         // by default, matching the rest of the wire contract.
         try c.encode(extractingTemplateIds.map(\.uuidString), forKey: .extractingTemplateIds)
+        try c.encode(ingestingReferenceIds.map(\.uuidString), forKey: .ingestingReferenceIds)
     }
 
     /// Builds a snapshot from the current `ProjectSession` state.
@@ -141,6 +152,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         sceneExemplars: [SnapshotSceneExemplar] = [],
         isProjectOnDisk: Bool = true,
         extractingTemplateIds: [UUID] = [],
+        ingestingReferenceIds: [UUID] = [],
         suggestionsQueue: LedgerSuggestionsQueue
     ) -> BibleWorkspaceSnapshot {
         let sceneSummaries: [SceneSummary] = project.manuscript.flatSceneIds.compactMap { id in
@@ -170,7 +182,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             templateScenes: templateScenes,
             sceneExemplars: sceneExemplars,
             isProjectOnDisk: isProjectOnDisk,
-            extractingTemplateIds: extractingTemplateIds
+            extractingTemplateIds: extractingTemplateIds,
+            ingestingReferenceIds: ingestingReferenceIds
         )
     }
 }

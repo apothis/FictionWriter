@@ -90,6 +90,9 @@ export function App() {
   if (selection?.kind === "reference") {
     const reference = snapshot.references.find((r) => r.id === selection.id);
     if (!reference) return renderList();
+    const isIngesting = (snapshot.ingestingReferenceIds ?? []).includes(
+      reference.id,
+    );
     return (
       <ReferenceEditor
         reference={reference}
@@ -104,6 +107,7 @@ export function App() {
         onIngest={() =>
           postIntent({ kind: "ingestReference", id: reference.id })
         }
+        isIngesting={isIngesting}
       />
     );
   }
@@ -138,6 +142,12 @@ export function App() {
       (e) => e.id === selection.id,
     );
     if (!exemplar) return renderList();
+    // Phase 8.b.7 — in-flight is true while EITHER sub-pipeline is
+    // pending for the shared UUID. One fan-out ingest action triggers
+    // both sets simultaneously; the UI surfaces one unified state.
+    const isIngesting =
+      (snapshot.extractingTemplateIds ?? []).includes(exemplar.id) ||
+      (snapshot.ingestingReferenceIds ?? []).includes(exemplar.id);
     return (
       <SceneExemplarEditor
         exemplar={exemplar}
@@ -152,6 +162,7 @@ export function App() {
         onIngest={() =>
           postIntent({ kind: "ingestSceneExemplar", id: exemplar.id })
         }
+        isIngesting={isIngesting}
       />
     );
   }

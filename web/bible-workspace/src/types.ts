@@ -146,6 +146,11 @@ export interface BibleWorkspaceSnapshot {
   // its Extract button to "Extracting…" when its id appears here.
   // Optional for legacy-payload tolerance — default to [].
   extractingTemplateIds?: string[];
+  // Phase 8.b.7 — References whose chunk+embed pipeline is in flight.
+  // Same wire format + semantics as extractingTemplateIds. The
+  // unified Scene Exemplar editor reads BOTH and flips its Ingest
+  // button to "Ingesting…" when its id appears in either.
+  ingestingReferenceIds?: string[];
 }
 
 // Mirrors CharacterPatch.swift — every field optional. The React
