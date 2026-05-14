@@ -9,6 +9,7 @@
 > - [`LOOM_RAG_SPIKE.md`](LOOM_RAG_SPIKE.md) — Phase 5 retrieval pipeline empirical findings (StyleDistance vs. mxbai / bge embedders).
 > - [`LOOM_NSFW.md`](LOOM_NSFW.md) — strategic anchor; the user's primary motivating use case is NSFW scene generation where matching explicit register + content patterns is critical.
 > - [`LOOM_SCENE_TEMPLATE_SPIKE.md`](LOOM_SCENE_TEMPLATE_SPIKE.md) — empirical findings on Phase 7 voice-descriptor extraction, STRAP stripping, beat-segmentation reliability.
+> - [`LOOM_SCENE_EXEMPLAR_RESEARCH.md`](LOOM_SCENE_EXEMPLAR_RESEARCH.md) — Phase 8.a §6.6 prior-art + embedder audit (landed 2026-05-14). Key findings: §6.1 candidate set narrowed (StyleDistance + iBERT + one retrieval baseline); NSFW exclusion in StyleDistance training corpus is structurally confirmed via C4 LDNOOBW filter; unified-exemplar market gap survives.
 >
 > **Scope.** Identify the gap, propose the unified data shape, enumerate the design choices that need empirical resolution before lock, lay out a spike (Phase 8.a) and production (Phase 8.b) plan, and specify the test surface up front so the spike outputs map cleanly into TDD-driven implementation work.
 >
@@ -186,7 +187,9 @@ Each of these should be resolved by a focused empirical probe before Phase 8.b l
 
 ### 6.1 Is StyleDistance the right embedder for NSFW register matching?
 
-**Hypothesis under test.** StyleDistance is trained for style similarity in general fiction (per [Patel et al. 2024](https://arxiv.org/abs/2403.05841)); its training distribution may underrepresent explicit/NSFW prose, so embedding cosine-similarity between two explicit passages may collapse toward "all explicit content looks alike" — losing the discrimination we need for register matching.
+**Hypothesis under test.** StyleDistance is trained for style similarity in general fiction (per [Patel et al., NAACL 2025](https://arxiv.org/abs/2410.12757)); its training distribution underrepresents explicit/NSFW prose, so embedding cosine-similarity between two explicit passages may collapse toward "all explicit content looks alike" — losing the discrimination we need for register matching.
+
+> **Post-audit note (2026-05-14, see [`LOOM_SCENE_EXEMPLAR_RESEARCH.md`](LOOM_SCENE_EXEMPLAR_RESEARCH.md)).** The hypothesis is structurally near-certain rather than merely plausible: StyleDistance's training set (SynthSTEL) is built from C4 sentences paraphrased by GPT-4, and C4 applies the LDNOOBW blocklist (whole pages deleted on any explicit term). The §6.1 candidate set below is also revised: of the six original candidates, only StyleDistance is style-trained — the other five (mxbai, bge, E5-mistral, Voyage-3, Linq) are *retrieval/topical* embedders. The audit recommends narrowing to **StyleDistance + iBERT (EACL 2026, arXiv:2510.09882, +8 STEL points) + one retrieval baseline (mxbai-embed-large)**.
 
 **Probe.** Hand-curate 6–10 NSFW passages spanning register axes:
 - Clinical (medical/textbook tone)
@@ -244,17 +247,15 @@ Score: voice fidelity (1–5) + content-pattern overlap (lexical similarity betw
 
 Score voice fidelity + content-pattern overlap. If (B) ≥ (A): drop full body. If (C) > (B) but (B) ≥ (A): keep retrieval; full body becomes opt-in (could be useful for very short exemplars).
 
-### 6.6 Pre-existing-art audit
+### 6.6 Pre-existing-art audit — LANDED 2026-05-14
 
-Before any code, an explicit research-agent pass against the literature + competitor space for the unified concept. Recap the Phase 7 §3.2 market gap: no current tool separates "shape" from "voice" when imitating a scene. Phase 8 unifies them — is there a tool/paper since the Phase 7 audit (2025-09) that solves this differently?
+**Deliverable:** [`LOOM_SCENE_EXEMPLAR_RESEARCH.md`](LOOM_SCENE_EXEMPLAR_RESEARCH.md). ~1900 words, 19 numbered sources.
 
-Specific search terms:
-- "scene-level conditioning" + "fiction LLM"
-- "few-shot exemplar generation" + "long-form"
-- "voice transfer" + "retrieval-augmented generation"
-- Recent additions to Sudowrite / NovelCrafter / NovelAI in 2025-Q4 + 2026-Q1.
+**Conclusions in two lines:**
+- **No prior-art surfaced that obsoletes Phase 8.** Sudowrite's Style Examples + scene-bullet objectives (Story Engine 3.0, 2026) is closer than the Phase 7 audit captured, but it's still user-authored structure, not extracted-from-prose. Market gap survives.
+- **§6.1 candidate set is partially miscalibrated; revised in the audit conclusions.** See post-audit note in §6.1 above and the audit's "Recommendations" section.
 
-If a substantially-different prior-art approach surfaces (e.g. a "scene-conditioned" embedding model trained for fiction), the Phase 8 design may pivot. Without this audit we're flying blind on the §6.1 + §6.3 decisions.
+The original §6.6 search-term brief is preserved in the audit doc. Future re-audits should cite this version as the baseline.
 
 ---
 
@@ -338,8 +339,8 @@ Driven manually by the user (per existing smoke-test pattern, e.g. HANDOFF.md §
 **Goal:** answer §6.1–6.5 with empirical data + an updated literature audit (§6.6). No production code changes; the spike runner is additive.
 
 **Sub-rows:**
-- 8.a.1 — Build the fixture set (8-10 NSFW + 8-10 SFW passages spanning the register axes in §6.1).
-- 8.a.2 — §6.6 literature + competitor audit. Web-search pass with the §6.6 search terms, plus a focused look at any 2025-Q4–2026-Q1 advances in the embedder space. Deliverable: a 1–2 page summary appended to this doc.
+- 8.a.1 — **LANDED 2026-05-14.** Fixture set at `Tools/SceneExemplarSpike/fixtures/` — 10 NSFW × 5 register axes (clinical / euphemistic / explicit-direct / explicit-poetic / explicit-mundane, 2 fixtures per axis) + 10 SFW × 5 matched style axes (clinical-procedural / baroque-Victorian / clipped-Hemingway / lyrical-McCarthy / mundane-workmanlike, 2 fixtures per axis). Each fixture is ~400-440 words of original prose with YAML frontmatter (`fixture_id`, `title`, `nsfw`, `register`, `style_axis`, `source`, `word_count`, `notes`). Total 8570 words of original prose; all hand-authored, no third-party source attribution required.
+- 8.a.2 — **LANDED 2026-05-14.** §6.6 literature + competitor audit at [`LOOM_SCENE_EXEMPLAR_RESEARCH.md`](LOOM_SCENE_EXEMPLAR_RESEARCH.md). 1900 words, 19 cited 2024–2026 sources. Headline findings: §6.1 hypothesis structurally near-certain (StyleDistance trained on C4-with-LDNOOBW + GPT-4 paraphrases); §6.1 candidate set should narrow to **StyleDistance + iBERT (EACL 2026) + one retrieval baseline (mxbai-embed-large)**; unified-exemplar market gap survives the 2025-Q4 → 2026-Q1 commercial landscape; StyleDistance arXiv ID corrected (2410.12757, was 2403.05841).
 - 8.a.3 — §6.1 embedder discrimination probe. Spike runner subcommand. Deliverable: pairwise cosine matrix + ranking + recommendation.
 - 8.a.4 — §6.3 chunking strategy probe. Spike runner subcommand. Deliverable: per-strategy retrieval recall + qualitative chunk inspection.
 - 8.a.5 — §6.2 + §6.5 generation-quality probes. Spike runner subcommand that drives end-to-end generation in 3 modes; hand-grade rubric.
@@ -388,7 +389,8 @@ Driven manually by the user (per existing smoke-test pattern, e.g. HANDOFF.md §
 
 ## 10. References (to chase during §6.6 audit)
 
-- **Patel et al., StyleDistance (2024)** — [arXiv:2403.05841](https://arxiv.org/abs/2403.05841). Training data + reported domain coverage. Need to confirm whether NSFW prose is in the training set; if not, that's evidence for the §6.1 hypothesis.
+- **Patel et al., StyleDistance (NAACL 2025)** — [arXiv:2410.12757](https://arxiv.org/abs/2410.12757). The §6.6 audit confirmed: SynthSTEL is built from C4 (which applies the LDNOOBW filter, deleting whole pages on any explicit term) + GPT-4 paraphrases. NSFW exclusion is structurally certain. Earlier draft of the design doc cited arXiv:2403.05841 — that was the wrong arXiv ID for this line of work.
+- **Anand et al., iBERT (EACL 2026)** — [arXiv:2510.09882](https://arxiv.org/abs/2510.09882). Sparse-sense decomposition over RoBERTa-base; +8 points on STEL style benchmark over SBERT-style baselines. Identified by the §6.6 audit as the right addition to the §6.1 probe.
 - **DRAMATRON (Mirowski et al., CHI 2023)** — [arXiv:2209.14958](https://arxiv.org/abs/2209.14958). Reference point from Phase 7 §3.2 audit; check for follow-on work in 2024-2025.
 - **Sudowrite "Match My Style"** — current product. Phase 7 audit noted 2000-word cap; check for changes.
 - **NovelCrafter "Scene Beats"** — current product. Re-audit for any exemplar-based feature additions since 2025-Q3.
