@@ -98,7 +98,7 @@ func phase5AppStateRetrievalWiringTests() -> TestSuite {
         let rec = Recorder()
         let app = freshAppState(recorder: rec)
         let retriever = app.styleRetriever()
-        try expectEqual(retriever("any query"), [])
+        try expectEqual(retriever("any query", nil), [])
         try expectEqual(rec.clientsByURL.count, 0)
     }
 
@@ -119,7 +119,7 @@ func phase5AppStateRetrievalWiringTests() -> TestSuite {
         // Closure delegates into the service: returns at least one
         // exemplar from the ingested reference.
         let retriever = app.styleRetriever()
-        let results = retriever("She walked into the kitchen.")
+        let results = retriever("She walked into the kitchen.", nil)
         try expectTrue(results.count >= 1)
         try expectEqual(results.first?.referenceName, "ref-1")
         // And the injected stub got called (D path used).
@@ -165,7 +165,7 @@ func phase5AppStateRetrievalWiringTests() -> TestSuite {
 
         // No references yet → retrieval returns empty (graceful).
         let retriever = app.styleRetriever()
-        try expectEqual(retriever("anything"), [])
+        try expectEqual(retriever("anything", nil), [])
     }
 
     return s

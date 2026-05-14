@@ -92,25 +92,41 @@ public final class RetrievalService {
             let chunkIndex: Int
             let chunk: ReferenceTextIndex.Chunk
         }
-        var candidates: [Candidate] = []
-        for refId in allIds {
-            guard let idx = ReferenceStorage.loadIndex(for: refId, in: projectURL),
-                  let ref = try? ReferenceStorage.loadReference(id: refId, in: projectURL)
-            else { continue }
-            for (ci, chunk) in idx.chunks.enumerated() {
-                if let f = modalityFilter, f != .mixed {
-                    guard let modalityRaw = chunk.modality,
-                          NarrativeMode(rawValue: modalityRaw) == f
-                    else { continue }
+        // Phase 8.b.5 — modality filter is a soft preference: try
+        // same-modality first; if zero chunks match, fall back to
+        // unfiltered. The strict-filter case still wins when at least
+        // one match exists (the active modality remains the dominant
+        // signal). `.mixed` is treated as a wildcard per the
+        // LOOM_NARRATIVE_MODE_SPIKE §2 schema decision.
+        func gatherCandidates(applyingFilter useFilter: Bool) -> [Candidate] {
+            var out: [Candidate] = []
+            for refId in allIds {
+                guard let idx = ReferenceStorage.loadIndex(for: refId, in: projectURL),
+                      let ref = try? ReferenceStorage.loadReference(id: refId, in: projectURL)
+                else { continue }
+                for (ci, chunk) in idx.chunks.enumerated() {
+                    if useFilter, let f = modalityFilter, f != .mixed {
+                        guard let modalityRaw = chunk.modality,
+                              NarrativeMode(rawValue: modalityRaw) == f
+                        else { continue }
+                    }
+                    out.append(Candidate(
+                        opaqueId: out.count,
+                        referenceId: refId,
+                        referenceName: ref.name,
+                        chunkIndex: ci,
+                        chunk: chunk
+                    ))
                 }
-                candidates.append(Candidate(
-                    opaqueId: candidates.count,
-                    referenceId: refId,
-                    referenceName: ref.name,
-                    chunkIndex: ci,
-                    chunk: chunk
-                ))
             }
+            return out
+        }
+        var candidates = gatherCandidates(applyingFilter: true)
+        if candidates.isEmpty, let f = modalityFilter, f != .mixed {
+            // Fallback: zero chunks match the preferred modality. Use
+            // unfiltered candidates so the writer still gets style cues
+            // (a less-targeted match beats no match).
+            candidates = gatherCandidates(applyingFilter: false)
         }
         guard !candidates.isEmpty else { return [] }
 

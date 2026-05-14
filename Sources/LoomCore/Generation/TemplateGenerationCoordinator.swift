@@ -40,7 +40,7 @@ public final class TemplateGenerationCoordinator {
     /// behaviour preserved). Wired by AppState at project-open to a
     /// closure over the project's `RetrievalService` (the same shape
     /// as `GenerationCoordinator.styleRetriever`).
-    public let styleRetriever: ((_ query: String) -> [StyleExemplar])?
+    public let styleRetriever: ((_ query: String, _ modality: NarrativeMode?) -> [StyleExemplar])?
     private let logStore: GenerationLogStore
 
     /// Posted when a template generation starts. Object is `self`.
@@ -95,7 +95,7 @@ public final class TemplateGenerationCoordinator {
         writerResolver: @escaping (UUID?) -> KoboldGenerating,
         appDefaultProfileIdProvider: @escaping () -> UUID? = { nil },
         logStore: GenerationLogStore = GenerationLogStore(),
-        styleRetriever: ((_ query: String) -> [StyleExemplar])? = nil
+        styleRetriever: ((_ query: String, _ modality: NarrativeMode?) -> [StyleExemplar])? = nil
     ) {
         self.session = session
         self.writerResolver = writerResolver
@@ -204,6 +204,11 @@ public final class TemplateGenerationCoordinator {
         // Phase 8.b.4 — per-beat retrieval. Build the query, ask the
         // retriever (if wired), pass the result into buildBeatPrompt.
         // nil retriever → empty exemplars → no [STYLE EXEMPLARS] block.
+        //
+        // Phase 8.b.5 — beat-aware filtering: pass the current beat's
+        // modality so the RetrievalService can prefer same-modality
+        // chunks. `.mixed` is treated as a no-op upstream — see
+        // RetrievalService.retrieve.
         let styleExemplars: [StyleExemplar]
         if let retrieve = styleRetriever {
             let query = BeatRetrievalQuery.build(
@@ -211,7 +216,7 @@ public final class TemplateGenerationCoordinator {
                 castMapping: pendingCastMapping,
                 priorBeatsProse: insertedText
             )
-            styleExemplars = retrieve(query)
+            styleExemplars = retrieve(query, beat.modality)
         } else {
             styleExemplars = []
         }

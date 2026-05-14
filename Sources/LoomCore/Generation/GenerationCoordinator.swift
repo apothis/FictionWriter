@@ -66,13 +66,13 @@ public final class GenerationCoordinator {
     /// are ~0.1s. Acceptable for ingest-and-generate workflows; not
     /// for interactive token-by-token retrieval, which is out of
     /// scope for Phase 5 v1.
-    public var styleRetriever: ((_ query: String) -> [StyleExemplar])?
+    public var styleRetriever: ((_ query: String, _ modality: NarrativeMode?) -> [StyleExemplar])?
 
     public init(
         session: ProjectSession,
         registry: KoboldClientRegistry,
         logStore: GenerationLogStore = GenerationLogStore(),
-        styleRetriever: ((_ query: String) -> [StyleExemplar])? = nil
+        styleRetriever: ((_ query: String, _ modality: NarrativeMode?) -> [StyleExemplar])? = nil
     ) {
         self.session = session
         self.registry = registry
@@ -131,7 +131,9 @@ public final class GenerationCoordinator {
            let query = RetrievalQueryBuilder.queryText(for: preliminaryContext),
            !query.isEmpty {
             let retrievalStart = Date()
-            styleExemplars = retriever(query)
+            // GenerationCoordinator covers Continue/Expand — no
+            // per-beat modality concept, so the modality filter is nil.
+            styleExemplars = retriever(query, nil)
             let retrievalMs = Int(Date().timeIntervalSince(retrievalStart) * 1000)
             DebugLog.shared.write(
                 "[gen] style-retrieval: \(styleExemplars.count) exemplars (\(retrievalMs)ms)"

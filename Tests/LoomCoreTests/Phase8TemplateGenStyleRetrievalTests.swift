@@ -95,11 +95,13 @@ func phase8TemplateGenStyleRetrievalTests() -> TestSuite {
         let writer = CapturingWriter([.success("beat0."), .success("beat1.")])
 
         var capturedQueries: [String] = []
+        var capturedModalities: [NarrativeMode?] = []
         let coord = TemplateGenerationCoordinator(
             session: session,
             writerResolver: { _ in writer },
-            styleRetriever: { query in
+            styleRetriever: { query, modality in
                 capturedQueries.append(query)
+                capturedModalities.append(modality)
                 // Return a beat-index-specific exemplar so the test
                 // can verify per-beat invocation, not just per-scene.
                 let n = capturedQueries.count
@@ -115,6 +117,9 @@ func phase8TemplateGenStyleRetrievalTests() -> TestSuite {
         try expectTrue(capturedQueries[0].contains("does beat 0"))
         try expectTrue(capturedQueries[0].contains("Maya"))
         try expectTrue(capturedQueries[1].contains("does beat 1"))
+        // Phase 8.b.5 — modality flows through per beat. Both beats in
+        // the bootstrap are .action.
+        try expectEqual(capturedModalities, [.action, .action])
 
         // Each prompt includes the [STYLE EXEMPLARS] block with the
         // beat-specific retrieved chunk.
@@ -135,7 +140,7 @@ func phase8TemplateGenStyleRetrievalTests() -> TestSuite {
         let writer = CapturingWriter([.success("beat0.")])
         let coord = TemplateGenerationCoordinator(
             session: session, writerResolver: { _ in writer },
-            styleRetriever: { _ in [] }
+            styleRetriever: { _, _ in [] }
         )
         coord.start(templateId: templateId, castMapping: "Maya", cursorOffset: 0)
         writer.flush()

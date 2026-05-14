@@ -165,6 +165,7 @@ let suites: [TestSuite] = [
     phase8BeatRetrievalQueryTests(),
     phase8TemplateGenStyleRetrievalTests(),
     phase8SoftD4PromptTests(),
+    phase8RetrievalModalityFallbackTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

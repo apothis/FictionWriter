@@ -452,10 +452,10 @@ public final class AppState {
     /// — wired once at editor construction — keeps working across
     /// project replacement. Empty `[]` is the no-op result for
     /// in-memory sessions and for graceful retrieval failures.
-    public func styleRetriever() -> (String) -> [StyleExemplar] {
-        return { [weak self] query in
+    public func styleRetriever() -> (String, NarrativeMode?) -> [StyleExemplar] {
+        return { [weak self] query, modality in
             guard let self = self, let svc = self.currentRetrievalService else { return [] }
-            return (try? svc.retrieve(query: query, topK: 3)) ?? []
+            return (try? svc.retrieve(query: query, modalityFilter: modality, topK: 3)) ?? []
         }
     }
 
