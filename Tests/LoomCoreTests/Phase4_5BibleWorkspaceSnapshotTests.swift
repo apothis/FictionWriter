@@ -294,6 +294,68 @@ func phase4_5BibleWorkspaceSnapshotTests() -> TestSuite {
         try expectFalse(decoded.isProjectOnDisk)
     }
 
+    // MARK: - extractingTemplateIds discriminator
+    //
+    // In-flight extraction state is transient — not persisted to disk
+    // — but the React UI needs it to show "Extracting…" on the
+    // template editor's button. Ship it through the snapshot so the
+    // bridge stays a single channel.
+
+    s.test("BibleWorkspaceSnapshot.build defaults extractingTemplateIds to empty") {
+        let snap = BibleWorkspaceSnapshot.build(
+            project: Project(title: "X"),
+            scenes: [:],
+            suggestionsQueue: LedgerSuggestionsQueue()
+        )
+        try expectEqual(snap.extractingTemplateIds, [])
+    }
+
+    s.test("BibleWorkspaceSnapshot.build threads extractingTemplateIds through") {
+        let id = UUID()
+        let snap = BibleWorkspaceSnapshot.build(
+            project: Project(title: "X"),
+            scenes: [:],
+            extractingTemplateIds: [id],
+            suggestionsQueue: LedgerSuggestionsQueue()
+        )
+        try expectEqual(snap.extractingTemplateIds, [id])
+    }
+
+    s.test("BibleWorkspaceSnapshot encodes extractingTemplateIds as JSON strings for the JS bridge") {
+        let id = UUID()
+        let snap = BibleWorkspaceSnapshot(
+            projectTitle: "X",
+            characters: [], lorebook: [], scenes: [], suggestions: [],
+            extractingTemplateIds: [id]
+        )
+        let data = try JSONEncoder().encode(snap)
+        let json = String(data: data, encoding: .utf8) ?? ""
+        try expectTrue(json.contains("\"extractingTemplateIds\":["),
+            "expected extractingTemplateIds array in JSON; got: \(json)")
+        try expectTrue(json.contains("\"\(id.uuidString)\""),
+            "expected uppercase-UUID-string-encoded id; got: \(json)")
+    }
+
+    s.test("BibleWorkspaceSnapshot decodes legacy payloads without extractingTemplateIds (empty set)") {
+        let legacy = """
+        {
+          "projectTitle": "X",
+          "characters": [],
+          "lorebook": [],
+          "scenes": [],
+          "suggestions": [],
+          "references": [],
+          "templateScenes": [],
+          "isProjectOnDisk": true
+        }
+        """
+        let decoded = try JSONDecoder().decode(
+            BibleWorkspaceSnapshot.self,
+            from: legacy.data(using: .utf8)!
+        )
+        try expectEqual(decoded.extractingTemplateIds, [])
+    }
+
     s.test("BibleWorkspaceSnapshot decoding tolerates legacy payloads without isProjectOnDisk") {
         // Pre-existing on-the-wire snapshots (or future Swift callers
         // not yet wired through) shouldn't fail. Default = true since

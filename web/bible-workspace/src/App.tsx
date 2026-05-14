@@ -108,6 +108,9 @@ export function App() {
   if (selection?.kind === "template") {
     const template = snapshot.templateScenes.find((t) => t.id === selection.id);
     if (!template) return renderList();
+    const isExtracting = (snapshot.extractingTemplateIds ?? []).includes(
+      template.id,
+    );
     return (
       <TemplateSceneEditor
         template={template}
@@ -122,6 +125,7 @@ export function App() {
         onExtract={() =>
           postIntent({ kind: "extractTemplateScene", id: template.id })
         }
+        isExtracting={isExtracting}
       />
     );
   }

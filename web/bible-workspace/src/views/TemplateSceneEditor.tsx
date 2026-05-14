@@ -28,6 +28,10 @@ interface Props {
   onBack: () => void;
   onDelete: () => void;
   onExtract: () => void;
+  // True while Pass-A extraction is in flight on the Swift side.
+  // Surfaced through the workspace snapshot's
+  // `extractingTemplateIds`.
+  isExtracting: boolean;
 }
 
 export function TemplateSceneEditor({
@@ -36,6 +40,7 @@ export function TemplateSceneEditor({
   onBack,
   onDelete,
   onExtract,
+  isExtracting,
 }: Props) {
   const [draft, setDraft] = useState<SnapshotTemplateScene>(template);
 
@@ -59,10 +64,21 @@ export function TemplateSceneEditor({
     else if (field === "body") send({ body: value as string });
   }
 
-  const extractStateLabel =
-    draft.beatCount === null
+  // Read beatCount from `template` (server-current), not `draft`.
+  // Draft is synced only on id change so editable fields don't get
+  // clobbered mid-typing; server-supplied fields like beatCount need
+  // to track every snapshot push.
+  const beatCount = template.beatCount;
+  const extractStateLabel = isExtracting
+    ? "Extracting beats… (gemma4_2b, ~10–30s)"
+    : beatCount == null
       ? "Not yet extracted"
-      : `${draft.beatCount} beat${draft.beatCount === 1 ? "" : "s"} on disk`;
+      : `${beatCount} beat${beatCount === 1 ? "" : "s"} on disk`;
+  const extractButtonLabel = isExtracting
+    ? "Extracting…"
+    : beatCount == null
+      ? "Extract"
+      : "Re-extract";
 
   return (
     <div className="flex h-full flex-col">
@@ -76,8 +92,12 @@ export function TemplateSceneEditor({
         <span className="ml-auto text-[10px] uppercase tracking-wider text-loom-fg-tertiary">
           Edits autosave
         </span>
-        <Button variant="ghost" onClick={onExtract}>
-          {draft.beatCount === null ? "Extract" : "Re-extract"}
+        <Button
+          variant="ghost"
+          onClick={isExtracting ? undefined : onExtract}
+          disabled={isExtracting}
+        >
+          {extractButtonLabel}
         </Button>
         <Button variant="destructive" onClick={onDelete}>
           Delete template

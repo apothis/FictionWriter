@@ -61,10 +61,15 @@ export function ReferenceEditor({
     else if (field === "body") send({ body: value as string });
   }
 
+  // Read chunkCount from `reference` (server-current), not `draft` —
+  // draft only re-syncs on id change so server-updated fields like
+  // chunkCount would otherwise stay frozen until the editor closes
+  // and reopens. Same fix as TemplateSceneEditor.beatCount.
+  const chunkCount = reference.chunkCount;
   const ingestStateLabel =
-    draft.chunkCount === null
+    chunkCount == null
       ? "Not yet ingested"
-      : `${draft.chunkCount} chunk${draft.chunkCount === 1 ? "" : "s"} on disk`;
+      : `${chunkCount} chunk${chunkCount === 1 ? "" : "s"} on disk`;
 
   return (
     <div className="flex h-full flex-col">
@@ -79,7 +84,7 @@ export function ReferenceEditor({
           Edits autosave
         </span>
         <Button variant="ghost" onClick={onIngest}>
-          {draft.chunkCount === null ? "Ingest" : "Re-ingest"}
+          {chunkCount == null ? "Ingest" : "Re-ingest"}
         </Button>
         <Button variant="destructive" onClick={onDelete}>
           Delete reference

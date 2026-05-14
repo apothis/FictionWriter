@@ -32,6 +32,16 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     /// `ProjectSession.listTemplateSceneSnapshots()`. Mirrors the
     /// references slot pattern.
     public let templateScenes: [SnapshotTemplateScene]
+    /// Templates with a Pass-A beat extraction currently in flight.
+    /// Transient state (not persisted) — populated by
+    /// `BibleWorkspaceWindowController` from `AppState`'s in-flight
+    /// set on each snapshot push. The React UI uses it to flip the
+    /// template editor's button to "Extracting…" + disable while
+    /// the Ollama gemma4_2b call is pending.
+    ///
+    /// Encoded as a JSON array of uppercase UUID strings so the JS
+    /// side can `Array.includes(id)` against `template.id` directly.
+    public let extractingTemplateIds: [UUID]
     /// Whether the underlying project is persisted on disk. False for
     /// "Untitled" in-memory sessions where `ProjectSession.url` is nil.
     /// References + TemplateScenes are file-system entities; their
@@ -52,7 +62,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         suggestions: [PendingSuggestion],
         references: [SnapshotReference] = [],
         templateScenes: [SnapshotTemplateScene] = [],
-        isProjectOnDisk: Bool = true
+        isProjectOnDisk: Bool = true,
+        extractingTemplateIds: [UUID] = []
     ) {
         self.projectTitle = projectTitle
         self.characters = characters
@@ -62,11 +73,13 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.references = references
         self.templateScenes = templateScenes
         self.isProjectOnDisk = isProjectOnDisk
+        self.extractingTemplateIds = extractingTemplateIds
     }
 
     private enum CodingKeys: String, CodingKey {
         case projectTitle, characters, lorebook, scenes, suggestions
         case references, templateScenes, isProjectOnDisk
+        case extractingTemplateIds
     }
 
     public init(from decoder: Decoder) throws {
@@ -79,6 +92,25 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.references = try c.decodeIfPresent([SnapshotReference].self, forKey: .references) ?? []
         self.templateScenes = try c.decodeIfPresent([SnapshotTemplateScene].self, forKey: .templateScenes) ?? []
         self.isProjectOnDisk = try c.decodeIfPresent(Bool.self, forKey: .isProjectOnDisk) ?? true
+        // Wire format is `[String]` — uppercase UUID strings so the
+        // JS side can do `Array.includes(template.id)` directly.
+        let idStrings = try c.decodeIfPresent([String].self, forKey: .extractingTemplateIds) ?? []
+        self.extractingTemplateIds = idStrings.compactMap(UUID.init(uuidString:))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(projectTitle, forKey: .projectTitle)
+        try c.encode(characters, forKey: .characters)
+        try c.encode(lorebook, forKey: .lorebook)
+        try c.encode(scenes, forKey: .scenes)
+        try c.encode(suggestions, forKey: .suggestions)
+        try c.encode(references, forKey: .references)
+        try c.encode(templateScenes, forKey: .templateScenes)
+        try c.encode(isProjectOnDisk, forKey: .isProjectOnDisk)
+        // Emit uppercase UUID strings — UUID.uuidString is uppercase
+        // by default, matching the rest of the wire contract.
+        try c.encode(extractingTemplateIds.map(\.uuidString), forKey: .extractingTemplateIds)
     }
 
     /// Builds a snapshot from the current `ProjectSession` state.
@@ -94,6 +126,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         references: [SnapshotReference] = [],
         templateScenes: [SnapshotTemplateScene] = [],
         isProjectOnDisk: Bool = true,
+        extractingTemplateIds: [UUID] = [],
         suggestionsQueue: LedgerSuggestionsQueue
     ) -> BibleWorkspaceSnapshot {
         let sceneSummaries: [SceneSummary] = project.manuscript.flatSceneIds.compactMap { id in
@@ -121,7 +154,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             suggestions: pending,
             references: references,
             templateScenes: templateScenes,
-            isProjectOnDisk: isProjectOnDisk
+            isProjectOnDisk: isProjectOnDisk,
+            extractingTemplateIds: extractingTemplateIds
         )
     }
 }
@@ -148,6 +182,23 @@ public struct SnapshotTemplateScene: Codable, Equatable {
         self.body = scene.body
         self.beatCount = beatCount
     }
+
+    // Custom encode so a nil `beatCount` ships as JSON `null` rather
+    // than being omitted (Swift's default Codable uses
+    // `encodeIfPresent` for optionals). The React UI relies on
+    // strict `=== null` checks for the "no sidecar yet" state; an
+    // omitted key arrives as `undefined` and falls through to the
+    // "have count" branch (renders "undefined beats on disk" +
+    // "Re-extract" instead of "Not yet extracted" + "Extract").
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(nsfw, forKey: .nsfw)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(body, forKey: .body)
+        try c.encode(beatCount, forKey: .beatCount) // emits null when nil
+    }
 }
 
 /// Bridge-specific projection of `ReferenceText`. The `body` field
@@ -172,6 +223,19 @@ public struct SnapshotReference: Codable, Equatable {
         self.createdAt = ref.createdAt
         self.body = ref.body
         self.chunkCount = chunkCount
+    }
+
+    // Same explicit-null-on-nil contract as SnapshotTemplateScene
+    // — keeps the React UI's `chunkCount === null` check working
+    // for newly-created references.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(nsfw, forKey: .nsfw)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(body, forKey: .body)
+        try c.encode(chunkCount, forKey: .chunkCount)
     }
 }
 

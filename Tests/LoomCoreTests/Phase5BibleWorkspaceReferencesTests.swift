@@ -98,6 +98,30 @@ func phase5BibleWorkspaceReferencesTests() -> TestSuite {
         try expectEqual(snap.chunkCount, 7)
     }
 
+    // Bug: Swift's default Codable synthesis omits nil-Optional keys
+    // entirely (`encodeIfPresent` semantics). On the React side that
+    // arrives as `undefined`, not `null`, breaking the strict
+    // `chunkCount === null` UI checks — newly-created references show
+    // "undefined chunks on disk" + "Re-ingest" instead of
+    // "Not yet ingested" + "Ingest". The fix ships `null` explicitly.
+    s.test("SnapshotReference encodes chunkCount=nil as explicit JSON null") {
+        let ref = ReferenceText(id: UUID(), name: "ref", body: "")
+        let snap = SnapshotReference(from: ref, chunkCount: nil)
+        let data = try JSONEncoder().encode(snap)
+        let json = String(data: data, encoding: .utf8) ?? ""
+        try expectTrue(json.contains("\"chunkCount\":null"),
+            "expected explicit null for nil chunkCount; got: \(json)")
+    }
+
+    s.test("SnapshotTemplateScene encodes beatCount=nil as explicit JSON null") {
+        let template = TemplateScene(id: UUID(), name: "t", body: "")
+        let snap = SnapshotTemplateScene(from: template, beatCount: nil)
+        let data = try JSONEncoder().encode(snap)
+        let json = String(data: data, encoding: .utf8) ?? ""
+        try expectTrue(json.contains("\"beatCount\":null"),
+            "expected explicit null for nil beatCount; got: \(json)")
+    }
+
     // MARK: - BibleWorkspaceSnapshot.build
 
     s.test("BibleWorkspaceSnapshot.build includes references in stable order") {

@@ -122,6 +122,11 @@ export interface BibleWorkspaceSnapshot {
   // buttons when this is false. Optional in the type to tolerate
   // pre-field snapshots; readers should default to true.
   isProjectOnDisk?: boolean;
+  // Templates whose Pass-A extraction is currently in flight on the
+  // Swift side. Uppercase UUID strings. The template editor flips
+  // its Extract button to "Extracting…" when its id appears here.
+  // Optional for legacy-payload tolerance — default to [].
+  extractingTemplateIds?: string[];
 }
 
 // Mirrors CharacterPatch.swift — every field optional. The React

@@ -22,6 +22,13 @@ public final class AppState {
     public var lastProbedModelName: String?
     public var lastProbedMaxContext: Int?
 
+    /// Templates whose Pass-A beat extraction is currently in flight.
+    /// Mutated by `extractTemplateScene`. The Bible Workspace bridge
+    /// reads this on every snapshot push so the React UI can show
+    /// "Extracting…" on the template editor. Transient — never
+    /// persisted, cleared on app relaunch.
+    public private(set) var extractingTemplateIds: Set<UUID> = []
+
     /// Phase 4 #7 sub-task 2 — debounced post-scene knowledge-ledger
     /// side-call coordinator. Constructed once at app init; the
     /// extractorProvider closure consults `settings.extractorServer()`
@@ -533,6 +540,20 @@ public final class AppState {
             DebugLog.shared.write("[template] extract skipped: no extractor server configured id=\(id)")
             return
         }
+        // Reject re-entrancy. Double-clicking Extract while a run is
+        // in flight is a no-op; the UI also disables the button while
+        // the id is in this set.
+        guard !extractingTemplateIds.contains(id) else {
+            DebugLog.shared.write("[template] extract ignored: already in flight id=\(id)")
+            return
+        }
+        extractingTemplateIds.insert(id)
+        // Re-push a snapshot so the React UI flips to "Extracting…"
+        // immediately, before the async pipeline call returns.
+        NotificationCenter.default.post(
+            name: ProjectSession.didChangeNotification,
+            object: currentSession
+        )
         let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let client = OllamaClient(baseURL: profile.baseURL, model: model)
@@ -541,6 +562,7 @@ public final class AppState {
             pipeline.extractAndPersist(templateId: id) { result in
                 DispatchQueue.main.async {
                     guard let self = self else { return }
+                    self.extractingTemplateIds.remove(id)
                     var info: [AnyHashable: Any] = ["templateId": id]
                     switch result {
                     case .success(let skeleton):
