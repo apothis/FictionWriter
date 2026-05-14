@@ -5,6 +5,7 @@ Loom.app/
 DerivedData/
 *.xcodeproj/
 .DS_Store
+.claude/
 Tools/LedgerSpike/last-run/
 
 # Phase 5 RAG spike — venv + generated vectors are not committed.
