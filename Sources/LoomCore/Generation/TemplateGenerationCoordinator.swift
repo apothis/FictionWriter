@@ -84,6 +84,10 @@ public final class TemplateGenerationCoordinator {
     /// preserves Phase 7 strict-prompt behaviour. Flipped on by the
     /// Write-From-Template menu's "imitate content" affordance.
     private var pendingImitateContent: Bool = false
+    /// Phase 8.b.x — per-invocation hint that lands as
+    /// `[ADDITIONAL INSTRUCTION]` block in each per-beat writer
+    /// prompt. Empty string (default) renders no block.
+    private var pendingExtraInstruction: String = ""
     /// Captured per-beat for the generation-log entry. Each entry is
     /// the full prompt sent for that beat — so the History tab can
     /// show "what was sent" for each per-beat call, not just the
@@ -113,7 +117,8 @@ public final class TemplateGenerationCoordinator {
         templateId: UUID,
         castMapping: String,
         cursorOffset: Int,
-        imitateContent: Bool = false
+        imitateContent: Bool = false,
+        extraInstruction: String = ""
     ) {
         cancel()
         cancelled = false
@@ -159,6 +164,7 @@ public final class TemplateGenerationCoordinator {
         pendingPacing = PacingStats.compute(text: template.body)
         pendingBeatPrompts = []
         pendingImitateContent = imitateContent
+        pendingExtraInstruction = extraInstruction
 
         DebugLog.shared.write("[template-gen] start id=\(templateId) beats=\(skeleton.beats.count) cursor=\(cursorOffset)")
 
@@ -228,7 +234,8 @@ public final class TemplateGenerationCoordinator {
             priorBeatsProse: insertedText,
             groundTruthPacing: pendingPacing,
             styleExemplars: styleExemplars,
-            imitateContent: pendingImitateContent
+            imitateContent: pendingImitateContent,
+            extraInstruction: pendingExtraInstruction
         )
         // Capture per-beat prompt for the generation-log entry. Append
         // on the FIRST attempt of each beat (retries reuse the slot

@@ -385,10 +385,12 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
                   let castMapping = note.userInfo?["castMapping"] as? String
             else { return }
             let imitateContent = (note.userInfo?["imitateContent"] as? Bool) ?? false
+            let extraInstruction = (note.userInfo?["extraInstruction"] as? String) ?? ""
             self.startTemplateGeneration(
                 templateId: templateId,
                 castMapping: castMapping,
-                imitateContent: imitateContent
+                imitateContent: imitateContent,
+                extraInstruction: extraInstruction
             )
         }
         insertAgainObserver = NotificationCenter.default.addObserver(
@@ -555,19 +557,21 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     public func startTemplateGeneration(
         templateId: UUID,
         castMapping: String,
-        imitateContent: Bool = false
+        imitateContent: Bool = false,
+        extraInstruction: String = ""
     ) {
         guard !coordinator.isGenerating, !templateCoordinator.isGenerating else {
             DebugLog.shared.write("[template-gen] start aborted: a generation is already in flight")
             return
         }
         let cursorOffset = currentCursorOffset()
-        DebugLog.shared.write("[template-gen] starting at cursor=\(cursorOffset) templateId=\(templateId) imitateContent=\(imitateContent)")
+        DebugLog.shared.write("[template-gen] starting at cursor=\(cursorOffset) templateId=\(templateId) imitateContent=\(imitateContent) extraInstruction-chars=\(extraInstruction.count)")
         templateCoordinator.start(
             templateId: templateId,
             castMapping: castMapping,
             cursorOffset: cursorOffset,
-            imitateContent: imitateContent
+            imitateContent: imitateContent,
+            extraInstruction: extraInstruction
         )
     }
 

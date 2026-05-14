@@ -40,7 +40,8 @@ public enum BeatGeneration {
         groundTruthPacing: PacingStats,
         includeTemplateBody: Bool = true,
         styleExemplars: [StyleExemplar] = [],
-        imitateContent: Bool = false
+        imitateContent: Bool = false,
+        extraInstruction: String = ""
     ) -> String {
         // Bounds-check the index — out-of-range returns empty so the
         // caller fails loudly (the spike runner catches + logs).
@@ -205,6 +206,20 @@ public enum BeatGeneration {
             styleExemplarsBlock = "\n\n\(formattedExemplars)"
         }
 
+        // Phase 8.b.x — optional per-call hint (mirrors the Continue
+        // path's instruction box). Empty/whitespace-only renders no
+        // block; non-empty lands at recency, just before
+        // [INSTRUCTION], so the writer sees "user said do X" right
+        // before the modality/function/word-count directive.
+        let trimmedExtra = extraInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        let extraInstructionBlock: String
+        if trimmedExtra.isEmpty {
+            extraInstructionBlock = ""
+        } else {
+            extraInstructionBlock = "\n\n[ADDITIONAL INSTRUCTION — user-supplied hint for this generation]\n"
+                + trimmedExtra
+        }
+
         return """
             \(systemFraming)
 
@@ -218,7 +233,7 @@ public enum BeatGeneration {
             \(pacingLine)
 
             \(priorBeatsSection)
-            \(voiceTargetBlock)\(styleExemplarsBlock)
+            \(voiceTargetBlock)\(styleExemplarsBlock)\(extraInstructionBlock)
 
             [INSTRUCTION]
             Write beat \(currentBeatIndex). Modality: \(beat.modality.rawValue). Function: \(beat.function.rawValue). Target length: \(beat.targetWords) words. \(endingInstruction)

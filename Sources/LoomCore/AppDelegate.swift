@@ -472,15 +472,56 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         imitateToggle.state = .off
         imitateToggle.toolTip = "When off (default): writer treats the template as a voice exemplar only. When on: writer may carry source vocabulary, content register, and act patterns into the new beat. Use for the NSFW-exemplar case where the cast mapping alone underspecifies the desired content."
 
-        let stack = NSStackView(views: [pickerLabel, picker, castLabel, scroll, imitateToggle])
+        // Phase 8.b.x — optional per-call hint. Mirrors the editor
+        // tray's instruction box for Continue/Expand: a free-form
+        // line or two of guidance ("skip dialogue this beat",
+        // "lean into the tension", "be more explicit") that lands
+        // as `[ADDITIONAL INSTRUCTION]` next to the per-beat
+        // directive in every writer call.
+        let hintLabel = NSTextField(labelWithString: "Additional instructions (optional)")
+        hintLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+
+        let hintHeight: CGFloat = 60
+        let hintTextView = NSTextView(frame: NSRect(x: 0, y: 0, width: accessoryWidth, height: hintHeight))
+        hintTextView.isRichText = false
+        hintTextView.isAutomaticQuoteSubstitutionEnabled = false
+        hintTextView.isAutomaticDashSubstitutionEnabled = false
+        hintTextView.isEditable = true
+        hintTextView.isSelectable = true
+        hintTextView.font = NSFont.systemFont(ofSize: 13)
+        hintTextView.allowsUndo = true
+        let hintPlaceholder = "e.g. \"lean into the tension; keep dialogue terse\""
+        hintTextView.string = hintPlaceholder
+        hintTextView.textColor = .placeholderTextColor
+        let hintDelegate = TemplateGenCastMappingPlaceholderDelegate(textView: hintTextView, placeholder: hintPlaceholder)
+        hintTextView.delegate = hintDelegate
+        objc_setAssociatedObject(hintTextView, &TemplateGenCastMappingPlaceholderDelegate.assocKey, hintDelegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        let hintScroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: accessoryWidth, height: hintHeight))
+        hintScroll.hasVerticalScroller = true
+        hintScroll.hasHorizontalScroller = false
+        hintScroll.autohidesScrollers = true
+        hintScroll.borderType = .bezelBorder
+        hintScroll.documentView = hintTextView
+        hintTextView.minSize = NSSize(width: 0, height: hintHeight)
+        hintTextView.maxSize = NSSize(width: .greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        hintTextView.isVerticallyResizable = true
+        hintTextView.isHorizontallyResizable = false
+        hintTextView.autoresizingMask = .width
+        hintTextView.textContainer?.containerSize = NSSize(width: accessoryWidth, height: CGFloat.greatestFiniteMagnitude)
+        hintTextView.textContainer?.widthTracksTextView = true
+
+        let stack = NSStackView(views: [pickerLabel, picker, castLabel, scroll, hintLabel, hintScroll, imitateToggle])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.setFrameSize(NSSize(width: accessoryWidth, height: 24 + textViewHeight + 82))
-        // Ensure the scroll view + picker get the full accessory width.
+        stack.setFrameSize(NSSize(width: accessoryWidth, height: 24 + textViewHeight + hintHeight + 110))
+        // Ensure the scroll views + picker get the full accessory width.
         scroll.widthAnchor.constraint(equalToConstant: accessoryWidth).isActive = true
         scroll.heightAnchor.constraint(equalToConstant: textViewHeight).isActive = true
+        hintScroll.widthAnchor.constraint(equalToConstant: accessoryWidth).isActive = true
+        hintScroll.heightAnchor.constraint(equalToConstant: hintHeight).isActive = true
         picker.widthAnchor.constraint(equalToConstant: accessoryWidth).isActive = true
         alert.accessoryView = stack
 
@@ -498,7 +539,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             return
         }
         let imitateContent = imitateToggle.state == .on
-        DebugLog.shared.write("[template-gen] menu: launching template=\(chosen.name) id=\(chosen.id) castMapping-chars=\(castMapping.count) imitateContent=\(imitateContent)")
+        let rawHint = hintTextView.string
+        let extraInstruction = (rawHint == hintPlaceholder ? "" : rawHint)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        DebugLog.shared.write("[template-gen] menu: launching template=\(chosen.name) id=\(chosen.id) castMapping-chars=\(castMapping.count) imitateContent=\(imitateContent) extraInstruction-chars=\(extraInstruction.count)")
         NotificationCenter.default.post(
             name: EditorViewController.requestStartTemplateGenerationNotification,
             object: self,
@@ -506,6 +550,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
                 "templateId": chosen.id,
                 "castMapping": castMapping,
                 "imitateContent": imitateContent,
+                "extraInstruction": extraInstruction,
             ]
         )
     }
