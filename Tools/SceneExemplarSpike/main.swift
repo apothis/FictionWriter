@@ -40,7 +40,7 @@ let pythonExecutable: URL = {
     return URL(fileURLWithPath: env)
 }()
 
-let embedScriptPath = URL(fileURLWithPath: "Tools/SceneExemplarSpike/Python/embed_st.py")
+let embedScriptPath = URL(fileURLWithPath: "Tools/RagSpike/Python/embed_st.py")
 
 let ollamaBaseURL: URL = {
     let env = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA"]
@@ -90,8 +90,9 @@ let embedderCatalog: [String: EmbedderSpec] = [
 
 /// Long-lived Python subprocess wrapping sentence-transformers.
 /// Spawns `embed_st.py --model <id>` once; per-call write+read on
-/// stdin/stdout. Mirrors the existing PythonStyleDistanceClient
-/// pattern but is parameterized by model id.
+/// stdin/stdout. Mirrors the production PythonEmbeddingClient pattern
+/// but is local to the spike so we can hold multiple distinct
+/// embedders side-by-side during a probe run.
 final class SubprocessEmbedder: SpikeEmbedder {
     let id: String
     private let model: String

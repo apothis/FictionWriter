@@ -8,6 +8,8 @@ type: project
 
 > **Date:** 2026-05-13. **Status:** plan only. No code lands from this document.
 >
+> **Post-Phase-8.a update (2026-05-14):** The Phase 5 production embedder (Path D) was StyleDistance through the end of Phase 7. Phase 8.a §6.1 spike ([LOOM_SCENE_EXEMPLAR_SPIKE.md](LOOM_SCENE_EXEMPLAR_SPIKE.md) §1) ran a 4-candidate empirical probe (StyleDistance / Wegmann / LUAR / mxbai) and found StyleDistance underperformed all three alternatives — including the topical baseline — on both NSFW and SFW prose. Phase 5 retrieval has migrated to **Wegmann (`AnnaWegmann/Style-Embedding`)** as a result. Existing References with StyleDistance vectors are stale (different model) and must be re-ingested through Bible Workspace → "Ingest" to refresh their `.index` sidecars under the new embedder. The §-by-§ findings below are preserved as the Phase 5 historical record; they should be read with the Phase 8.a finding in mind.
+>
 > Phase 5 ([LOOM_PLAN.md §5](LOOM_PLAN.md)) is Loom's largest single phase
 > and sits on genuinely under-explored R&D territory ([LOOM_RESEARCH.md §O.4](LOOM_RESEARCH.md):
 > *"no widely-adopted stylistic embedding model exists in 2026"*). Before

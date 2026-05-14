@@ -57,7 +57,7 @@ public final class GenerationCoordinator {
     /// Closure shape: `(query) -> [StyleExemplar]`. Wired by the app
     /// at project-open to a `RetrievalService` instance bound to the
     /// project's reference corpus + the production
-    /// `PythonStyleDistanceClient`. nil → no retrieval, empty
+    /// `PythonEmbeddingClient`. nil → no retrieval, empty
     /// exemplars (matches pre-Phase-5 behaviour).
     ///
     /// Synchronous: the coordinator blocks on this call before

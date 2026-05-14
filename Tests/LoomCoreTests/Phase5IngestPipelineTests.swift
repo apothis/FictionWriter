@@ -4,14 +4,15 @@ import Foundation
 /// Disk + composition tests for Phase 5 production's reference-text
 /// ingest pipeline. Orchestrates chunk → classify (NarrativeModeClassifier
 /// = heuristic dialogue-gate + LLM closure) → embed-D (EmbeddingClient
-/// protocol; production wraps the MLX StyleDistance call site) → write
-/// the .index sidecar with chunks + modality + dVec. Path E is fit
+/// protocol; production wraps the Wegmann Python subprocess via
+/// `PythonEmbeddingClient` per Phase 8.a §6.1 lock) → write the
+/// .index sidecar with chunks + modality + dVec. Path E is fit
 /// project-wide in a separate step (`refitAllEVectors`) because adding
 /// a new reference shifts the corpus distribution and requires
 /// re-transforming every existing reference's eVec.
 ///
 /// Tests use stubbed EmbeddingClient + LLM closures so the suite stays
-/// pure-Swift / pure-data; no MLX or Kobold dependencies in TestKit.
+/// pure-Swift / pure-data; no Python subprocess or Kobold dependencies in TestKit.
 func phase5IngestPipelineTests() -> TestSuite {
     let s = TestSuite("Phase5IngestPipeline")
 

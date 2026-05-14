@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-Phase 8.a §6.1 — parameterized sentence-transformers embed subprocess.
+Parameterized sentence-transformers embed subprocess.
 
 Loads any HuggingFace sentence-transformers-compatible model named via
-`--model`, then serves embed requests via stdin/stdout JSON lines
-(identical protocol to Tools/RagSpike/Python/embed_subprocess.py — that
-script is left untouched so Phase 5 production retrieval is not
-disturbed).
+`--model`, then serves embed requests via stdin/stdout JSON lines.
 
-Used by the SceneExemplarSpike runner to drive three candidate
-embedders without bespoke per-model Python:
+Production: Phase 5 retrieval embeds References with Wegmann
+(`AnnaWegmann/Style-Embedding`), locked by the Phase 8.a §6.1 spike
+(see LOOM_SCENE_EXEMPLAR_SPIKE.md §1 — Wegmann beats StyleDistance by
+~3× on SFW prose and is the only candidate in the 4-embedder set that
+clears the topical baseline cleanly). The SceneExemplarSpike runner
+also uses this script to probe alternative embedders.
 
-  - StyleDistance: --model StyleDistance/styledistance --trust-remote-code
-  - Wegmann:       --model AnnaWegmann/Style-Embedding
-  - LUAR:          --model gabrielloiseau/LUAR-MUD-sentence-transformers
+Spawned by Swift's `PythonEmbeddingClient` with arguments like:
 
-mxbai-embed-large is NOT loaded here — it is served by the local Ollama
-daemon over HTTP and wrapped directly in the Swift runner.
+    --model AnnaWegmann/Style-Embedding
+    --model StyleDistance/styledistance --trust-remote-code
+    --model gabrielloiseau/LUAR-MUD-sentence-transformers
 
 Protocol:
 
@@ -28,10 +28,10 @@ Ready signal (emitted once after model load):
 
     {"ready": true}
 
-Run by Swift; for manual sanity:
+For manual sanity:
 
     echo '{"text":"test"}' | Tools/RagSpike/Python/.venv/bin/python3 \\
-        Tools/SceneExemplarSpike/Python/embed_st.py \\
+        Tools/RagSpike/Python/embed_st.py \\
         --model AnnaWegmann/Style-Embedding
 """
 

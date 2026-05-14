@@ -69,17 +69,18 @@ public final class AppState {
 
     /// Phase 5 production A1 — factory for the D `EmbeddingClient` used
     /// by the per-project style-retrieval surface. Production wiring
-    /// (`AppState.shared`) defaults to a `PythonStyleDistanceClient`
-    /// bound to the repo's bundled venv; tests inject a stub so the
-    /// suite never spawns the StyleDistance subprocess. The factory is
-    /// called once per project-open, NOT per query.
+    /// (`AppState.shared`) defaults to a `PythonEmbeddingClient` bound
+    /// to the repo's bundled venv (default model: Wegmann
+    /// `AnnaWegmann/Style-Embedding`); tests inject a stub so the suite
+    /// never spawns a Python subprocess. The factory is called once
+    /// per project-open, NOT per query.
     public typealias EmbeddingClientFactory = (URL) -> EmbeddingClient
     public var embeddingClientFactory: EmbeddingClientFactory
 
     /// Phase 5 production A1 — the current project's retrieval service,
     /// or nil for in-memory ("Untitled") sessions. Rebuilt on every
     /// `openProject` / `createProject` / `saveCurrentSessionAs` call.
-    /// Releasing the old service deinits its `PythonStyleDistanceClient`,
+    /// Releasing the old service deinits its `PythonEmbeddingClient`,
     /// which closes the subprocess's stdin and lets it exit cleanly.
     public private(set) var currentRetrievalService: RetrievalService?
 
@@ -131,11 +132,11 @@ public final class AppState {
         self.embedderProvider = { nil }
 
         // Phase 5 production A1 — default factory spawns the
-        // Python+StyleDistance subprocess against the repo's bundled
-        // venv. Paths are relative to the current working directory,
-        // matching the self-use deployment model. Phase 5.5 sub-row
-        // will swap this for a `Loom.app/Contents/Resources/Python`
-        // bundled lookup.
+        // Python+Wegmann subprocess against the repo's bundled venv
+        // (model id locked by the Phase 8.a §6.1 spike). Paths are
+        // relative to the current working directory, matching the
+        // self-use deployment model. Phase 5.5 sub-row will swap this
+        // for a `Loom.app/Contents/Resources/Python` bundled lookup.
         self.embeddingClientFactory = embeddingClientFactory ?? AppState.defaultEmbeddingClientFactory
 
         // Now that all stored properties are initialized, rebind the
@@ -459,7 +460,7 @@ public final class AppState {
     }
 
     /// Release the old `RetrievalService` (which drops its Python
-    /// subprocess via `PythonStyleDistanceClient.deinit`) and install
+    /// subprocess via `PythonEmbeddingClient.deinit`) and install
     /// a fresh one for the given project URL. Called from the three
     /// project-lifecycle entry points: `createProject`, `openProject`,
     /// `saveCurrentSessionAs`.
@@ -474,16 +475,20 @@ public final class AppState {
     }
 
     /// Phase 5 production A1 — default factory: spawn a
-    /// `PythonStyleDistanceClient` against the repo's bundled venv.
+    /// `PythonEmbeddingClient` against the repo's bundled venv. The
+    /// production model is Wegmann (`AnnaWegmann/Style-Embedding`),
+    /// locked by the Phase 8.a §6.1 spike — StyleDistance (the prior
+    /// incumbent) underperformed all three alternatives in the
+    /// 4-candidate set, including on SFW prose.
     /// Paths resolve relative to the current working directory (the
     /// self-use deployment model). Phase 5.5 will swap this for a
     /// `Loom.app/Contents/Resources/Python` lookup once the bundling
     /// pipeline lands.
     private static let defaultEmbeddingClientFactory: EmbeddingClientFactory = { projectURL in
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        return PythonStyleDistanceClient(
+        return PythonEmbeddingClient(
             pythonExecutable: cwd.appendingPathComponent("Tools/RagSpike/Python/.venv/bin/python3"),
-            scriptPath: cwd.appendingPathComponent("Tools/RagSpike/Python/embed_subprocess.py"),
+            scriptPath: cwd.appendingPathComponent("Tools/RagSpike/Python/embed_st.py"),
             workingDirectory: projectURL
         )
     }
@@ -508,7 +513,7 @@ public final class AppState {
     /// No-op for in-memory sessions or when no default writer server
     /// is configured (modality classifier can't run without it).
     /// The transient `EmbeddingClient` is dropped at the end of the
-    /// closure — its `PythonStyleDistanceClient` deinit closes the
+    /// closure — its `PythonEmbeddingClient` deinit closes the
     /// subprocess. Phase 5.5 may cache this if the per-ingest cold
     /// start (~7.65s) becomes a UX concern in practice.
     // MARK: - Phase 7 — template scene extraction

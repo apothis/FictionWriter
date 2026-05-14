@@ -89,7 +89,7 @@ let package = Package(
             name: "SceneExemplarSpike",
             dependencies: ["LoomCore"],
             path: "Tools/SceneExemplarSpike",
-            exclude: ["fixtures", "last-run", "Python"]
+            exclude: ["fixtures", "last-run"]
         ),
     ]
 )

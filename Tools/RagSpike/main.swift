@@ -939,12 +939,12 @@ func dumpFuncwordZ() -> Int32 {
 
 // MARK: - Python subprocess D smoke (LOOM_MLX_PORT_SPIKE §12 pivot)
 
-/// End-to-end smoke for PythonStyleDistanceClient. Spawns the
-/// subprocess, embeds the 16 fixture items, dumps the vectors,
-/// and verifies cosine ≥ 0.999 vs the canonical PyTorch baseline
-/// (vectors.json's D-styledistance block).
+/// End-to-end smoke for PythonEmbeddingClient. Spawns the subprocess
+/// against the production Wegmann model (locked by Phase 8.a §6.1),
+/// embeds the 16 fixture items, dumps the vectors for the offline
+/// compare tool to consume.
 func venvSmoke() -> Int32 {
-    log("=== RagSpike --venv-smoke (Python subprocess D) ===")
+    log("=== RagSpike --venv-smoke (Python subprocess D — Wegmann) ===")
     guard let fixture = loadFixture() else {
         log("FATAL: could not load fixture")
         return 1
@@ -954,7 +954,7 @@ func venvSmoke() -> Int32 {
     let venvPython = URL(fileURLWithPath: cwd)
         .appendingPathComponent("Tools/RagSpike/Python/.venv/bin/python3")
     let script = URL(fileURLWithPath: cwd)
-        .appendingPathComponent("Tools/RagSpike/Python/embed_subprocess.py")
+        .appendingPathComponent("Tools/RagSpike/Python/embed_st.py")
     guard FileManager.default.fileExists(atPath: venvPython.path) else {
         log("FATAL: Python venv missing at \(venvPython.path)")
         return 1
@@ -966,7 +966,7 @@ func venvSmoke() -> Int32 {
     log("Python: \(venvPython.path)")
     log("Script: \(script.path)")
 
-    let client = PythonStyleDistanceClient(
+    let client = PythonEmbeddingClient(
         pythonExecutable: venvPython,
         scriptPath: script,
         workingDirectory: URL(fileURLWithPath: cwd)
@@ -998,8 +998,8 @@ func venvSmoke() -> Int32 {
     let payload: [String: Any] = [
         "version": 1,
         "paths": [[
-            "path": "D-styledistance-swift-venv",
-            "model": "PythonStyleDistanceClient via Tools/RagSpike/Python/.venv",
+            "path": "D-wegmann-swift-venv",
+            "model": "PythonEmbeddingClient (Wegmann) via Tools/RagSpike/Python/.venv",
             "dim": vectors.values.first?.count ?? 0,
             "vectors": vectors,
         ]],

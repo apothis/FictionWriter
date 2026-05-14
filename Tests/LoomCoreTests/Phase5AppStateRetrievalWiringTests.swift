@@ -15,7 +15,7 @@ import Foundation
 ///   `AppState.styleRetriever()` delegates into it.
 /// - Switching projects (re-`openProject` against a different URL)
 ///   tears down the old service and installs a fresh one — important
-///   because the production `PythonStyleDistanceClient` owns a
+///   because the production `PythonEmbeddingClient` owns a
 ///   long-lived subprocess that must be released when the project
 ///   closes.
 /// - Tests inject a stub `EmbeddingClient` via

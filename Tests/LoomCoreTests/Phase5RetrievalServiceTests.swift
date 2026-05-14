@@ -6,8 +6,8 @@ import Foundation
 /// ingest writes (.md + .index sidecars), retrieval reads them.
 ///
 /// Operation per query:
-/// 1. Embed query via injected D EmbeddingClient (production: MLX
-///    StyleDistance).
+/// 1. Embed query via injected D EmbeddingClient (production:
+///    `PythonEmbeddingClient` running Wegmann per Phase 8.a §6.1).
 /// 2. Re-fit FuncwordZ across all project chunks (cheap; corpus is
 ///    small) and transform the query.
 /// 3. Per-path rank chunks by cosine.

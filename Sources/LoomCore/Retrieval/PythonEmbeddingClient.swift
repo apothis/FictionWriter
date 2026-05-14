@@ -1,9 +1,15 @@
 import Foundation
 
-/// Phase 5 production `EmbeddingClient` conformer that runs StyleDistance
-/// in a long-lived Python subprocess. Pivoted from in-Swift MLX after the
-/// MLX-Swift package was found to require full Xcode (for the `metal`
-/// compiler) — see [`LOOM_MLX_PORT_SPIKE.md`](../../LOOM_MLX_PORT_SPIKE.md) §12.
+/// Phase 5 production `EmbeddingClient` conformer that runs a
+/// sentence-transformers model in a long-lived Python subprocess.
+/// Pivoted from in-Swift MLX after the MLX-Swift package was found to
+/// require full Xcode (for the `metal` compiler) — see
+/// [`LOOM_MLX_PORT_SPIKE.md`](../../LOOM_MLX_PORT_SPIKE.md) §12.
+/// The default production model is Wegmann (`AnnaWegmann/Style-Embedding`),
+/// locked by the Phase 8.a §6.1 spike (see
+/// [`LOOM_SCENE_EXEMPLAR_SPIKE.md`](../../LOOM_SCENE_EXEMPLAR_SPIKE.md) §1) —
+/// StyleDistance (the prior incumbent) was empirically beaten by all
+/// three alternatives in the 4-candidate set, including on SFW prose.
 ///
 /// Architecture: a single Python interpreter loads the model once and
 /// serves embed requests via stdin/stdout JSON-line protocol until
@@ -62,13 +68,14 @@ public enum PythonEmbedResponse {
 /// `embed(_:)` call blocks the caller's thread until the subprocess
 /// writes a response. Production callers (ingest, retrieval) run
 /// off the main thread.
-public final class PythonStyleDistanceClient: EmbeddingClient {
+public final class PythonEmbeddingClient: EmbeddingClient {
     public let modelId: String
     public let dim: Int
 
     private let pythonExecutable: URL
     private let scriptPath: URL
     private let workingDirectory: URL
+    private let scriptArguments: [String]
     private let readyTimeoutSeconds: TimeInterval
 
     /// Lazily-initialised subprocess + pipes. Lock protects the
@@ -82,13 +89,15 @@ public final class PythonStyleDistanceClient: EmbeddingClient {
         pythonExecutable: URL,
         scriptPath: URL,
         workingDirectory: URL,
-        modelId: String = "StyleDistance/styledistance (Python subprocess)",
+        scriptArguments: [String] = ["--model", "AnnaWegmann/Style-Embedding"],
+        modelId: String = "AnnaWegmann/Style-Embedding (Python subprocess)",
         dim: Int = 768,
         readyTimeoutSeconds: TimeInterval = 120
     ) {
         self.pythonExecutable = pythonExecutable
         self.scriptPath = scriptPath
         self.workingDirectory = workingDirectory
+        self.scriptArguments = scriptArguments
         self.modelId = modelId
         self.dim = dim
         self.readyTimeoutSeconds = readyTimeoutSeconds
@@ -135,7 +144,7 @@ public final class PythonStyleDistanceClient: EmbeddingClient {
 
         let task = Process()
         task.executableURL = pythonExecutable
-        task.arguments = [scriptPath.path]
+        task.arguments = [scriptPath.path] + scriptArguments
         task.currentDirectoryURL = workingDirectory
 
         let stdinPipe = Pipe()

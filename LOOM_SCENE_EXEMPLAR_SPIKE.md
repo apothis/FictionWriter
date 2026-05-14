@@ -111,7 +111,7 @@ Before the §6.3 chunking comparison, a more fundamental question: **does gemma4
 | sfw_01_clipped_hemingway | (control) | ✅ success | — | 16 |
 | sfw_05_clinical_procedural | (control) | ✅ success | — | 6 |
 
-**Headline:** Pass-A works on all 5 NSFW registers when given a retry. Single-attempt failure rate ~30% on this small sample, but every failure recovered on the first retry. **The failures are NOT register-specific refusals** — gemma4_2b appears to extract NSFW content cleanly when it returns parseable JSON at all. The errors are transient JSON-conformance failures under the schema-guided sampler.
+**Headline:** Pass-A works on all 5 NSFW registers when given a retry. Single-attempt failure rate ~30% on this small sample, but every failure recovered on the first retry. The errors are transient JSON-conformance failures under the schema-guided sampler — gemma4_2b is a fully uncensored model and content refusal is not the failure mode here.
 
 **Examples of extracted NSFW beats (`nsfw_01_explicit_direct`):**
 
