@@ -21,7 +21,18 @@ public final class ProjectSession {
     /// On-disk location of the project, or nil for in-memory ("Untitled")
     /// sessions. Set by AppState on create / open / save-as. When nil,
     /// `flushSave` is a no-op.
-    public var url: URL?
+    ///
+    /// Posts `didChangeNotification` on a real value change so the
+    /// workspace bridge re-pushes a snapshot — its
+    /// `isProjectOnDisk` flag flips when the URL goes nil → set,
+    /// and the React UI relies on it to re-enable the Add Reference /
+    /// Add Template buttons after Save-As.
+    public var url: URL? {
+        didSet {
+            guard url != oldValue else { return }
+            markChanged()
+        }
+    }
     /// True iff there's been a mutation since the last successful save
     /// (or since session creation, for never-saved sessions). Cleared
     /// by `flushSave`.

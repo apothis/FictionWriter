@@ -67,6 +67,44 @@ func phase1ProjectSessionTests() -> TestSuite {
         try expectEqual(session.project.manuscript.orphanedSceneIds, [b.id, c.id, a.id])
     }
 
+    // Followup to the Phase 7 punchlist Add-button fix: the workspace
+    // bridge re-pushes a snapshot on `didChangeNotification` and
+    // depends on `isProjectOnDisk` for the disabled-button gate. The
+    // Save-As path mutates `session.url` directly; without this
+    // notification the React UI keeps the buttons disabled after the
+    // project lands on disk.
+    s.test("assigning session.url posts didChangeNotification") {
+        let session = ProjectSession(project: Project(title: "T"), scenes: [:])
+        var didChangeCount = 0
+        let token = NotificationCenter.default.addObserver(
+            forName: ProjectSession.didChangeNotification,
+            object: session, queue: nil
+        ) { _ in didChangeCount += 1 }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("loom-session-url-test-\(UUID().uuidString)")
+        session.url = tmp
+        try expectEqual(didChangeCount, 1)
+    }
+
+    s.test("assigning the same session.url value does not post didChangeNotification") {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("loom-session-url-stable-\(UUID().uuidString)")
+        let session = ProjectSession(project: Project(title: "T"), scenes: [:], url: tmp)
+        var didChangeCount = 0
+        let token = NotificationCenter.default.addObserver(
+            forName: ProjectSession.didChangeNotification,
+            object: session, queue: nil
+        ) { _ in didChangeCount += 1 }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        // Re-assigning the same URL is a no-op; consumers shouldn't
+        // re-render for noise.
+        session.url = tmp
+        try expectEqual(didChangeCount, 0)
+    }
+
     s.test("changeCounter increments on each mutation") {
         let session = ProjectSession(project: Project(title: "T"), scenes: [:])
         let initial = session.changeCounter
