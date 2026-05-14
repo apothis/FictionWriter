@@ -341,25 +341,37 @@ guard args.count >= 2 else { usageAndExit() }
 switch args[1] {
 case "cosine-matrix":
     var embedderKey: String?
+    var scope: String = "all"
     for arg in args.dropFirst(2) {
         if arg.hasPrefix("--embedder=") {
             embedderKey = String(arg.dropFirst("--embedder=".count))
+        } else if arg.hasPrefix("--scope=") {
+            scope = String(arg.dropFirst("--scope=".count))
         }
     }
     guard let key = embedderKey, let spec = embedderCatalog[key] else {
         log("error: --embedder=<id> required; one of \(embedderCatalog.keys.sorted())")
         exit(2)
     }
+    guard ["all", "nsfw", "sfw"].contains(scope) else {
+        log("error: --scope must be one of: all | nsfw | sfw")
+        exit(2)
+    }
 
     log("[spike] loading fixtures from \(fixturesDir)...")
-    let fixtures: [SceneExemplarFixture]
+    var fixtures: [SceneExemplarFixture]
     do {
         fixtures = try loadAllFixtures()
     } catch {
         log("[spike] fixture load failed: \(error)")
         exit(1)
     }
-    log("[spike] loaded \(fixtures.count) fixtures")
+    switch scope {
+    case "nsfw": fixtures = fixtures.filter(\.nsfw)
+    case "sfw":  fixtures = fixtures.filter { !$0.nsfw }
+    default: break
+    }
+    log("[spike] loaded \(fixtures.count) fixtures (scope=\(scope))")
 
     let baseEmbedder: SpikeEmbedder
     switch spec.backend {
@@ -402,7 +414,8 @@ case "cosine-matrix":
             at: URL(fileURLWithPath: outputDir),
             withIntermediateDirectories: true
         )
-        let outFile = URL(fileURLWithPath: outputDir).appendingPathComponent("\(key).md")
+        let suffix = scope == "all" ? "" : ".\(scope)"
+        let outFile = URL(fileURLWithPath: outputDir).appendingPathComponent("\(key)\(suffix).md")
         try report.write(to: outFile, atomically: true, encoding: .utf8)
         log("[spike] wrote \(outFile.path)")
     } catch {
