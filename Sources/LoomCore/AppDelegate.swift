@@ -391,32 +391,87 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
 
         let alert = NSAlert()
         alert.messageText = "Write Scene From Template"
-        alert.informativeText = "Pick a Template Scene to use as the structural blueprint, then describe the new characters / setting / situation. Loom will generate a new scene that preserves the template's beat ordering and pacing but with your content."
+        alert.informativeText = """
+            Pick a Template Scene to use as the structural blueprint, then describe the new characters / setting / situation. Loom will generate a new scene with the template's beat ordering, modality sequence, pacing, and voice — but with content drawn from your description below.
+
+            The writer renders new prose from the cast/setting description; a few sentences with concrete details work much better than a short label. Three or four lines is usually enough.
+            """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Generate")
         alert.addButton(withTitle: "Cancel")
 
-        // Accessory view: template picker + cast-mapping text field.
-        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 400, height: 24))
+        // Accessory view: template picker + multi-line cast-mapping text view.
+        // Width 480 keeps the alert at a reasonable modal width; the text
+        // view is ~8 visible lines so the user has room for several
+        // sentences (the writer's quality is sensitive to how much
+        // concrete detail is supplied — Phase 7 smoke testing showed
+        // 30-char mappings produce invented plot, 200+ char mappings
+        // render the user's intended scene).
+        let accessoryWidth: CGFloat = 480
+        let textViewHeight: CGFloat = 160
+
+        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: accessoryWidth, height: 24))
         for t in templates {
             let beatCount = t.beatCount ?? 0
             picker.addItem(withTitle: "\(t.name) — \(beatCount) beat\(beatCount == 1 ? "" : "s")")
         }
-        let castLabel = NSTextField(labelWithString: "Cast / setting / situation")
-        castLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        let castField = NSTextField(frame: NSRect(x: 0, y: 0, width: 400, height: 80))
-        castField.placeholderString = "e.g. \"Maya is the protagonist; the setting is a server room at midnight; the object is an encrypted hard drive…\""
-        castField.usesSingleLineMode = false
-        castField.cell?.wraps = true
-        castField.cell?.isScrollable = false
         let pickerLabel = NSTextField(labelWithString: "Template")
         pickerLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        let stack = NSStackView(views: [pickerLabel, picker, castLabel, castField])
+
+        let castLabel = NSTextField(labelWithString: "Cast / setting / situation")
+        castLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+
+        // Real multi-line text area. NSTextField even with usesSingleLineMode
+        // = false collapses to a single visible line inside NSAlert; an
+        // NSScrollView-wrapped NSTextView gives a proper sized text area
+        // with vertical scroll when the content overflows.
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: accessoryWidth, height: textViewHeight))
+        textView.isRichText = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.font = NSFont.systemFont(ofSize: 13)
+        textView.allowsUndo = true
+        // Placeholder analogue — NSTextView doesn't have placeholderString
+        // natively. Insert grey hint text that the user can simply
+        // overwrite. Cleared on the first edit if they don't delete it
+        // first.
+        let placeholder = """
+            e.g. "Maya is a freelance investigator stuck on the 12th floor of an abandoned research tower. Above her, the building's AI is preparing to vent the upper floors. She has six hours of oxygen and a partial schematic. She refuses to evacuate without retrieving the encrypted drive in her dead mentor's office."
+            """
+        textView.string = placeholder
+        textView.textColor = .placeholderTextColor
+        // Reset to normal text colour on first focus + clear placeholder.
+        let textDelegate = TemplateGenCastMappingPlaceholderDelegate(textView: textView, placeholder: placeholder)
+        textView.delegate = textDelegate
+        // Keep the delegate alive for the lifetime of the alert.
+        objc_setAssociatedObject(textView, &TemplateGenCastMappingPlaceholderDelegate.assocKey, textDelegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: accessoryWidth, height: textViewHeight))
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.autohidesScrollers = true
+        scroll.borderType = .bezelBorder
+        scroll.documentView = textView
+        textView.minSize = NSSize(width: 0, height: textViewHeight)
+        textView.maxSize = NSSize(width: .greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = .width
+        textView.textContainer?.containerSize = NSSize(width: accessoryWidth, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+
+        let stack = NSStackView(views: [pickerLabel, picker, castLabel, scroll])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.setFrameSize(NSSize(width: 420, height: 160))
+        stack.setFrameSize(NSSize(width: accessoryWidth, height: 24 + textViewHeight + 60))
+        // Ensure the scroll view + picker get the full accessory width.
+        scroll.widthAnchor.constraint(equalToConstant: accessoryWidth).isActive = true
+        scroll.heightAnchor.constraint(equalToConstant: textViewHeight).isActive = true
+        picker.widthAnchor.constraint(equalToConstant: accessoryWidth).isActive = true
         alert.accessoryView = stack
 
         let response = alert.runModal()
@@ -424,7 +479,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         let idx = picker.indexOfSelectedItem
         guard idx >= 0, idx < templates.count else { return }
         let chosen = templates[idx]
-        let castMapping = castField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Treat the placeholder string as empty submission.
+        let raw = textView.string
+        let castMapping = (raw == placeholder ? "" : raw)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !castMapping.isEmpty else {
             DebugLog.shared.write("[template-gen] menu: cancelled — empty cast mapping")
             return
@@ -606,5 +664,29 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             settingsWindow = SettingsWindowController(appState: AppState.shared)
         }
         settingsWindow?.showAndActivate()
+    }
+}
+
+/// NSTextView delegate that clears a placeholder string on first focus
+/// + restores the normal text colour. Scoped to the
+/// `Write Scene From Template` cast-mapping field; held alive via
+/// objc_setAssociatedObject on the text view itself so the delegate
+/// outlives the alert presentation but is dropped with the view.
+private final class TemplateGenCastMappingPlaceholderDelegate: NSObject, NSTextViewDelegate {
+    nonisolated(unsafe) static var assocKey: UInt8 = 0
+    private weak var textView: NSTextView?
+    private let placeholder: String
+    private var clearedOnce = false
+
+    init(textView: NSTextView, placeholder: String) {
+        self.textView = textView
+        self.placeholder = placeholder
+    }
+
+    func textDidBeginEditing(_ notification: Notification) {
+        guard !clearedOnce, let tv = textView, tv.string == placeholder else { return }
+        clearedOnce = true
+        tv.string = ""
+        tv.textColor = .labelColor
     }
 }
