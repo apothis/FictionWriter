@@ -191,6 +191,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             scenes: session.scenes,
             references: session.listReferenceSnapshots(),
             templateScenes: session.listTemplateSceneSnapshots(),
+            sceneExemplars: session.listSceneExemplarSnapshots(),
             isProjectOnDisk: session.url != nil,
             extractingTemplateIds: Array(appState.extractingTemplateIds),
             suggestionsQueue: appState.ledgerSuggestionsQueue
@@ -338,7 +339,50 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         case .extractTemplateScene(let id):
             appState.extractTemplateScene(id: id)
             DebugLog.shared.write("[workspace] extractTemplateScene id=\(id) kicked off")
+        case .createSceneExemplar(let name, let body, let nsfw):
+            if let exemplar = session.addSceneExemplar(name: name, body: body, nsfw: nsfw) {
+                DebugLog.shared.write("[workspace] createSceneExemplar id=\(exemplar.id) name=\(name) nsfw=\(nsfw) body-chars=\(body.count)")
+            } else {
+                DebugLog.shared.write("[workspace] createSceneExemplar dropped — in-memory session or write failed")
+            }
+        case .patchSceneExemplar(let id, let patch):
+            guard let url = session.url else {
+                DebugLog.shared.write("[workspace] patchSceneExemplar dropped — in-memory session id=\(id)")
+                return
+            }
+            // Apply the patch to BOTH the Reference and the Template
+            // under the shared UUID so the projection stays in lockstep.
+            if var ref = try? ReferenceStorage.loadReference(id: id, in: url) {
+                if let v = patch.name { ref.name = v }
+                if let v = patch.nsfw { ref.nsfw = v }
+                if let v = patch.body { ref.body = v }
+                session.updateReference(ref)
+            }
+            if var tmpl = try? TemplateSceneStorage.loadTemplate(id: id, in: url) {
+                if let v = patch.name { tmpl.name = v }
+                if let v = patch.nsfw { tmpl.nsfw = v }
+                if let v = patch.body { tmpl.body = v }
+                session.updateTemplateScene(tmpl)
+            }
+            DebugLog.shared.write("[workspace] patchSceneExemplar applied id=\(id) fields=\(sceneExemplarPatchFieldSummary(patch))")
+        case .deleteSceneExemplar(let id):
+            // Both halves go — they shared a UUID + body, so deleting
+            // one without the other would leave a stale projection.
+            session.deleteReference(id: id)
+            session.deleteTemplateScene(id: id)
+            DebugLog.shared.write("[workspace] deleteSceneExemplar id=\(id)")
+        case .ingestSceneExemplar(let id):
+            appState.ingestSceneExemplar(id: id)
+            DebugLog.shared.write("[workspace] ingestSceneExemplar id=\(id) kicked off (fans out to ingestReference + extractTemplateScene)")
         }
+    }
+
+    private func sceneExemplarPatchFieldSummary(_ patch: SceneExemplarPatch) -> String {
+        var fields: [String] = []
+        if patch.name != nil { fields.append("name") }
+        if patch.nsfw != nil { fields.append("nsfw") }
+        if patch.body != nil { fields.append("body") }
+        return fields.isEmpty ? "<empty>" : fields.joined(separator: ",")
     }
 
     /// Compact log-friendly summary of which template-scene patch

@@ -4,6 +4,7 @@ import type {
   CharacterPatch,
   LorebookEntryPatch,
   ReferencePatch,
+  SceneExemplarPatch,
   TemplateScenePatch,
 } from "./types";
 import { postIntent, subscribeToSnapshots } from "./bridge";
@@ -12,6 +13,7 @@ import { CharacterEditor } from "./views/CharacterEditor";
 import { LorebookEditor } from "./views/LorebookEditor";
 import { ReferenceEditor } from "./views/ReferenceEditor";
 import { TemplateSceneEditor } from "./views/TemplateSceneEditor";
+import { SceneExemplarEditor } from "./views/SceneExemplarEditor";
 import { SuggestionsQueue } from "./views/SuggestionsQueue";
 
 // Top-level routing. Sessions 2-5 extended the Selection union as
@@ -23,6 +25,7 @@ type Selection =
   | { kind: "lorebook"; id: string }
   | { kind: "reference"; id: string }
   | { kind: "template"; id: string }
+  | { kind: "sceneExemplar"; id: string }
   | { kind: "suggestions" }
   | null;
 
@@ -130,6 +133,29 @@ export function App() {
     );
   }
 
+  if (selection?.kind === "sceneExemplar") {
+    const exemplar = (snapshot.sceneExemplars ?? []).find(
+      (e) => e.id === selection.id,
+    );
+    if (!exemplar) return renderList();
+    return (
+      <SceneExemplarEditor
+        exemplar={exemplar}
+        dispatchPatch={(patch: SceneExemplarPatch) =>
+          postIntent({ kind: "patchSceneExemplar", id: exemplar.id, patch })
+        }
+        onBack={() => setSelection(null)}
+        onDelete={() => {
+          postIntent({ kind: "deleteSceneExemplar", id: exemplar.id });
+          setSelection(null);
+        }}
+        onIngest={() =>
+          postIntent({ kind: "ingestSceneExemplar", id: exemplar.id })
+        }
+      />
+    );
+  }
+
   if (selection?.kind === "suggestions") {
     return (
       <SuggestionsQueue
@@ -153,6 +179,9 @@ export function App() {
         onSelectLorebookEntry={(id) => setSelection({ kind: "lorebook", id })}
         onSelectReference={(id) => setSelection({ kind: "reference", id })}
         onSelectTemplateScene={(id) => setSelection({ kind: "template", id })}
+        onSelectSceneExemplar={(id) =>
+          setSelection({ kind: "sceneExemplar", id })
+        }
         onOpenSuggestions={() => setSelection({ kind: "suggestions" })}
         onAddLorebookEntry={() => {
           const name = `Entry ${snapshot!.lorebook.length + 1}`;
@@ -165,6 +194,19 @@ export function App() {
         onAddTemplateScene={() => {
           const name = `Template ${snapshot!.templateScenes.length + 1}`;
           postIntent({ kind: "createTemplateScene", name });
+        }}
+        onAddSceneExemplar={() => {
+          const count = (snapshot!.sceneExemplars ?? []).length + 1;
+          const name = `Scene Exemplar ${count}`;
+          // Empty body — user edits in the new editor pane and
+          // hits Ingest to fire both sub-pipelines. Same lazy-init
+          // pattern References + TemplateScenes use today.
+          postIntent({
+            kind: "createSceneExemplar",
+            name,
+            body: "",
+            nsfw: false,
+          });
         }}
       />
     );

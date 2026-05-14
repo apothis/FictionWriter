@@ -654,6 +654,44 @@ public final class ProjectSession {
         }
     }
 
+    /// Bridge-layer projection: same merge logic as
+    /// `listSceneExemplars()` but loads bodies + chunk/beat counts
+    /// for the React workspace. Returns `[]` for in-memory sessions.
+    public func listSceneExemplarSnapshots() -> [SnapshotSceneExemplar] {
+        guard let url = self.url else { return [] }
+        let refIds = (try? ReferenceStorage.listReferenceIds(in: url)) ?? []
+        let tmplIds = (try? TemplateSceneStorage.listTemplateIds(in: url)) ?? []
+        let refs: [UUID: ReferenceText] = Dictionary(uniqueKeysWithValues:
+            refIds.compactMap { id in
+                (try? ReferenceStorage.loadReference(id: id, in: url)).map { (id, $0) }
+            })
+        let tmpls: [UUID: TemplateScene] = Dictionary(uniqueKeysWithValues:
+            tmplIds.compactMap { id in
+                (try? TemplateSceneStorage.loadTemplate(id: id, in: url)).map { (id, $0) }
+            })
+        var snaps: [SnapshotSceneExemplar] = []
+        var seen = Set<UUID>()
+        for id in refIds + tmplIds {
+            if !seen.insert(id).inserted { continue }
+            let ref = refs[id]
+            let tmpl = tmpls[id]
+            let name = tmpl?.name ?? ref?.name ?? ""
+            let body = tmpl?.body ?? ref?.body ?? ""
+            let nsfw = (tmpl?.nsfw ?? false) || (ref?.nsfw ?? false)
+            let chunkCount = ReferenceStorage.loadIndex(for: id, in: url)?.chunks.count
+            let beatCount = TemplateSceneStorage.loadSkeleton(for: id, in: url)?.beats.count
+            snaps.append(SnapshotSceneExemplar(
+                id: id, name: name, nsfw: nsfw, body: body,
+                hasIndex: chunkCount != nil,
+                hasBeats: beatCount != nil,
+                chunkCount: chunkCount,
+                beatCount: beatCount
+            ))
+        }
+        snaps.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return snaps
+    }
+
     /// Enumerate the project's references + templates and project
     /// onto the unified `SceneExemplar` list. Returns `[]` for
     /// in-memory sessions. Items with matching UUIDs across both

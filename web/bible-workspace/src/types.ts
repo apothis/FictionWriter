@@ -108,6 +108,22 @@ export interface SnapshotTemplateScene {
   beatCount: number | null;
 }
 
+// Phase 8.b.6 — bridge projection of the unified Scene Exemplar.
+// Joins a Reference + Template by shared UUID; `hasIndex` /
+// `hasBeats` indicate which sidecars are on disk. The single
+// "Ingest" affordance fans out to both Phase 5 chunking+embed AND
+// Phase 7 Pass-A extraction.
+export interface SnapshotSceneExemplar {
+  id: string;
+  name: string;
+  nsfw: boolean;
+  body: string;
+  hasIndex: boolean;
+  hasBeats: boolean;
+  chunkCount: number | null;
+  beatCount: number | null;
+}
+
 export interface BibleWorkspaceSnapshot {
   projectTitle: string;
   characters: Character[];
@@ -116,6 +132,9 @@ export interface BibleWorkspaceSnapshot {
   suggestions: PendingSuggestion[];
   references: SnapshotReference[];
   templateScenes: SnapshotTemplateScene[];
+  // Phase 8.b.6 — unified scene-exemplar list. Optional for legacy-
+  // payload tolerance; readers default to [].
+  sceneExemplars?: SnapshotSceneExemplar[];
   // False for "Untitled" in-memory projects with no on-disk URL.
   // References + TemplateScenes are file-system entities that can't
   // be persisted until the project is saved; UI disables the Add
@@ -165,6 +184,16 @@ export interface ReferencePatch {
 // Mirrors TemplateScenePatch.swift — identical shape to ReferencePatch.
 // Phase 7.b.5.
 export interface TemplateScenePatch {
+  name?: string;
+  nsfw?: boolean;
+  body?: string;
+}
+
+// Mirrors SceneExemplarPatch.swift — identical shape to ReferencePatch.
+// The Swift handler applies the patch to BOTH the underlying
+// Reference and Template under the shared UUID so the projection
+// stays in lockstep.
+export interface SceneExemplarPatch {
   name?: string;
   nsfw?: boolean;
   body?: string;

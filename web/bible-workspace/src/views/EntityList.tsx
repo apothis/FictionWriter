@@ -4,6 +4,7 @@ import type {
   LorebookEntry,
   PendingSuggestion,
   SnapshotReference,
+  SnapshotSceneExemplar,
   SnapshotTemplateScene,
 } from "../types";
 import { cn } from "../lib/cn";
@@ -18,9 +19,11 @@ interface Props {
   onSelectLorebookEntry: (id: string) => void;
   onSelectReference: (id: string) => void;
   onSelectTemplateScene: (id: string) => void;
+  onSelectSceneExemplar: (id: string) => void;
   onAddLorebookEntry: () => void;
   onAddReference: () => void;
   onAddTemplateScene: () => void;
+  onAddSceneExemplar: () => void;
   onOpenSuggestions: () => void;
 }
 
@@ -30,11 +33,14 @@ export function EntityList({
   onSelectLorebookEntry,
   onSelectReference,
   onSelectTemplateScene,
+  onSelectSceneExemplar,
   onAddLorebookEntry,
   onAddReference,
   onAddTemplateScene,
+  onAddSceneExemplar,
   onOpenSuggestions,
 }: Props) {
+  const sceneExemplars = snapshot.sceneExemplars ?? [];
   return (
     <div className="flex h-full flex-col">
       <Header snapshot={snapshot} onOpenSuggestions={onOpenSuggestions} />
@@ -76,6 +82,30 @@ export function EntityList({
                 key={entry.id}
                 entry={entry}
                 onClick={() => onSelectLorebookEntry(entry.id)}
+              />
+            ))
+          )}
+        </Section>
+        <Section
+          title="Scene Exemplars"
+          count={sceneExemplars.length}
+          headerAction={
+            <AddButton
+              label="+ Add scene exemplar"
+              onClick={onAddSceneExemplar}
+              enabled={snapshot.isProjectOnDisk !== false}
+              disabledHint="Save the project (⌘S) to add scene exemplars — they're stored on disk."
+            />
+          }
+        >
+          {sceneExemplars.length === 0 ? (
+            <EmptyRow text="No scene exemplars yet. A scene exemplar is one prose body that contributes BOTH retrieval chunks (Phase 5) AND a beat skeleton (Phase 7) to generation. One paste, two sidecars." />
+          ) : (
+            sceneExemplars.map((ex) => (
+              <SceneExemplarRow
+                key={ex.id}
+                exemplar={ex}
+                onClick={() => onSelectSceneExemplar(ex.id)}
               />
             ))
           )}
@@ -394,6 +424,66 @@ function TemplateSceneRow({
       {template.body && (
         <p className="mt-1 line-clamp-2 text-xs leading-snug text-loom-fg-secondary">
           {template.body.trim().slice(0, 200)}
+        </p>
+      )}
+    </button>
+  );
+}
+
+function SceneExemplarRow({
+  exemplar,
+  onClick,
+}: {
+  exemplar: SnapshotSceneExemplar;
+  onClick: () => void;
+}) {
+  const wordCount = exemplar.body
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+  // Two-flag status: chunks (retrieval) + beats (skeleton). Color
+  // the badge by which sidecars are present.
+  const chunkBadgeClass = exemplar.hasIndex
+    ? "text-loom-accent"
+    : "text-loom-fg-tertiary";
+  const beatBadgeClass = exemplar.hasBeats
+    ? "text-loom-accent"
+    : "text-loom-fg-tertiary";
+  const chunkLabel = exemplar.hasIndex
+    ? `${exemplar.chunkCount ?? "?"} chunks`
+    : "no chunks";
+  const beatLabel = exemplar.hasBeats
+    ? `${exemplar.beatCount ?? "?"} beats`
+    : "no beats";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group block w-full cursor-pointer rounded-lg px-3 py-2.5 text-left hover:bg-loom-bg-elevated focus:bg-loom-bg-elevated focus:outline-none focus:ring-1 focus:ring-loom-accent"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="truncate text-sm font-medium text-loom-fg">
+          {exemplar.name || "(unnamed exemplar)"}
+        </span>
+        <div className="flex shrink-0 items-baseline gap-2 text-[11px] text-loom-fg-tertiary">
+          {exemplar.nsfw && (
+            <span
+              className="rounded bg-loom-bg-elevated px-1.5 py-0.5 text-loom-fg-secondary"
+              title="Marked NSFW."
+            >
+              nsfw
+            </span>
+          )}
+          <span title="Word count of the exemplar body.">
+            {wordCount} word{wordCount === 1 ? "" : "s"}
+          </span>
+          <span className={chunkBadgeClass}>{chunkLabel}</span>
+          <span className={beatBadgeClass}>{beatLabel}</span>
+        </div>
+      </div>
+      {exemplar.body && (
+        <p className="mt-1 line-clamp-2 text-xs leading-snug text-loom-fg-secondary">
+          {exemplar.body.trim().slice(0, 200)}
         </p>
       )}
     </button>

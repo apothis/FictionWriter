@@ -32,6 +32,15 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     /// `ProjectSession.listTemplateSceneSnapshots()`. Mirrors the
     /// references slot pattern.
     public let templateScenes: [SnapshotTemplateScene]
+    /// Phase 8.b.6 — unified scene exemplars. Each item joins a
+    /// Reference + Template by shared UUID (the storage objects
+    /// remain on disk in their original locations; this is a
+    /// projection). Per §5.1 Option C: legacy orphans (Reference
+    /// without matching Template, or vice versa) appear here with
+    /// the corresponding `has...` flag false so the UI can offer
+    /// re-ingest. Populated by
+    /// `ProjectSession.listSceneExemplars()`.
+    public let sceneExemplars: [SnapshotSceneExemplar]
     /// Templates with a Pass-A beat extraction currently in flight.
     /// Transient state (not persisted) — populated by
     /// `BibleWorkspaceWindowController` from `AppState`'s in-flight
@@ -62,6 +71,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         suggestions: [PendingSuggestion],
         references: [SnapshotReference] = [],
         templateScenes: [SnapshotTemplateScene] = [],
+        sceneExemplars: [SnapshotSceneExemplar] = [],
         isProjectOnDisk: Bool = true,
         extractingTemplateIds: [UUID] = []
     ) {
@@ -72,13 +82,14 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.suggestions = suggestions
         self.references = references
         self.templateScenes = templateScenes
+        self.sceneExemplars = sceneExemplars
         self.isProjectOnDisk = isProjectOnDisk
         self.extractingTemplateIds = extractingTemplateIds
     }
 
     private enum CodingKeys: String, CodingKey {
         case projectTitle, characters, lorebook, scenes, suggestions
-        case references, templateScenes, isProjectOnDisk
+        case references, templateScenes, sceneExemplars, isProjectOnDisk
         case extractingTemplateIds
     }
 
@@ -91,6 +102,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.suggestions = try c.decode([PendingSuggestion].self, forKey: .suggestions)
         self.references = try c.decodeIfPresent([SnapshotReference].self, forKey: .references) ?? []
         self.templateScenes = try c.decodeIfPresent([SnapshotTemplateScene].self, forKey: .templateScenes) ?? []
+        self.sceneExemplars = try c.decodeIfPresent([SnapshotSceneExemplar].self, forKey: .sceneExemplars) ?? []
         self.isProjectOnDisk = try c.decodeIfPresent(Bool.self, forKey: .isProjectOnDisk) ?? true
         // Wire format is `[String]` — uppercase UUID strings so the
         // JS side can do `Array.includes(template.id)` directly.
@@ -107,6 +119,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         try c.encode(suggestions, forKey: .suggestions)
         try c.encode(references, forKey: .references)
         try c.encode(templateScenes, forKey: .templateScenes)
+        try c.encode(sceneExemplars, forKey: .sceneExemplars)
         try c.encode(isProjectOnDisk, forKey: .isProjectOnDisk)
         // Emit uppercase UUID strings — UUID.uuidString is uppercase
         // by default, matching the rest of the wire contract.
@@ -125,6 +138,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         scenes: [UUID: Scene],
         references: [SnapshotReference] = [],
         templateScenes: [SnapshotTemplateScene] = [],
+        sceneExemplars: [SnapshotSceneExemplar] = [],
         isProjectOnDisk: Bool = true,
         extractingTemplateIds: [UUID] = [],
         suggestionsQueue: LedgerSuggestionsQueue
@@ -154,9 +168,45 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             suggestions: pending,
             references: references,
             templateScenes: templateScenes,
+            sceneExemplars: sceneExemplars,
             isProjectOnDisk: isProjectOnDisk,
             extractingTemplateIds: extractingTemplateIds
         )
+    }
+}
+
+/// Phase 8.b.6 — bridge projection of `SceneExemplar`. Carries the
+/// joined identity + the body (for the React editor's textarea) +
+/// the two has-flags so the React side can render status pills
+/// ("N chunks", "M beats", or "needs ingest").
+public struct SnapshotSceneExemplar: Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var nsfw: Bool
+    public var body: String
+    public var hasIndex: Bool
+    public var hasBeats: Bool
+    public var chunkCount: Int?
+    public var beatCount: Int?
+
+    public init(
+        id: UUID,
+        name: String,
+        nsfw: Bool,
+        body: String,
+        hasIndex: Bool,
+        hasBeats: Bool,
+        chunkCount: Int?,
+        beatCount: Int?
+    ) {
+        self.id = id
+        self.name = name
+        self.nsfw = nsfw
+        self.body = body
+        self.hasIndex = hasIndex
+        self.hasBeats = hasBeats
+        self.chunkCount = chunkCount
+        self.beatCount = beatCount
     }
 }
 

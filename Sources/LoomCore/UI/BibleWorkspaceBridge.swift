@@ -81,9 +81,19 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     case patchTemplateScene(id: UUID, patch: TemplateScenePatch)
     case deleteTemplateScene(id: UUID)
     case extractTemplateScene(id: UUID)
+    // Phase 8.b.6 — unified scene-exemplar surface. Each operation
+    // touches BOTH the Reference and the Template under the shared
+    // UUID. `create` writes new disk objects; `patch` applies the
+    // same field change to both; `delete` removes both; `ingest`
+    // fans out to ingestReference + extractTemplateScene.
+    case createSceneExemplar(name: String, body: String, nsfw: Bool)
+    case patchSceneExemplar(id: UUID, patch: SceneExemplarPatch)
+    case deleteSceneExemplar(id: UUID)
+    case ingestSceneExemplar(id: UUID)
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
+        case body, nsfw
     }
 
     private enum Kind: String {
@@ -102,6 +112,10 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case patchTemplateScene
         case deleteTemplateScene
         case extractTemplateScene
+        case createSceneExemplar
+        case patchSceneExemplar
+        case deleteSceneExemplar
+        case ingestSceneExemplar
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -157,6 +171,21 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             try c.encode(id, forKey: .id)
         case .extractTemplateScene(let id):
             try c.encode(Kind.extractTemplateScene.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+        case .createSceneExemplar(let name, let body, let nsfw):
+            try c.encode(Kind.createSceneExemplar.rawValue, forKey: .kind)
+            try c.encode(name, forKey: .name)
+            try c.encode(body, forKey: .body)
+            try c.encode(nsfw, forKey: .nsfw)
+        case .patchSceneExemplar(let id, let patch):
+            try c.encode(Kind.patchSceneExemplar.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+            try c.encode(patch, forKey: .patch)
+        case .deleteSceneExemplar(let id):
+            try c.encode(Kind.deleteSceneExemplar.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+        case .ingestSceneExemplar(let id):
+            try c.encode(Kind.ingestSceneExemplar.rawValue, forKey: .kind)
             try c.encode(id, forKey: .id)
         }
     }
@@ -224,6 +253,21 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .extractTemplateScene:
             let id = try c.decode(UUID.self, forKey: .id)
             self = .extractTemplateScene(id: id)
+        case .createSceneExemplar:
+            let name = try c.decode(String.self, forKey: .name)
+            let body = try c.decode(String.self, forKey: .body)
+            let nsfw = try c.decode(Bool.self, forKey: .nsfw)
+            self = .createSceneExemplar(name: name, body: body, nsfw: nsfw)
+        case .patchSceneExemplar:
+            let id = try c.decode(UUID.self, forKey: .id)
+            let patch = try c.decode(SceneExemplarPatch.self, forKey: .patch)
+            self = .patchSceneExemplar(id: id, patch: patch)
+        case .deleteSceneExemplar:
+            let id = try c.decode(UUID.self, forKey: .id)
+            self = .deleteSceneExemplar(id: id)
+        case .ingestSceneExemplar:
+            let id = try c.decode(UUID.self, forKey: .id)
+            self = .ingestSceneExemplar(id: id)
         }
     }
 }
