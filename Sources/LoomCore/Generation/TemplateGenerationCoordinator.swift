@@ -80,6 +80,10 @@ public final class TemplateGenerationCoordinator {
     private var pendingPacing: PacingStats = .zero
     private var pendingTemplateBody: String = ""
     private var pendingTemplateName: String = ""
+    /// Phase 8.b.8 — per-invocation D4 soft toggle. Default-off
+    /// preserves Phase 7 strict-prompt behaviour. Flipped on by the
+    /// Write-From-Template menu's "imitate content" affordance.
+    private var pendingImitateContent: Bool = false
     /// Captured per-beat for the generation-log entry. Each entry is
     /// the full prompt sent for that beat — so the History tab can
     /// show "what was sent" for each per-beat call, not just the
@@ -105,7 +109,12 @@ public final class TemplateGenerationCoordinator {
     /// Start a per-beat template generation. No-ops on stale template
     /// id, missing skeleton sidecar, or in-memory session with no
     /// current scene.
-    public func start(templateId: UUID, castMapping: String, cursorOffset: Int) {
+    public func start(
+        templateId: UUID,
+        castMapping: String,
+        cursorOffset: Int,
+        imitateContent: Bool = false
+    ) {
         cancel()
         cancelled = false
 
@@ -149,6 +158,7 @@ public final class TemplateGenerationCoordinator {
         pendingTemplateName = template.name
         pendingPacing = PacingStats.compute(text: template.body)
         pendingBeatPrompts = []
+        pendingImitateContent = imitateContent
 
         DebugLog.shared.write("[template-gen] start id=\(templateId) beats=\(skeleton.beats.count) cursor=\(cursorOffset)")
 
@@ -212,7 +222,8 @@ public final class TemplateGenerationCoordinator {
             currentBeatIndex: index,
             priorBeatsProse: insertedText,
             groundTruthPacing: pendingPacing,
-            styleExemplars: styleExemplars
+            styleExemplars: styleExemplars,
+            imitateContent: pendingImitateContent
         )
         // Capture per-beat prompt for the generation-log entry. Append
         // on the FIRST attempt of each beat (retries reuse the slot

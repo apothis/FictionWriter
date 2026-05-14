@@ -462,12 +462,22 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         textView.textContainer?.containerSize = NSSize(width: accessoryWidth, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
 
-        let stack = NSStackView(views: [pickerLabel, picker, castLabel, scroll])
+        // Phase 8.b.8 — D4 soft toggle. Default-off matches the locked
+        // design (§4 D7); when on, the writer prompt switches from
+        // "Do NOT reuse plot/characters/settings/specific events" to a
+        // positive-constraint phrasing that lets the source's content
+        // register + vocabulary transfer. Character-name leakage is
+        // still guarded upstream via STRAP content-stripping at Pass-A.
+        let imitateToggle = NSButton(checkboxWithTitle: "Imitate content (preserve source vocabulary + act patterns)", target: nil, action: nil)
+        imitateToggle.state = .off
+        imitateToggle.toolTip = "When off (default): writer treats the template as a voice exemplar only. When on: writer may carry source vocabulary, content register, and act patterns into the new beat. Use for the NSFW-exemplar case where the cast mapping alone underspecifies the desired content."
+
+        let stack = NSStackView(views: [pickerLabel, picker, castLabel, scroll, imitateToggle])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.setFrameSize(NSSize(width: accessoryWidth, height: 24 + textViewHeight + 60))
+        stack.setFrameSize(NSSize(width: accessoryWidth, height: 24 + textViewHeight + 82))
         // Ensure the scroll view + picker get the full accessory width.
         scroll.widthAnchor.constraint(equalToConstant: accessoryWidth).isActive = true
         scroll.heightAnchor.constraint(equalToConstant: textViewHeight).isActive = true
@@ -487,13 +497,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             DebugLog.shared.write("[template-gen] menu: cancelled — empty cast mapping")
             return
         }
-        DebugLog.shared.write("[template-gen] menu: launching template=\(chosen.name) id=\(chosen.id) castMapping-chars=\(castMapping.count)")
+        let imitateContent = imitateToggle.state == .on
+        DebugLog.shared.write("[template-gen] menu: launching template=\(chosen.name) id=\(chosen.id) castMapping-chars=\(castMapping.count) imitateContent=\(imitateContent)")
         NotificationCenter.default.post(
             name: EditorViewController.requestStartTemplateGenerationNotification,
             object: self,
             userInfo: [
                 "templateId": chosen.id,
                 "castMapping": castMapping,
+                "imitateContent": imitateContent,
             ]
         )
     }

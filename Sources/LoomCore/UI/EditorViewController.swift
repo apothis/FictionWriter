@@ -384,7 +384,12 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
                   let templateId = note.userInfo?["templateId"] as? UUID,
                   let castMapping = note.userInfo?["castMapping"] as? String
             else { return }
-            self.startTemplateGeneration(templateId: templateId, castMapping: castMapping)
+            let imitateContent = (note.userInfo?["imitateContent"] as? Bool) ?? false
+            self.startTemplateGeneration(
+                templateId: templateId,
+                castMapping: castMapping,
+                imitateContent: imitateContent
+            )
         }
         insertAgainObserver = NotificationCenter.default.addObserver(
             forName: HistoryInspectorViewController.requestInsertAgainNotification,
@@ -547,17 +552,22 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// generating (both pipelines write into the same text view; we
     /// don't multiplex). Surfaced as a public method so smoke tests +
     /// the AppDelegate menu both reach the same path.
-    public func startTemplateGeneration(templateId: UUID, castMapping: String) {
+    public func startTemplateGeneration(
+        templateId: UUID,
+        castMapping: String,
+        imitateContent: Bool = false
+    ) {
         guard !coordinator.isGenerating, !templateCoordinator.isGenerating else {
             DebugLog.shared.write("[template-gen] start aborted: a generation is already in flight")
             return
         }
         let cursorOffset = currentCursorOffset()
-        DebugLog.shared.write("[template-gen] starting at cursor=\(cursorOffset) templateId=\(templateId)")
+        DebugLog.shared.write("[template-gen] starting at cursor=\(cursorOffset) templateId=\(templateId) imitateContent=\(imitateContent)")
         templateCoordinator.start(
             templateId: templateId,
             castMapping: castMapping,
-            cursorOffset: cursorOffset
+            cursorOffset: cursorOffset,
+            imitateContent: imitateContent
         )
     }
 

@@ -39,7 +39,8 @@ public enum BeatGeneration {
         priorBeatsProse: String,
         groundTruthPacing: PacingStats,
         includeTemplateBody: Bool = true,
-        styleExemplars: [StyleExemplar] = []
+        styleExemplars: [StyleExemplar] = [],
+        imitateContent: Bool = false
     ) -> String {
         // Bounds-check the index — out-of-range returns empty so the
         // caller fails loudly (the spike runner catches + logs).
@@ -132,17 +133,38 @@ public enum BeatGeneration {
         // string — the production GenerationCoordinator wraps it in the
         // model's chat template (chatml / gemma / etc.) at request time.
         // For the spike runner we use raw completion.
+        //
+        // Phase 8.b.8 — D4 soft toggle. When imitateContent=true, the
+        // SYSTEM block drops the strict "Do NOT reuse plot/characters/
+        // settings/specific events" prohibition and replaces it with a
+        // positive-constraint phrasing ("preserve the source's content
+        // register, vocabulary, and act patterns where appropriate").
+        // Per LOOM_SCENE_EXEMPLAR.md §5.3 position 2 + the memory
+        // entry on prompt blacklists. Character-name leakage is still
+        // guarded upstream via STRAP content-stripping at Pass-A.
         let systemFraming: String
         let templateBlock: String
+        let templateBodyHeader = imitateContent
+            ? "=== TEMPLATE SCENE (voice + content reference; substitute cast below) ==="
+            : "=== TEMPLATE SCENE (voice reference; do not reuse plot) ==="
         if includeTemplateBody {
-            systemFraming = """
-                [SYSTEM]
-                You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT.
+            if imitateContent {
+                systemFraming = """
+                    [SYSTEM]
+                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT.
 
-                The TEMPLATE SCENE below is provided as a VOICE EXEMPLAR — study its prose voice, sentence rhythm, register, and modality handling. Do NOT reuse its plot, characters, settings, or specific events. The new scene's content comes from the NEW CAST mapping. The template is showing you HOW to write, not WHAT to write.
-                """
+                    The TEMPLATE SCENE below is a CONTENT + VOICE EXEMPLAR. Substitute the cast described in the NEW CAST block below; otherwise, preserve the source's content register, vocabulary, and act patterns where appropriate. Study the template's prose voice, sentence rhythm, register, and modality handling, and let the new beat read as a companion to it.
+                    """
+            } else {
+                systemFraming = """
+                    [SYSTEM]
+                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT.
+
+                    The TEMPLATE SCENE below is provided as a VOICE EXEMPLAR — study its prose voice, sentence rhythm, register, and modality handling. Do NOT reuse its plot, characters, settings, or specific events. The new scene's content comes from the NEW CAST mapping. The template is showing you HOW to write, not WHAT to write.
+                    """
+            }
             templateBlock = """
-                === TEMPLATE SCENE (voice reference; do not reuse plot) ===
+                \(templateBodyHeader)
                 \(templateBody)
                 === END TEMPLATE SCENE ===
 
@@ -152,10 +174,20 @@ public enum BeatGeneration {
             // Ablation arm B: skeleton-only. No template prose, no
             // voice-exemplar framing. Writer infers voice from the
             // skeleton's summaries + the pacing target alone.
-            systemFraming = """
-                [SYSTEM]
-                You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT. The new scene's content comes from the NEW CAST mapping.
-                """
+            // Soft mode still drops the "Do NOT reuse" framing in
+            // case style exemplars (per-beat retrieved chunks) carry
+            // source vocabulary the writer is invited to lift.
+            if imitateContent {
+                systemFraming = """
+                    [SYSTEM]
+                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT. Substitute the cast described in the NEW CAST block below; otherwise, preserve the content register, vocabulary, and act patterns that any retrieved style exemplars demonstrate.
+                    """
+            } else {
+                systemFraming = """
+                    [SYSTEM]
+                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT. The new scene's content comes from the NEW CAST mapping.
+                    """
+            }
             templateBlock = ""
         }
 
