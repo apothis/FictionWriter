@@ -12,6 +12,14 @@ import PackageDescription
 let package = Package(
     name: "Loom",
     platforms: [.macOS(.v14)],
+    // huggingface/swift-transformers 1.0 (2025-09-26) gives us the
+    // RoBERTa BPE tokenizer in pure Swift so the Wegmann CoreML
+    // bundle can be driven without a Python subprocess. macOS 13+;
+    // we're on 14. Tokenizers product only — skips the Generation /
+    // Models products that would drag CoreML build steps in.
+    dependencies: [
+        .package(url: "https://github.com/huggingface/swift-transformers", from: "1.0.0"),
+    ],
     targets: [
         .executableTarget(
             name: "Loom",
@@ -20,14 +28,21 @@ let package = Package(
         ),
         .target(
             name: "LoomCore",
+            dependencies: [
+                .product(name: "Tokenizers", package: "swift-transformers"),
+            ],
             path: "Sources/LoomCore",
-            // Phase 4.5 — bundle the Bible Workspace WKWebView assets
-            // (Vite/React build output). `scripts/build-bible-workspace.sh`
-            // syncs `web/bible-workspace/dist/` into this directory
-            // before `swift build`; the dist content is gitignored.
-            // See LOOM_BIBLE_WORKSPACE.md §5.5.
+            // Bundle the Bible Workspace WKWebView assets (Vite/React
+            // build output) and the Wegmann CoreML inference bundle.
+            // Both directories are gitignored — regenerated locally
+            // before `swift build` by:
+            //   scripts/build-bible-workspace.sh
+            //   Tools/CoreMLProbe/build_mlpackage.py
+            // See LOOM_BIBLE_WORKSPACE.md §5.5 +
+            // Tools/CoreMLProbe/build_mlpackage.py.
             resources: [
                 .copy("Resources/BibleWorkspace"),
+                .copy("Resources/StyleEmbedding"),
             ],
             swiftSettings: [
                 // Enables `@testable import LoomCore` from the test runner

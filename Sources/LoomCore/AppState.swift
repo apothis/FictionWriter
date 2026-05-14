@@ -482,17 +482,24 @@ public final class AppState {
         DebugLog.shared.write("[retrieval] installed service for project=\(url.lastPathComponent) model=\(client.modelId)")
     }
 
-    /// Phase 5 production A1 — default factory: spawn a
-    /// `PythonEmbeddingClient` against the repo's bundled venv. The
-    /// production model is Wegmann (`AnnaWegmann/Style-Embedding`),
-    /// locked by the Phase 8.a §6.1 spike — StyleDistance (the prior
-    /// incumbent) underperformed all three alternatives in the
-    /// 4-candidate set, including on SFW prose.
-    /// Paths resolve relative to the current working directory (the
-    /// self-use deployment model). Phase 5.5 will swap this for a
-    /// `Loom.app/Contents/Resources/Python` lookup once the bundling
-    /// pipeline lands.
+    /// Phase 8.c — default factory now returns a `CoreMLEmbeddingClient`
+    /// driving the bundled Wegmann `.mlpackage` via Apple's CoreML
+    /// framework. Replaces the Phase 5 Python subprocess path. Cosine
+    /// equivalence vs the Python reference was verified at conversion
+    /// time within 1e-4 (see Tools/CoreMLProbe/probe_wegmann_coreml.py
+    /// + commit history). Existing `.index` sidecars stay valid.
+    ///
+    /// Fallback: if the bundled mlpackage isn't present (e.g. dev
+    /// machine where the Python build script hasn't been run yet),
+    /// fall back to `PythonEmbeddingClient` against the venv. The
+    /// fallback keeps repo-bootstrap painless — `swift build` works
+    /// before the user runs `Tools/CoreMLProbe/build_mlpackage.py`.
     private static let defaultEmbeddingClientFactory: EmbeddingClientFactory = { projectURL in
+        if let bundleURL = CoreMLEmbeddingClient.defaultBundleURL() {
+            DebugLog.shared.write("[embed-factory] using CoreMLEmbeddingClient at \(bundleURL.lastPathComponent)")
+            return CoreMLEmbeddingClient(bundleURL: bundleURL)
+        }
+        DebugLog.shared.write("[embed-factory] CoreML bundle missing; falling back to PythonEmbeddingClient")
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         return PythonEmbeddingClient(
             pythonExecutable: cwd.appendingPathComponent("Tools/RagSpike/Python/.venv/bin/python3"),
