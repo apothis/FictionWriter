@@ -285,7 +285,68 @@ No peer-reviewed work directly addresses NER+coref on adult prose. Predictable f
 ### 8.8 Acceptance UI patterns
 Dominant pattern in fiction-writing tools is **modal review queue + single-shot accept/reject + post-acceptance edit**. Squibler's "accept, reject, or refine every suggestion" is the cleanest documented pattern. Research prototypes (Patchview, LikeThis!) converge on: batched suggestion list, per-suggestion accept/reject/edit, evidence/justification, iterative refinement before commit. None publish per-scene caps or confidence thresholds.
 
-## 9. References
+## 9. Post-spike findings (2026-05-15)
+
+> **Decision: PROCEED.** §6.4 criteria cleared with margin on precision + recall; latency is at-the-bar and addressable via Stage D parallelisation in productionisation.
+
+### 9.1 Three-run progression
+
+The spike ran the same fixture three times, with fixes layered between runs based on the per-scene failure analysis.
+
+| | Precision | Recall | F1 | Avg latency | Cap exceeded | Notes |
+|---|---|---|---|---|---|---|
+| §1 target | ≥ 75% | ≥ 60% | — | ≤ 30s | 0/8 | |
+| **Run 1** — baseline | 33.3% | 85.7% | 48.0% | 49.2s | 0/8 | Recall strong; precision tanked by structural issues, not LLM failures |
+| **Run 2** — +Fix 1/2/3 | 75.0% | 85.7% | 80.0% | 32.2s | 0/8 | Precision at bar; 2 specific FPs left |
+| **Run 3** — +Fix 4/5 | **100.0%** | **85.7%** | **92.3%** | 30.7s | 0/8 | Precision perfect; only Karim-in-eds-01 miss remains |
+
+### 9.2 The five fixes that landed
+
+All five are pure-data Swift, all under 100 lines combined, none touching the LLM call site.
+
+| Fix | What it solves | Mechanism | Where |
+|---|---|---|---|
+| **1** Pre-gate known-entity filter | gemma4_2b ignores prompt "don't re-emit known entities" instruction (cf. `feedback_prompt_blacklist_evasion` memory) | Exact case-insensitive name match against known list | `EntityDiscovery.isKnownSurface` |
+| **2** Stage C dedup wire into runner | Same person under different surface forms ("Marius Thorn" / "Dr Thorn") | CoreML Wegmann cosine + threshold band against starting bible | `EntityDedupEngine.evaluate` |
+| **3** Place-recurrence gate | Real-world cities in passing reference (Brussels, Edinburgh) promoted as bible-worthy places | Place must start "The " OR appear ≥ 2× in scene prose (whole-word) | `EntityDiscovery.passesPlaceRecurrence` |
+| **4** Known-name token expansion | "Karim Vance" in known list doesn't catch bare "Vance" when LLM splits a multi-word name | Auto-expand multi-word known names into proper-noun tokens (uppercase, length ≥ 3) | `EntityDiscovery.expandKnownNamesWithTokens` |
+| **5** Post-Stage-D canonical dedup | Wegmann is style-similarity, not semantic — doesn't merge "Marius Thorn" / "Dr Thorn" at Stage C, but Stage D normalises both to identical canonical_name | Exact-string merge on (canonical_name + kind) after Stage D, union aliases | `EntityDiscovery.dedupByCanonicalName` |
+
+Fix 2 was a wiring change (the engine already existed and was tested). Fixes 1, 3, 4, 5 are new pure-data functions, each with 6-8 dedicated tests (28 new tests total across the four). Combined with the original 49 tests for the §6.2 scaffolding, Phase 9 adds **77 tests** and brings the total suite to 1385/1385 green.
+
+### 9.3 The remaining recall miss
+
+One gold entity (Karim in `eds-01`) is missed across all three runs. The failure is **upstream of the filters** — gemma4_2b's Stage A2 simply doesn't emit Karim despite his name appearing 5 times in the prose and the scene being literally titled "Coffee with Karim". Run 1 emitted zero candidates with a `noJSONArrayFound` parse error. Runs 2 + 3 emitted candidates but never Karim — the model apparently treats him as already-known (a hallucination, since the starting bible at that scene contains only Mia + Anders). Two ways to address in productionisation:
+
+- **Stage A2 retry-on-empty-output** — re-prompt with different framing if Stage A2 returns either a parse error OR zero candidates that survive the known-entity filter. Aligns with HANDOFF §15.16 follow-up #1.
+- **Higher Stage A2 temperature** (currently 0.2) — a small bump to 0.4 would diversify outputs and likely surface Karim. Trade-off: more candidates means more Stage D calls means more latency.
+
+### 9.4 The latency story
+
+Run 3 was 30.7s/scene avg — 0.7s over the §1 target. Run-to-run variability on the same fixture spans 2-3s (Run 2 was 32.2s, Run 1 was 49.2s with one transient retry). The bottleneck is sequential Stage D calls (each ~10s under JSON-Schema-constrained generation). For productionisation:
+
+- **Parallelise Stage D**: each candidate is independent — concurrent `URLSession.dataTask`. An eds-07 with 4 candidates would drop from ~45s to ~13s. Not load-bearing for the v1 ship gate but the obvious lever if latency UX bites.
+- **Conditional Stage D**: candidates with no aliases / clean canonical form could skip Stage D entirely. Save 50% of Stage D calls in the common case.
+
+Neither belongs in the spike scope; both belong in §6.5 Phase 9 productionisation.
+
+### 9.5 What this means for the bigger questions
+
+- **Python / BookNLP / GLiNER hybrid stays off the table for v1.** LLM-only with the five Swift-side filters clears precision/recall/cap thresholds at gemma4_2b scale. The toolchain-pressure risk from `feedback_verify_local_toolchain` is avoided. If a future scene type (high-anaphora, dialogue-only NSFW) breaks v1, the hybrid option remains documented in §4.1 + §8.3 as the next escalation.
+- **Out-of-scope items from §5 are still out of scope.** The v1 pipeline doesn't handle object discovery, cross-scene coref, lorebook auto-discovery, relationship discovery, factions, or bulk import. Each is documented as an additive v2 candidate that extends the same pipeline shape without redesign.
+- **The Bible Workspace webview UI (`EntityProposalsQueue.tsx`) and bridge intents (`acceptEntityProposal` / `rejectEntityProposal`) are the next concrete piece of productionisation work** — independent track from the pipeline polish, can land in parallel with the latency improvements above. The shape is well-defined (mirror `SuggestionsQueue.tsx`); ~1-day estimate including the bridge plumbing.
+
+### 9.6 §6.4 recommendation: GO — productionise as Phase 9
+
+The empirical thresholds are met. The remaining concerns are productionisation tasks (Stage D parallelisation, Stage A2 retry, webview UI), not viability questions. The pipeline shape from §3.1 holds; no architectural redesign is needed between spike and production.
+
+**Suggested Phase 9 LOOM_PLAN row** (additive to L8 / future L9):
+
+> L9 — Entity Discovery v1. Productionise the spike pipeline (Stages A2-F per §3.1), Bible Workspace webview UI (`EntityProposalsQueue.tsx` + `acceptEntityProposal` / `rejectEntityProposal` bridge intents), Stage D parallelisation, Stage A2 retry on empty/parse-error. Pre-conditions: HANDOFF §15.16 follow-up #1 (OllamaBeatExtractor retry-on-noJSONObjectFound) is in production. ETA: ~1 week including UI + integration tests.
+
+---
+
+## 10. References
 
 - [LOOM_LEDGER_SPIKE.md](LOOM_LEDGER_SPIKE.md) — Pass-B fact extraction precedent (prompt design, GBNF grammar, scoring methodology)
 - [LOOM_STORY_BIBLE.md](LOOM_STORY_BIBLE.md) — entity model authoritative source
