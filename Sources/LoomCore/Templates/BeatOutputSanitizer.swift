@@ -38,19 +38,22 @@ import Foundation
 // sanitizer is the post-stream guardrail.
 
 public enum BeatOutputSanitizer {
-    /// Hallucinated bracket-header patterns the model emits at the
-    /// end of a beat. The full list is informed by the actual leakage
-    /// seen in 2026-05-15's gen-log; add more here as new patterns
-    /// surface in smoke. Each is matched as a line-start anchor.
-    private static let bracketHeaderPatterns: [String] = [
-        "[VALIDATE BEAT]",
-        "[VALIDATE BEAT ]",
-        "[BEAT CHECK]",
-        "[BEAT CHECK ]",
-        "[BEAT VALIDATION]",
-        "[LENGTH CHECK]",
-        "[PACING CHECK]",
-        "[CHECK]",
+    /// Meta-vocabulary words that, when they appear as the first
+    /// token inside a `[...]` line-start header, signal a
+    /// hallucinated self-validation block. The 2026-05-15 smoke
+    /// surfaced `[VALIDATE BEAT]`, `[BEAT CHECK]`, and `[CHECK BEAT]`
+    /// (word-order reversed) — but the model improvises new label
+    /// shapes each generation. The vocabulary-anchored regex
+    /// covers any combination starting with one of these.
+    ///
+    /// Conservative on purpose: prose-shaped brackets like
+    /// `[OUTSIDE THE OFFICE]`, `[LATER]`, `[NIGHT]`, `[CHAPTER 2]`,
+    /// `[FLASHBACK]` do NOT match — none of their first words are
+    /// in this vocab, so stage-direction-style fiction is safe.
+    private static let metaVocabulary: [String] = [
+        "BEAT", "CHECK", "VALIDATE", "LENGTH", "PACING", "VOICE",
+        "DIALOGUE", "SCENE", "PROSE", "OUTPUT", "NOTE", "META",
+        "SELF", "VERIFY",
     ]
 
     /// Header-less meta-line patterns the model emits when it skips
@@ -70,8 +73,11 @@ public enum BeatOutputSanitizer {
     public static func strip(_ raw: String) -> String {
         var text = raw
 
-        // (a) Truncate at the first bracket-shaped meta-header.
-        text = truncateAtFirstMatch(text, candidates: bracketHeaderPatterns)
+        // (a) Truncate at the first vocabulary-anchored bracket
+        //     header. Catches any `[META_WORD ...]` shape at line-
+        //     start including word-order variations the model
+        //     improvises across generations.
+        text = truncateAtFirstMetaBracketHeader(text)
 
         // (b) Truncate at the first header-less meta-line if it
         //     appears at the start of a line. Same rule: cut to
@@ -88,20 +94,40 @@ public enum BeatOutputSanitizer {
         return text
     }
 
-    /// Find the earliest occurrence of any candidate string anywhere
-    /// in `text`; return everything up to (but not including) that
-    /// occurrence. Original string if no match.
-    private static func truncateAtFirstMatch(_ text: String, candidates: [String]) -> String {
-        var earliest: String.Index?
-        for needle in candidates {
-            if let range = text.range(of: needle) {
-                if earliest == nil || range.lowerBound < earliest! {
-                    earliest = range.lowerBound
+    /// Truncate at the first `[META_WORD ...]` style header at
+    /// line-start. Matches `[VALIDATE BEAT]`, `[BEAT CHECK]`,
+    /// `[CHECK BEAT]`, `[VERIFY OUTPUT]`, etc. — any open-bracket
+    /// followed by one of the meta-vocabulary words. Skips brackets
+    /// whose first word is NOT in the vocab (e.g. `[OUTSIDE THE
+    /// OFFICE]` in fiction prose).
+    private static func truncateAtFirstMetaBracketHeader(_ text: String) -> String {
+        var searchStart = text.startIndex
+        while let bracket = text.range(of: "[", range: searchStart..<text.endIndex) {
+            let atLineStart: Bool
+            if bracket.lowerBound == text.startIndex {
+                atLineStart = true
+            } else {
+                let prev = text.index(before: bracket.lowerBound)
+                atLineStart = (text[prev] == "\n")
+            }
+            if atLineStart {
+                let afterOpen = bracket.upperBound
+                // Read the first word's characters until a space or
+                // closing bracket. If it's in the vocab, cut here.
+                var wordEnd = afterOpen
+                while wordEnd < text.endIndex {
+                    let c = text[wordEnd]
+                    if c == " " || c == "]" { break }
+                    wordEnd = text.index(after: wordEnd)
+                }
+                let firstWord = String(text[afterOpen..<wordEnd])
+                if metaVocabulary.contains(firstWord) {
+                    return String(text[..<bracket.lowerBound])
                 }
             }
+            searchStart = bracket.upperBound
         }
-        guard let cut = earliest else { return text }
-        return String(text[..<cut])
+        return text
     }
 
     /// Truncate at the first occurrence of any candidate that lands

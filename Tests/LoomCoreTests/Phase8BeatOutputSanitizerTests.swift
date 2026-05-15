@@ -106,6 +106,67 @@ func phase8BeatOutputSanitizerTests() -> TestSuite {
         try expectEqual(BeatOutputSanitizer.strip(input), input)
     }
 
+    s.test("strips [CHECK BEAT] (word-order reversed from [BEAT CHECK] — observed 2026-05-15 second smoke)") {
+        let input = """
+            "Tonight after shift?" Emily asks. She bites Maya's earlobe. \
+            "Sure baby. Keep me waiting like usual."
+
+            [CHECK BEAT]
+            Is Beat 4 written above? YES
+            Modality: action? YES
+            Function: reveal? YES (reveals they intend to meet at Emily's apt later)
+            Approx word count 60? (around 60) YES
+            Voice match (sensual)? YES
+            Dialogue dense? YES
+            Short sentences? YES
+            Sensory detail included? YES (teeth scraping)
+            Body response included? YES
+            Internal longing present? YES
+            No meta comments before the beat? YES
+            """
+        let cleaned = BeatOutputSanitizer.strip(input)
+        try expectFalse(cleaned.contains("[CHECK BEAT]"))
+        try expectFalse(cleaned.contains("Is Beat 4 written"))
+        try expectFalse(cleaned.contains("Modality: action?"))
+        try expectFalse(cleaned.contains("Voice match"))
+        try expectTrue(cleaned.contains("Tonight after shift?"))
+        try expectTrue(cleaned.contains("Keep me waiting like usual"))
+    }
+
+    s.test("generic regex: any [META WORD ...] header gets cut (defends against new model improvisations)") {
+        // The model invents new label shapes each generation. The
+        // regex-driven cut covers variations we haven't enumerated:
+        // [BEAT VERIFY], [PROSE CHECK], [SELF NOTE], [META ANALYSIS],
+        // etc. Anything starting with one of the meta-vocab words
+        // wrapped in [...].
+        for header in ["[BEAT VERIFY]", "[PROSE CHECK]", "[SELF NOTE]", "[META ANALYSIS]",
+                       "[VERIFY BEAT]", "[SCENE CHECK]", "[OUTPUT VALIDATION]"] {
+            let input = """
+                Real prose ends here.
+
+                \(header)
+                Some validation line.
+                """
+            let cleaned = BeatOutputSanitizer.strip(input)
+            try expectFalse(cleaned.contains(header),
+                            "expected '\(header)' to be stripped; got:\n\(cleaned)")
+            try expectTrue(cleaned.contains("Real prose ends here"))
+        }
+    }
+
+    s.test("guarded vocabulary: prose-shaped brackets are NOT cut (no false positives)") {
+        // Stage-direction-style brackets in fiction prose must
+        // survive. Pattern only fires when contents start with one
+        // of the meta-vocab words (BEAT, CHECK, VALIDATE, LENGTH,
+        // PACING, VOICE, DIALOGUE, SCENE, PROSE, OUTPUT, NOTE, META,
+        // SELF, VERIFY).
+        for label in ["[OUTSIDE THE OFFICE]", "[LATER]", "[NIGHT]", "[FLASHBACK]", "[CHAPTER 2]"] {
+            let input = "Some prose.\n\n\(label)\nMore prose."
+            try expectEqual(BeatOutputSanitizer.strip(input), input,
+                            "did not expect '\(label)' to be stripped")
+        }
+    }
+
     s.test("end-to-end: full beat output with leakage + trailing blanks") {
         // Reproduces the actual pattern seen in 2026-05-15 gen-log:
         // beat prose, six blank lines, [VALIDATE BEAT] block.

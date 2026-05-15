@@ -290,12 +290,21 @@ public final class TemplateGenerationCoordinator {
         // 2026-05-15 smoke + BeatOutputSanitizer comments). Stop
         // sequences are the preventive layer; BeatOutputSanitizer.strip
         // catches anything that slips past at insertion time.
+        // Stop list covers prompt-shape headers the writer might
+        // echo back (`[SYSTEM]`, `[NEW CAST]`, etc.) AND the
+        // meta-validation block shapes seen in the 2026-05-15 smokes
+        // (`[VALIDATE BEAT]`, `[BEAT CHECK]`, `[CHECK BEAT]`, etc.).
+        // Catching the whole vocabulary upstream so the per-token
+        // stream never carries them. BeatOutputSanitizer.strip is
+        // the post-stream safety net for anything that slips past.
         let stops = [
             "=== END", "[BEAT SKELETON", "[INSTRUCTION", "[SYSTEM]",
             "[NEW CAST]", "[NEXT-BEAT HINT", "[END",
-            "[VALIDATE", "[BEAT CHECK", "[BEAT VALIDATION",
-            "[LENGTH CHECK", "[PACING CHECK", "[CHECK]",
-            "[VOICE TARGET",
+            // Meta-validation headers (both word-orders + variations):
+            "[VALIDATE", "[BEAT ", "[CHECK ", "[CHECK]",
+            "[LENGTH ", "[PACING ", "[VOICE ", "[DIALOGUE ",
+            "[OUTPUT ", "[PROSE ", "[SCENE ", "[META ",
+            "[SELF ", "[VERIFY ", "[NOTE ",
         ]
         self.lastStopSequences = stops
 
