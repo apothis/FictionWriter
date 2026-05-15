@@ -71,6 +71,18 @@ let package = Package(
             dependencies: ["LoomCore"],
             path: "Tools/LedgerSpike"
         ),
+        // Phase 9 entity-discovery spike runner
+        // (LOOM_ENTITY_DISCOVERY_SPIKE.md §6.3). Reads the fixture,
+        // drives Stage A2 (candidate gen) + B (gate) + D
+        // (normalisation) against Ollama, scores vs gold, emits a
+        // markdown report. Run: `swift run EntityDiscoverySpike`
+        // (requires gemma4_2b at LOOM_SPIKE_OLLAMA_URL,
+        //  default http://localhost:11434/).
+        .executableTarget(
+            name: "EntityDiscoverySpike",
+            dependencies: ["LoomCore"],
+            path: "Tools/EntityDiscoverySpike"
+        ),
         // Phase 5 RAG-for-style spike runner (LOOM_RAG_SPIKE.md §6).
         // Reads the fixture, hits Kobold + Ollama for Paths A/B/C,
         // and consumes the Python sidecar's vectors.json for Paths
