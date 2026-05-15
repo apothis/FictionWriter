@@ -94,6 +94,13 @@ public struct TemplateGenerationInfo: Codable, Equatable {
     public let beatCount: Int
     public let beatModalitySequence: [String]
     public let voiceDescriptor: VoiceDescriptor?
+    /// Phase 8.b.x — soft-D4 toggle state at generation time.
+    /// Optional for back-compat decode of older entries that don't
+    /// carry it. nil → false (Phase 7 strict behaviour).
+    public let imitateContent: Bool?
+    /// Phase 8.b.x — per-call user hint (`[ADDITIONAL INSTRUCTION]`
+    /// block). Optional for back-compat. nil → "" (no hint).
+    public let extraInstruction: String?
 
     public init(
         templateId: UUID,
@@ -101,7 +108,9 @@ public struct TemplateGenerationInfo: Codable, Equatable {
         castMapping: String,
         beatCount: Int,
         beatModalitySequence: [String],
-        voiceDescriptor: VoiceDescriptor?
+        voiceDescriptor: VoiceDescriptor?,
+        imitateContent: Bool? = nil,
+        extraInstruction: String? = nil
     ) {
         self.templateId = templateId
         self.templateName = templateName
@@ -109,6 +118,8 @@ public struct TemplateGenerationInfo: Codable, Equatable {
         self.beatCount = beatCount
         self.beatModalitySequence = beatModalitySequence
         self.voiceDescriptor = voiceDescriptor
+        self.imitateContent = imitateContent
+        self.extraInstruction = extraInstruction
     }
 }
 

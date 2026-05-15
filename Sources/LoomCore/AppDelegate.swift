@@ -885,7 +885,12 @@ private final class TemplateGenMenuStateController: NSObject {
             return
         }
         let templateId = templates[idx].id
-        if let state = TemplateGenStateStore.load(templateId: templateId, in: url) {
+        // loadOrBackfill: sidecar first; falls back to the most recent
+        // matching generation-log entry's templateGenerationInfo.
+        // Critical for users whose first generations predated the
+        // sidecar mechanism — without backfill they see empty fields
+        // despite having generated before.
+        if let state = TemplateGenStateStore.loadOrBackfill(templateId: templateId, in: url) {
             applyState(state)
         } else {
             applyEmpty()

@@ -64,4 +64,37 @@ public enum TemplateGenStateStore {
         let data = try encoder.encode(state)
         try data.write(to: fileURL(templateId: templateId, in: projectURL))
     }
+
+    /// Restore-with-fallback. Tries the sidecar first; when absent,
+    /// scans the project's `generation-log/` for the most recent
+    /// entry whose `templateGenerationInfo.templateId` matches and
+    /// synthesizes a `TemplateGenState` from its captured
+    /// castMapping (+ the two newer fields if they're present on
+    /// the entry; legacy entries default both to safe values).
+    ///
+    /// Motivated by the 2026-05-15 smoke: the sidecar mechanism
+    /// landed AFTER several gens had already run, so users opening
+    /// the menu after the rebuild saw empty fields despite having
+    /// generated previously. The gen-log already carries the cast
+    /// mapping — recover from it.
+    public static func loadOrBackfill(templateId: UUID, in projectURL: URL) -> TemplateGenState? {
+        if let state = load(templateId: templateId, in: projectURL) {
+            return state
+        }
+        let log = GenerationLogStore()
+        let entries = log.list(in: projectURL)
+        let matches = entries.compactMap { entry -> (Date, TemplateGenerationInfo)? in
+            guard let info = entry.templateGenerationInfo, info.templateId == templateId else {
+                return nil
+            }
+            return (entry.timestamp, info)
+        }
+        guard let (timestamp, info) = matches.max(by: { $0.0 < $1.0 }) else { return nil }
+        return TemplateGenState(
+            castMapping: info.castMapping,
+            extraInstruction: info.extraInstruction ?? "",
+            imitateContent: info.imitateContent ?? false,
+            savedAt: timestamp
+        )
+    }
 }

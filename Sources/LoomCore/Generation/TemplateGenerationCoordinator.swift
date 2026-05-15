@@ -540,7 +540,9 @@ public final class TemplateGenerationCoordinator {
             castMapping: pendingCastMapping,
             beatCount: skeleton.beats.count,
             beatModalitySequence: skeleton.beats.map(\.modality.rawValue),
-            voiceDescriptor: skeleton.voiceDescriptor
+            voiceDescriptor: skeleton.voiceDescriptor,
+            imitateContent: pendingImitateContent,
+            extraInstruction: pendingExtraInstruction
         )
         let entry = GenerationLogEntry(
             sceneId: sceneId,
