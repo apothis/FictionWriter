@@ -51,7 +51,32 @@ public final class OllamaEntityDiscoveryExtractor: EntityDiscoveryExtractor {
         )
         let schema = EntityDiscovery.candidateGenerationJSONSchema()
         let options = OllamaChatOptions(numPredict: 1024)
+        callStageA2WithRetry(
+            prompt: prompt,
+            schema: schema,
+            options: options,
+            attemptsRemaining: 1,
+            scenePose: scenePose,
+            sceneId: sceneId,
+            expandedKnown: expandedKnown,
+            existingEntities: existingEntities,
+            embedder: embedder,
+            completion: completion
+        )
+    }
 
+    private func callStageA2WithRetry(
+        prompt: String,
+        schema: [String: Any],
+        options: OllamaChatOptions,
+        attemptsRemaining: Int,
+        scenePose: String,
+        sceneId: UUID,
+        expandedKnown: [String],
+        existingEntities: [EntityDedupEngine.ExistingEntity],
+        embedder: EmbeddingClient?,
+        completion: @escaping (Result<[EntityDiscovery.ProposedEntity], Error>) -> Void
+    ) {
         provider.call(prompt: prompt, schema: schema, options: options) { [provider] result in
             switch result {
             case .failure(let err):
@@ -60,6 +85,25 @@ public final class OllamaEntityDiscoveryExtractor: EntityDiscoveryExtractor {
                 let candidates: [EntityDiscovery.Candidate]
                 do {
                     candidates = try EntityDiscovery.parseCandidates(raw)
+                } catch EntityDiscovery.ParseError.noJSONArrayFound where attemptsRemaining > 0 {
+                    // Mirror of OllamaBeatExtractor (commit 6b6e714):
+                    // Pass-A on NSFW shows ~30% transient parse fails
+                    // (preamble eats the open bracket). One retry
+                    // recovers most without costing a recall miss.
+                    DebugLog.shared.write("[proposals] Stage A2 parse failed (noJSONArrayFound) — retrying once")
+                    self.callStageA2WithRetry(
+                        prompt: prompt,
+                        schema: schema,
+                        options: options,
+                        attemptsRemaining: attemptsRemaining - 1,
+                        scenePose: scenePose,
+                        sceneId: sceneId,
+                        expandedKnown: expandedKnown,
+                        existingEntities: existingEntities,
+                        embedder: embedder,
+                        completion: completion
+                    )
+                    return
                 } catch {
                     completion(.failure(error))
                     return

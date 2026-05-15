@@ -225,6 +225,68 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
         }
     }
 
+    s.test("Stage A2 retries on noJSONArrayFound and recovers if second attempt succeeds") {
+        // Mirrors the OllamaBeatExtractor fix (commit 6b6e714) —
+        // gemma4_2b's Pass-A on NSFW prose shows ~30% transient
+        // JSON-parse failures (preamble noise eating the open
+        // bracket). One retry recovers most of those without
+        // costing the user a recall miss.
+        let stub = StubProvider()
+        let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
+
+        var captured: Result<[EntityDiscovery.ProposedEntity], Error>?
+        extractor.extract(
+            scenePose: "Anders arrived.",
+            sceneId: sceneId,
+            knownEntityNames: [],
+            existingEntities: [],
+            embedder: nil
+        ) { result in captured = result }
+
+        // First attempt: preamble eats the open bracket.
+        stub.cannedResponses.append(.success("Sure, here you go: malformed without an open bracket"))
+        stub.flushNext()
+        // Retry fires automatically; provide a clean response.
+        stub.cannedResponses.append(.success(a2Response([("Anders", "character", "Anders arrived.")])))
+        stub.flushNext()
+        // Then Stage D for the recovered candidate.
+        stub.cannedResponses.append(.success(dResponse(kind: "character", canonical: "Anders")))
+        stub.flushNext()
+
+        let result = try expectNotNil(captured)
+        if case .success(let proposals) = result {
+            try expectEqual(proposals.count, 1)
+            try expectEqual(proposals[0].canonicalName, "Anders")
+        } else {
+            throw TestFailure(message: "expected success after Stage A2 retry, got \(result)", file: #file, line: #line)
+        }
+    }
+
+    s.test("Stage A2 surfaces parse failure after retry exhausts (both attempts malformed)") {
+        let stub = StubProvider()
+        let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
+
+        var captured: Result<[EntityDiscovery.ProposedEntity], Error>?
+        extractor.extract(
+            scenePose: "...",
+            sceneId: sceneId,
+            knownEntityNames: [],
+            existingEntities: [],
+            embedder: nil
+        ) { result in captured = result }
+
+        stub.cannedResponses.append(.success("not json"))
+        stub.cannedResponses.append(.success("still not json"))
+        stub.flushAll()
+
+        let result = try expectNotNil(captured)
+        if case .failure = result {
+            // ok
+        } else {
+            throw TestFailure(message: "expected failure after retry exhausts", file: #file, line: #line)
+        }
+    }
+
     s.test("Stage A2 transport error → completion fires with error") {
         let stub = StubProvider()
         let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
