@@ -46,6 +46,24 @@ func phase7BeatGenerationTests() -> TestSuite {
         )
     }
 
+    s.test("BeatGeneration.buildBeatPrompt SYSTEM framing nudges pronoun consistency") {
+        // HANDOFF §15.16 #4: writer occasionally slips between "he"
+        // and "she" on same-gender casts (or contradicts the cast's
+        // declared pronouns). Positive constraint in the SYSTEM
+        // block — per the prompt-blacklist memory entry, positive
+        // framings beat enumerated negatives.
+        let skeleton = makeSkeleton()
+        let prompt = BeatGeneration.buildBeatPrompt(
+            templateBody: "x",
+            skeleton: skeleton,
+            castMapping: "Maya is the protagonist (she/her).",
+            currentBeatIndex: 0,
+            priorBeatsProse: "",
+            groundTruthPacing: samplePacing()
+        )
+        try expectTrue(prompt.contains("Use the pronouns specified in the NEW CAST block consistently"))
+    }
+
     s.test("BeatGeneration.buildBeatPrompt includes template body, current+past beats, cast, instruction") {
         let skeleton = makeSkeleton()
         let prompt = BeatGeneration.buildBeatPrompt(
