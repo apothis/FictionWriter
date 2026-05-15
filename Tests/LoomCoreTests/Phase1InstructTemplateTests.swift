@@ -150,6 +150,19 @@ func phase1InstructTemplateTests() -> TestSuite {
         try expectEqual(InstructTemplates.detect(forModelName: "mistral-7b-instruct-v0.2"), .mistralV3)
     }
 
+    s.test("auto-detect: Mistral-Small-24B finetune family → mistralV7") {
+        // Drummer / MuXodious / Naphula / LatitudeGames finetunes of
+        // Mistral-Small-3.x — none contain "mistral" in their filename,
+        // but all use Mistral v7 Tekken format per their model cards.
+        try expectEqual(InstructTemplates.detect(forModelName: "Goetia-24B-v1.3-absolute-heresy.i1-Q5_K_M.gguf"), .mistralV7)
+        try expectEqual(InstructTemplates.detect(forModelName: "Cydonia-24B-v4.3-absolute-heresy"), .mistralV7)
+        try expectEqual(InstructTemplates.detect(forModelName: "TheDrummer/Cydonia-24B-v4.3"), .mistralV7)
+        try expectEqual(InstructTemplates.detect(forModelName: "Magidonia-24B-v4.3"), .mistralV7)
+        try expectEqual(InstructTemplates.detect(forModelName: "TheDrummer/Skyfall-31B-v4.2"), .mistralV7)
+        try expectEqual(InstructTemplates.detect(forModelName: "Harbinger-24B-absolute-heresy"), .mistralV7)
+        try expectEqual(InstructTemplates.detect(forModelName: "Hearthfire-24B-absolute-heresy"), .mistralV7)
+    }
+
     s.test("auto-detect: unknown → nil (caller falls back to .raw)") {
         try expectNil(InstructTemplates.detect(forModelName: "some-random-model"))
         try expectNil(InstructTemplates.detect(forModelName: ""))

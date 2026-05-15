@@ -63,6 +63,14 @@ public enum InstructTemplates {
             }
             return .mistralV3
         }
+        // Mistral-Small-3.x finetune family — filenames don't contain
+        // "mistral" but all use V7 Tekken per their model cards.
+        if lower.contains("cydonia") || lower.contains("goetia")
+            || lower.contains("magidonia") || lower.contains("harbinger")
+            || lower.contains("hearthfire") || lower.contains("skyfall")
+        {
+            return .mistralV7
+        }
         return nil
     }
 }
