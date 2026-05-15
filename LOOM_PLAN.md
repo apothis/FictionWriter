@@ -227,6 +227,18 @@ Plus a literature/competitor re-audit (§6.6) — has any 2025-Q4 / 2026-Q1 work
 
 **Authoritative scope, design decisions, open research questions, test plan, and risk catalogue live in [`LOOM_SCENE_EXEMPLAR.md`](LOOM_SCENE_EXEMPLAR.md).**
 
+### Phase 9 — Entity Discovery (in production, 2026-05-15)
+
+Extends Phase 4 Pass-B (fact extraction on known characters) to also **discover new characters and places** in scene prose, attach extracted facts, and surface them in the Bible Workspace webview as accept/reject/edit suggestions. Pipeline shape (per LOOM_ENTITY_DISCOVERY_SPIKE §3.1): Stage A2 candidate generation (Ollama gemma4_2b w/ JSON Schema) → Stage B promotion gate (proper-noun-only at v1, anatomy block-list, place-recurrence) → Stage C cosine dedup against existing bible (CoreML Wegmann) → Stage D normalisation (Ollama again, per-candidate canonical-name + alias-union + one-line) → post-Stage-D dedup by canonical name → write to `ProposedEntitiesStore`. Spike empirically validated precision 100% / recall 85.7% / F1 92.3% across 8 fixture scenes; latency ~33s/scene at the model's Stage A2 floor.
+
+**Surface**: new `EntityProposalsQueue.tsx` view in the Bible Workspace; emerald "N entity proposals →" header badge alongside the existing accent-colored "N pending suggestions →" badge. Per-row card with editable canonical_name + aliases + one_line + evidence quote + collapsible attached facts. Accept promotes to real `Character` or `Setting` (with facts attached to `knownFactsBySceneId`); reject drops from store.
+
+**Triggers**: (a) auto via piggyback on `LedgerExtractionCoordinator.onExtractionComplete`, gated by `EntityDiscoveryTrigger` (500-word per-scene baseline so heavily-edited scenes re-fire); (b) manual via the Bible menu's "Discover Entities in Current Scene…"; (c) demo via `swift run EntityDiscoverySpike --into <project>`.
+
+**Out of scope at v1** (additive v2 candidates documented in §5): object discovery, cross-scene coref, lorebook auto-discovery, relationship discovery, factions, bulk import.
+
+**Authoritative scope, falsifiable hypothesis, run-to-run findings, and productionisation appendix live in [`LOOM_ENTITY_DISCOVERY_SPIKE.md`](LOOM_ENTITY_DISCOVERY_SPIKE.md).**
+
 ---
 
 ## 6. Provisional MVP definition (Phase 1 specifically)
