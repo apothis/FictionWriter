@@ -68,6 +68,12 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     /// Default true on legacy decode so older payloads (no field)
     /// preserve the previous "always allow Add" behaviour.
     public let isProjectOnDisk: Bool
+    /// Phase 9 entity-discovery — pending proposals + their attached
+    /// facts. The Bible Workspace's `EntityProposalsQueue.tsx` view
+    /// reads from this; accept/reject routes through bridge intents
+    /// `acceptEntityProposal` / `rejectEntityProposal`. Additive —
+    /// legacy snapshots decode with `[]`.
+    public let proposedEntities: [SnapshotProposedEntity]
 
     public init(
         projectTitle: String,
@@ -80,7 +86,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         sceneExemplars: [SnapshotSceneExemplar] = [],
         isProjectOnDisk: Bool = true,
         extractingTemplateIds: [UUID] = [],
-        ingestingReferenceIds: [UUID] = []
+        ingestingReferenceIds: [UUID] = [],
+        proposedEntities: [SnapshotProposedEntity] = []
     ) {
         self.projectTitle = projectTitle
         self.characters = characters
@@ -93,12 +100,13 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.isProjectOnDisk = isProjectOnDisk
         self.extractingTemplateIds = extractingTemplateIds
         self.ingestingReferenceIds = ingestingReferenceIds
+        self.proposedEntities = proposedEntities
     }
 
     private enum CodingKeys: String, CodingKey {
         case projectTitle, characters, lorebook, scenes, suggestions
         case references, templateScenes, sceneExemplars, isProjectOnDisk
-        case extractingTemplateIds, ingestingReferenceIds
+        case extractingTemplateIds, ingestingReferenceIds, proposedEntities
     }
 
     public init(from decoder: Decoder) throws {
@@ -118,6 +126,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.extractingTemplateIds = idStrings.compactMap(UUID.init(uuidString:))
         let ingestStrings = try c.decodeIfPresent([String].self, forKey: .ingestingReferenceIds) ?? []
         self.ingestingReferenceIds = ingestStrings.compactMap(UUID.init(uuidString:))
+        self.proposedEntities = try c.decodeIfPresent([SnapshotProposedEntity].self, forKey: .proposedEntities) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -135,6 +144,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         // by default, matching the rest of the wire contract.
         try c.encode(extractingTemplateIds.map(\.uuidString), forKey: .extractingTemplateIds)
         try c.encode(ingestingReferenceIds.map(\.uuidString), forKey: .ingestingReferenceIds)
+        try c.encode(proposedEntities, forKey: .proposedEntities)
     }
 
     /// Builds a snapshot from the current `ProjectSession` state.
@@ -153,6 +163,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         isProjectOnDisk: Bool = true,
         extractingTemplateIds: [UUID] = [],
         ingestingReferenceIds: [UUID] = [],
+        proposedEntities: [SnapshotProposedEntity] = [],
         suggestionsQueue: LedgerSuggestionsQueue
     ) -> BibleWorkspaceSnapshot {
         let sceneSummaries: [SceneSummary] = project.manuscript.flatSceneIds.compactMap { id in
@@ -183,8 +194,64 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             sceneExemplars: sceneExemplars,
             isProjectOnDisk: isProjectOnDisk,
             extractingTemplateIds: extractingTemplateIds,
-            ingestingReferenceIds: ingestingReferenceIds
+            ingestingReferenceIds: ingestingReferenceIds,
+            proposedEntities: proposedEntities
         )
+    }
+}
+
+/// Phase 9 entity-discovery — webview projection of a `ProposedEntity`.
+/// Kind is a string (not `EntityDiscovery.Kind`) for direct JS compat
+/// on the bridge. `sourceSceneTitle` is pre-resolved at snapshot build
+/// time so the view doesn't have to cross-reference the scenes array
+/// for every row. `attachedFacts` is embedded so the row card can
+/// expand inline without a second bridge call.
+public struct SnapshotProposedEntity: Codable, Equatable {
+    public let id: UUID
+    public let kind: String
+    public let canonicalName: String
+    public let aliases: [String]
+    public let oneLine: String
+    public let evidenceQuote: String
+    public let sourceSceneId: UUID
+    public let sourceSceneTitle: String
+    public let confidence: Double
+    public let attachedFacts: [SnapshotProposedFact]
+
+    public init(
+        id: UUID,
+        kind: String,
+        canonicalName: String,
+        aliases: [String],
+        oneLine: String,
+        evidenceQuote: String,
+        sourceSceneId: UUID,
+        sourceSceneTitle: String,
+        confidence: Double,
+        attachedFacts: [SnapshotProposedFact]
+    ) {
+        self.id = id
+        self.kind = kind
+        self.canonicalName = canonicalName
+        self.aliases = aliases
+        self.oneLine = oneLine
+        self.evidenceQuote = evidenceQuote
+        self.sourceSceneId = sourceSceneId
+        self.sourceSceneTitle = sourceSceneTitle
+        self.confidence = confidence
+        self.attachedFacts = attachedFacts
+    }
+}
+
+public struct SnapshotProposedFact: Codable, Equatable {
+    public let fact: String
+    public let certainty: String
+    public let evidenceQuote: String
+
+    public init(fact: String, certainty: String, evidenceQuote: String) {
+        self.fact = fact
+        self.certainty = certainty
+        self.evidenceQuote = evidenceQuote
     }
 }
 
