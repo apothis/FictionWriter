@@ -26,6 +26,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
     private var didChangeObserver: NSObjectProtocol?
     private var didReplaceObserver: NSObjectProtocol?
     private var suggestionsObserver: NSObjectProtocol?
+    private var proposalsObserver: NSObjectProtocol?
 
     public init(session: ProjectSession, appState: AppState) {
         self.session = session
@@ -106,6 +107,16 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         ) { [weak self] _ in
             self?.pushSnapshot()
         }
+        // Phase 9 — entity-proposal accept/reject mutations also
+        // bypass ProjectSession.didChange; subscribe to AppState's
+        // dedicated notification so the queue UI updates immediately.
+        proposalsObserver = NotificationCenter.default.addObserver(
+            forName: AppState.proposedEntitiesDidChangeNotification,
+            object: appState,
+            queue: .main
+        ) { [weak self] _ in
+            self?.pushSnapshot()
+        }
     }
 
     @available(*, unavailable) public required init?(coder: NSCoder) { nil }
@@ -114,6 +125,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         if let o = didChangeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = didReplaceObserver { NotificationCenter.default.removeObserver(o) }
         if let o = suggestionsObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = proposalsObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     // MARK: - Content loading
@@ -195,6 +207,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             isProjectOnDisk: session.url != nil,
             extractingTemplateIds: Array(appState.extractingTemplateIds),
             ingestingReferenceIds: Array(appState.ingestingReferenceIds),
+            proposedEntities: buildProposedEntitySnapshots(),
             suggestionsQueue: appState.ledgerSuggestionsQueue
         )
         do {
@@ -206,6 +219,44 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             }
         } catch {
             DebugLog.shared.write("[workspace] snapshot encode failed: \(error)")
+        }
+    }
+
+    /// Read the proposed-entities sidecar, join with scene titles,
+    /// and project into the webview-friendly shape. Returns [] on
+    /// in-memory session, missing store, or empty payload.
+    private func buildProposedEntitySnapshots() -> [SnapshotProposedEntity] {
+        guard let projectURL = session.url,
+              let payload = ProposedEntitiesStore.load(in: projectURL) else {
+            return []
+        }
+        let sceneTitleById: [UUID: String] = Dictionary(
+            uniqueKeysWithValues: session.scenes.values.map { ($0.id, $0.title) }
+        )
+        var factsByEntity: [UUID: [LedgerExtraction.ExtractedFact]] = [:]
+        for f in payload.facts {
+            factsByEntity[f.proposedEntityId] = f.facts
+        }
+        return payload.entities.map { p in
+            let facts = (factsByEntity[p.id] ?? []).map { ef in
+                SnapshotProposedFact(
+                    fact: ef.fact,
+                    certainty: ef.certainty.rawValue,
+                    evidenceQuote: ef.evidenceQuote
+                )
+            }
+            return SnapshotProposedEntity(
+                id: p.id,
+                kind: p.kind.rawValue,
+                canonicalName: p.canonicalName,
+                aliases: p.aliases,
+                oneLine: p.oneLine,
+                evidenceQuote: p.evidenceQuote,
+                sourceSceneId: p.sourceSceneId,
+                sourceSceneTitle: sceneTitleById[p.sourceSceneId] ?? "(unknown scene)",
+                confidence: p.confidence,
+                attachedFacts: facts
+            )
         }
     }
 
