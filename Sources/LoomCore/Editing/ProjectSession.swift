@@ -247,6 +247,15 @@ public final class ProjectSession {
     }
 
     @discardableResult
+    /// Phase 9 v2 — append a pre-built BibleObject (e.g. from
+    /// accepting an .object entity proposal with aliases + description).
+    public func addObject(_ object: BibleObject) {
+        project.bible.objects.append(object)
+        markChanged()
+        DebugLog.shared.write("[bible] addObject(prebuilt) id=\(object.id) name=\(object.name)")
+    }
+
+    @discardableResult
     public func addObject(name: String) -> BibleObject {
         let object = BibleObject(name: name)
         project.bible.objects.append(object)

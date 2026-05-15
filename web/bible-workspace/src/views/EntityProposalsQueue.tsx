@@ -32,6 +32,7 @@ export function EntityProposalsQueue({
 }: Props) {
   const characterCount = proposals.filter((p) => p.kind === "character").length;
   const placeCount = proposals.filter((p) => p.kind === "place").length;
+  const objectCount = proposals.filter((p) => p.kind === "object").length;
 
   return (
     <div className="flex h-full flex-col">
@@ -45,7 +46,8 @@ export function EntityProposalsQueue({
         <span className="text-xs text-loom-fg-tertiary">
           {proposals.length} pending ({characterCount} character
           {characterCount === 1 ? "" : "s"}, {placeCount} place
-          {placeCount === 1 ? "" : "s"})
+          {placeCount === 1 ? "" : "s"}, {objectCount} object
+          {objectCount === 1 ? "" : "s"})
         </span>
       </header>
       <div className="flex-1 overflow-auto px-6 py-5">
@@ -182,11 +184,13 @@ function ProposalRow({
   );
 }
 
-function KindBadge({ kind }: { kind: "character" | "place" }) {
+function KindBadge({ kind }: { kind: "character" | "place" | "object" }) {
   const styles =
     kind === "character"
       ? "bg-loom-accent/15 text-loom-accent"
-      : "bg-emerald-500/15 text-emerald-400";
+      : kind === "place"
+        ? "bg-emerald-500/15 text-emerald-400"
+        : "bg-amber-500/15 text-amber-400";
   return (
     <span
       className={cn(

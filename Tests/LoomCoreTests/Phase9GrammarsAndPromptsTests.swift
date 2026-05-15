@@ -66,7 +66,7 @@ func phase9GrammarsAndPromptsTests() -> TestSuite {
         try expectTrue(props["first_seen_quote"] != nil)
         let kind = try expectNotNil(props["kind"] as? [String: Any])
         let enum_ = try expectNotNil(kind["enum"] as? [String])
-        try expectEqual(enum_, ["character", "place"])
+        try expectEqual(Set(enum_), Set(["character", "place", "object"]))
     }
 
     // MARK: - Stage A2 prompt

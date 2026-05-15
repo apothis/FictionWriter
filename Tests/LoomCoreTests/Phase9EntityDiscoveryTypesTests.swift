@@ -10,10 +10,12 @@ import Foundation
 func phase9EntityDiscoveryTypesTests() -> TestSuite {
     let s = TestSuite("Phase9EntityDiscoveryTypes")
 
-    s.test("Kind decodes from the two valid raw values") {
+    s.test("Kind decodes from the three valid raw values") {
         try expectEqual(EntityDiscovery.Kind(rawValue: "character"), .character)
         try expectEqual(EntityDiscovery.Kind(rawValue: "place"), .place)
-        try expectNil(EntityDiscovery.Kind(rawValue: "object"))
+        // .object landed as the v2 extension.
+        try expectEqual(EntityDiscovery.Kind(rawValue: "object"), .object)
+        try expectNil(EntityDiscovery.Kind(rawValue: "faction"))
     }
 
     s.test("ProposedEntity round-trips through Codable") {

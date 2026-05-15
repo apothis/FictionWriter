@@ -166,7 +166,9 @@ export interface BibleWorkspaceSnapshot {
 // row card can expand without a second bridge call.
 export interface SnapshotProposedEntity {
   id: string;
-  kind: "character" | "place";
+  // "object" landed as the Phase 9 v2 extension (named significant
+  // artefacts — Excalibur, The Necronomicon).
+  kind: "character" | "place" | "object";
   canonicalName: string;
   aliases: string[];
   oneLine: string;

@@ -290,6 +290,14 @@ public final class AppState {
             )
             currentSession.addSetting(setting)
             DebugLog.shared.write("[proposals] promoted place id=\(setting.id) name=\(accepted.canonicalName)")
+        case .object:
+            let object = BibleObject(
+                name: accepted.canonicalName,
+                aliases: accepted.aliases,
+                description: accepted.oneLine
+            )
+            currentSession.addObject(object)
+            DebugLog.shared.write("[proposals] promoted object id=\(object.id) name=\(accepted.canonicalName)")
         }
         try? ProposedEntitiesStore.remove(proposalId: proposalId, in: projectURL)
         NotificationCenter.default.post(
@@ -350,6 +358,11 @@ public final class AppState {
             knownNames.append(s.name)
             knownNames.append(contentsOf: s.aliases)
             existingEntities.append(.init(id: s.id, canonicalName: s.name, aliases: s.aliases))
+        }
+        for o in currentSession.project.bible.objects {
+            knownNames.append(o.name)
+            knownNames.append(contentsOf: o.aliases)
+            existingEntities.append(.init(id: o.id, canonicalName: o.name, aliases: o.aliases))
         }
         let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
         let extractor = OllamaEntityDiscoveryExtractor(

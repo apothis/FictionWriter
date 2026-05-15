@@ -18,6 +18,12 @@ public enum EntityDiscovery {
     public enum Kind: String, Codable, Equatable, CaseIterable {
         case character
         case place
+        /// v2 extension — `BibleObject` (significant artefacts).
+        /// Same gate logic as characters (proper-noun or "The X").
+        /// Place-recurrence filter does NOT fire on objects: a
+        /// single-mention named artefact (Excalibur, The
+        /// Necronomicon) is bible-worthy.
+        case object
     }
 
     /// A discovered entity that has cleared the promotion gate (§3.1
@@ -255,7 +261,7 @@ public enum EntityDiscovery {
     public static func candidateGenerationGBNF() -> String {
         return "root ::= \"[\" ws (candidate (ws \",\" ws candidate)*)? ws \"]\"\n"
             + "candidate ::= \"{\" ws \"\\\"surface\\\":\" ws string ws \",\" ws \"\\\"kind\\\":\" ws kind ws \",\" ws \"\\\"first_seen_quote\\\":\" ws string ws \"}\"\n"
-            + "kind ::= \"\\\"character\\\"\" | \"\\\"place\\\"\"\n"
+            + "kind ::= \"\\\"character\\\"\" | \"\\\"place\\\"\" | \"\\\"object\\\"\"\n"
             + "string ::= \"\\\"\" ([^\"\\\\] | \"\\\\\" .)* \"\\\"\"\n"
             + "ws ::= \" \"?"
     }
@@ -268,7 +274,7 @@ public enum EntityDiscovery {
                 "type": "object",
                 "properties": [
                     "surface": ["type": "string"],
-                    "kind": ["type": "string", "enum": ["character", "place"]],
+                    "kind": ["type": "string", "enum": ["character", "place", "object"]],
                     "first_seen_quote": ["type": "string"],
                 ],
                 "required": ["surface", "kind", "first_seen_quote"],
@@ -277,7 +283,7 @@ public enum EntityDiscovery {
     }
 
     public static let candidateGenerationPromptInstruction =
-        "Identify new characters and named places mentioned in the scene below. Only emit entities introduced with a clear proper noun — do not emit entries for generic references like \"the man\", \"the bedroom\", \"the cafe\". For each entity, emit one entry with the surface form as it appears, the kind (character or place), and a verbatim quote where the entity first appears."
+        "Identify new characters, named places, and named significant objects (e.g. named weapons, named artefacts, named vehicles) mentioned in the scene below. Only emit entities introduced with a clear proper noun — do not emit entries for generic references like \"the man\", \"the bedroom\", \"the cafe\", \"the cup\". For each entity, emit one entry with the surface form as it appears, the kind (character, place, or object), and a verbatim quote where the entity first appears."
 
     public static func buildCandidateGenerationPrompt(
         scenePose: String,
@@ -384,7 +390,7 @@ public enum EntityDiscovery {
 
     public static func normalisationGBNF() -> String {
         return "root ::= \"{\" ws \"\\\"kind\\\":\" ws kind ws \",\" ws \"\\\"canonical_name\\\":\" ws string ws \",\" ws \"\\\"aliases\\\":\" ws aliases ws \",\" ws \"\\\"one_line\\\":\" ws string ws \",\" ws \"\\\"evidence_quote\\\":\" ws string ws \"}\"\n"
-            + "kind ::= \"\\\"character\\\"\" | \"\\\"place\\\"\"\n"
+            + "kind ::= \"\\\"character\\\"\" | \"\\\"place\\\"\" | \"\\\"object\\\"\"\n"
             + "aliases ::= \"[\" ws (string (ws \",\" ws string)*)? ws \"]\"\n"
             + "string ::= \"\\\"\" ([^\"\\\\] | \"\\\\\" .)* \"\\\"\"\n"
             + "ws ::= \" \"?"
@@ -394,7 +400,7 @@ public enum EntityDiscovery {
         return [
             "type": "object",
             "properties": [
-                "kind": ["type": "string", "enum": ["character", "place"]],
+                "kind": ["type": "string", "enum": ["character", "place", "object"]],
                 "canonical_name": ["type": "string"],
                 "aliases": ["type": "array", "items": ["type": "string"]],
                 "one_line": ["type": "string"],
