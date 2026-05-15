@@ -187,6 +187,7 @@ let suites: [TestSuite] = [
     phase9ProposedEntitiesStoreTests(),
     phase9SnapshotProposedEntitiesTests(),
     phase9BibleWorkspaceIntentEntityTests(),
+    phase9EntityDiscoveryExtractorTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
