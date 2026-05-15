@@ -410,8 +410,18 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             object: templateCoordinator,
             queue: .main
         ) { [weak self] _ in
-            self?.trayView.setGenerationState(.idle)
-            self?.handleGenerationFinish()
+            guard let self = self else { return }
+            // Phase 8.b.x — reconcile the editor textView with the
+            // coordinator's canonical insertedText. The streaming
+            // path can drift from the coordinator's view in subtle
+            // ways (token chunks held back by StreamingThinkBlockStripper
+            // across beat boundaries, sanitize-delete clamps when
+            // ranges don't line up, etc.); the 2026-05-15 third
+            // smoke surfaced editor tails missing a few characters
+            // per beat versus the log's rawText. Idempotent reset.
+            self.reconcileTemplateGenEditorWithCoordinator()
+            self.trayView.setGenerationState(.idle)
+            self.handleGenerationFinish()
         }
         // Trigger observer — AppDelegate's menu item posts this with
         // `templateId` + `castMapping` after the user picks via NSAlert.
@@ -1066,6 +1076,47 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// Insert a streamed token at the coordinator's running insertion
     /// offset. Bypasses the textDidChange writeback (the coordinator
     /// updates session prose on finish to avoid mid-stream churn).
+    /// Phase 8.b.x — replace the editor's generated range with the
+    /// coordinator's canonical `insertedText`. Idempotent end-of-
+    /// generation reconciliation that guarantees the visible
+    /// textView matches the same prose the log persists. Closes
+    /// the gap between streaming + per-beat sanitize-delete + any
+    /// hold-back in `StreamingThinkBlockStripper` and the
+    /// authoritative prose in `templateCoordinator.insertedText`.
+    private func reconcileTemplateGenEditorWithCoordinator() {
+        guard let storage = textView.textStorage else { return }
+        let canonical = templateCoordinator.insertedText
+        let start = streamingStartOffset ?? 0
+        let editorLen = streamingInsertedLength
+        let nsLength = storage.length
+        // Clamp the editor range — user may have edited the textView
+        // mid-gen, or the streaming bookkeeping drifted in an
+        // unexpected direction. Refuse to mutate beyond docLen.
+        let clampedStart = max(0, min(start, nsLength))
+        let clampedLen = max(0, min(editorLen, nsLength - clampedStart))
+        let editorRange = NSRange(location: clampedStart, length: clampedLen)
+        let canonicalLen = (canonical as NSString).length
+        if editorRange.length == canonicalLen,
+           storage.attributedSubstring(from: editorRange).string == canonical {
+            return  // already in sync
+        }
+        DebugLog.shared.write(
+            "[template-gen-editor] reconcile: editor-range=\(editorRange.length) canonical=\(canonicalLen) diff=\(canonicalLen - editorRange.length)"
+        )
+        suppressWriteback = true
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: DesignTokens.Typography.body,
+            .foregroundColor: DesignTokens.Foreground.primary,
+        ]
+        let replacement = NSAttributedString(string: canonical, attributes: attributes)
+        storage.replaceCharacters(in: editorRange, with: replacement)
+        suppressWriteback = false
+        streamingInsertedLength = canonicalLen
+        let newCursor = clampedStart + canonicalLen
+        textView.setSelectedRange(NSRange(location: newCursor, length: 0))
+        textView.scrollRangeToVisible(NSRange(location: newCursor, length: 0))
+    }
+
     private func insertGeneratedToken(_ token: String, at offset: Int) {
         guard let storage = textView.textStorage else { return }
         suppressWriteback = true
