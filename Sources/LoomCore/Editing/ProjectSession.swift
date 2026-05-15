@@ -169,6 +169,14 @@ public final class ProjectSession {
         return character
     }
 
+    /// Phase 9 — append a pre-built Character (e.g. from
+    /// accepting an entity proposal that carries aliases + facts).
+    public func addCharacter(_ character: Character) {
+        project.bible.characters.append(character)
+        markChanged()
+        DebugLog.shared.write("[bible] addCharacter(prebuilt) id=\(character.id) name=\(character.name)")
+    }
+
     public func updateCharacter(_ character: Character) {
         guard let idx = project.bible.characters.firstIndex(where: { $0.id == character.id }) else { return }
         project.bible.characters[idx] = character
@@ -214,6 +222,14 @@ public final class ProjectSession {
         markChanged()
         DebugLog.shared.write("[bible] addSetting id=\(setting.id) name=\(name)")
         return setting
+    }
+
+    /// Phase 9 — append a pre-built Setting (e.g. from accepting
+    /// an entity proposal that carries aliases + description).
+    public func addSetting(_ setting: Setting) {
+        project.bible.settings.append(setting)
+        markChanged()
+        DebugLog.shared.write("[bible] addSetting(prebuilt) id=\(setting.id) name=\(setting.name)")
     }
 
     public func updateSetting(_ setting: Setting) {

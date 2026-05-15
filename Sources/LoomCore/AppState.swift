@@ -239,6 +239,84 @@ public final class AppState {
         )
     }
 
+    // MARK: - Phase 9 entity-discovery (proposed-entity acceptance)
+
+    /// Accept a proposed entity from the EntityProposalsQueue webview.
+    /// Promotes the proposal to a real Character or Setting in the
+    /// bible (with the user's edits applied from `accepted`), attaches
+    /// any extracted facts to the Character's `knownFactsBySceneId`
+    /// keyed by the proposal's `sourceSceneId`, then removes the
+    /// proposal from the on-disk store. No-op on stale proposal id or
+    /// in-memory session.
+    public func acceptEntityProposal(proposalId: UUID, accepted: ProposedEntityAcceptance) {
+        guard let projectURL = currentSession.url else {
+            DebugLog.shared.write("[proposals] acceptEntityProposal dropped — in-memory session id=\(proposalId)")
+            return
+        }
+        guard let payload = ProposedEntitiesStore.load(in: projectURL) else {
+            DebugLog.shared.write("[proposals] acceptEntityProposal: no store, ignoring id=\(proposalId)")
+            return
+        }
+        guard let proposal = payload.entities.first(where: { $0.id == proposalId }) else {
+            DebugLog.shared.write("[proposals] acceptEntityProposal: stale id=\(proposalId)")
+            return
+        }
+        let attachedFacts = payload.facts.first(where: { $0.proposedEntityId == proposalId })?.facts ?? []
+
+        switch proposal.kind {
+        case .character:
+            // Build Character with edited values + attach facts under
+            // the proposal's source scene.
+            let knownFacts: [KnownFact] = attachedFacts.map { ef in
+                KnownFact(
+                    fact: ef.fact,
+                    sourceSceneId: proposal.sourceSceneId,
+                    certainty: Certainty(rawValue: ef.certainty.rawValue) ?? .asserted
+                )
+            }
+            let character = Character(
+                name: accepted.canonicalName,
+                aliases: accepted.aliases,
+                oneLine: accepted.oneLine,
+                knownFactsBySceneId: knownFacts.isEmpty ? [:] : [proposal.sourceSceneId: knownFacts]
+            )
+            currentSession.addCharacter(character)
+            DebugLog.shared.write("[proposals] promoted character id=\(character.id) name=\(accepted.canonicalName) facts=\(knownFacts.count)")
+        case .place:
+            let setting = Setting(
+                name: accepted.canonicalName,
+                aliases: accepted.aliases,
+                description: accepted.oneLine
+            )
+            currentSession.addSetting(setting)
+            DebugLog.shared.write("[proposals] promoted place id=\(setting.id) name=\(accepted.canonicalName)")
+        }
+        try? ProposedEntitiesStore.remove(proposalId: proposalId, in: projectURL)
+        NotificationCenter.default.post(
+            name: Self.proposedEntitiesDidChangeNotification,
+            object: self
+        )
+    }
+
+    /// Reject a proposed entity: drop it from the on-disk store. The
+    /// bible is NOT mutated. Rejecting doesn't blacklist — a future
+    /// entity-discovery pass may re-surface it (and the user can
+    /// reject it again or accept).
+    public func rejectEntityProposal(proposalId: UUID) {
+        guard let projectURL = currentSession.url else {
+            DebugLog.shared.write("[proposals] rejectEntityProposal dropped — in-memory session id=\(proposalId)")
+            return
+        }
+        try? ProposedEntitiesStore.remove(proposalId: proposalId, in: projectURL)
+        DebugLog.shared.write("[proposals] rejected id=\(proposalId)")
+        NotificationCenter.default.post(
+            name: Self.proposedEntitiesDidChangeNotification,
+            object: self
+        )
+    }
+
+    public static let proposedEntitiesDidChangeNotification = Notification.Name("LoomProposedEntitiesDidChange")
+
     private func handleExtractionComplete(
         sceneId: UUID,
         result: Result<[LedgerExtraction.ExtractedFact], Error>

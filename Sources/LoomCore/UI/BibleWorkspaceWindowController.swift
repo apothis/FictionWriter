@@ -375,6 +375,12 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         case .ingestSceneExemplar(let id):
             appState.ingestSceneExemplar(id: id)
             DebugLog.shared.write("[workspace] ingestSceneExemplar id=\(id) kicked off (fans out to ingestReference + extractTemplateScene)")
+        case .acceptEntityProposal(let proposalId, let accepted):
+            appState.acceptEntityProposal(proposalId: proposalId, accepted: accepted)
+            DebugLog.shared.write("[workspace] acceptEntityProposal proposalId=\(proposalId) canonicalName=\(accepted.canonicalName)")
+        case .rejectEntityProposal(let proposalId):
+            appState.rejectEntityProposal(proposalId: proposalId)
+            DebugLog.shared.write("[workspace] rejectEntityProposal proposalId=\(proposalId)")
         }
     }
 

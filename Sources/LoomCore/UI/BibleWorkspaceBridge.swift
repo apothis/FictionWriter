@@ -90,10 +90,18 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     case patchSceneExemplar(id: UUID, patch: SceneExemplarPatch)
     case deleteSceneExemplar(id: UUID)
     case ingestSceneExemplar(id: UUID)
+    // Phase 9 entity-discovery — accept/reject a proposed entity
+    // from the EntityProposalsQueue webview. Accept commits the
+    // proposal as a real Character or Setting (with any user edits
+    // applied) and attaches its facts to the bible row; reject
+    // drops the proposal from the store.
+    case acceptEntityProposal(proposalId: UUID, accepted: ProposedEntityAcceptance)
+    case rejectEntityProposal(proposalId: UUID)
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
         case body, nsfw
+        case proposalId, accepted
     }
 
     private enum Kind: String {
@@ -116,6 +124,8 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case patchSceneExemplar
         case deleteSceneExemplar
         case ingestSceneExemplar
+        case acceptEntityProposal
+        case rejectEntityProposal
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -187,6 +197,13 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .ingestSceneExemplar(let id):
             try c.encode(Kind.ingestSceneExemplar.rawValue, forKey: .kind)
             try c.encode(id, forKey: .id)
+        case .acceptEntityProposal(let proposalId, let accepted):
+            try c.encode(Kind.acceptEntityProposal.rawValue, forKey: .kind)
+            try c.encode(proposalId, forKey: .proposalId)
+            try c.encode(accepted, forKey: .accepted)
+        case .rejectEntityProposal(let proposalId):
+            try c.encode(Kind.rejectEntityProposal.rawValue, forKey: .kind)
+            try c.encode(proposalId, forKey: .proposalId)
         }
     }
 
@@ -268,6 +285,31 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .ingestSceneExemplar:
             let id = try c.decode(UUID.self, forKey: .id)
             self = .ingestSceneExemplar(id: id)
+        case .acceptEntityProposal:
+            let proposalId = try c.decode(UUID.self, forKey: .proposalId)
+            let accepted = try c.decode(ProposedEntityAcceptance.self, forKey: .accepted)
+            self = .acceptEntityProposal(proposalId: proposalId, accepted: accepted)
+        case .rejectEntityProposal:
+            let proposalId = try c.decode(UUID.self, forKey: .proposalId)
+            self = .rejectEntityProposal(proposalId: proposalId)
         }
+    }
+}
+
+/// Payload accompanying `acceptEntityProposal`. The webview form
+/// captures the user's final view of the canonical name + aliases
+/// + one-line — these may differ from what the LLM proposed if the
+/// user edited the fields before clicking Accept. AppState applies
+/// these values rather than reading back from the original
+/// `ProposedEntity`.
+public struct ProposedEntityAcceptance: Codable, Equatable {
+    public var canonicalName: String
+    public var aliases: [String]
+    public var oneLine: String
+
+    public init(canonicalName: String, aliases: [String], oneLine: String) {
+        self.canonicalName = canonicalName
+        self.aliases = aliases
+        self.oneLine = oneLine
     }
 }
