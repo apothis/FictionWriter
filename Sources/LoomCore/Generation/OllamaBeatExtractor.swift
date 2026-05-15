@@ -98,6 +98,23 @@ public final class OllamaBeatExtractor: BeatExtractor {
                 do {
                     let skeleton = try BeatExtraction.parseExtractedSkeleton(raw)
                     completion(.success(skeleton))
+                } catch BeatExtraction.ParseError.noJSONObjectFound where attemptsRemaining > 0 {
+                    // HANDOFF §15.16 follow-up #1: NSFW Pass-A
+                    // shows ~30% transient JSON-parse failures
+                    // (preamble noise eating the open brace, or a
+                    // sampling roll producing free-form prose
+                    // before the structured output). One retry
+                    // recovers most of those without the user
+                    // having to hit "Re-ingest" manually.
+                    let snippet = raw.prefix(200).replacingOccurrences(of: "\n", with: "\\n")
+                    DebugLog.shared.write("[template] parse failed (noJSONObjectFound) — retrying once. raw=\"\(snippet)\" len=\(raw.count)")
+                    self.callWithRetry(
+                        prompt: prompt,
+                        schema: schema,
+                        options: options,
+                        attemptsRemaining: attemptsRemaining - 1,
+                        completion: completion
+                    )
                 } catch {
                     let snippet = raw.prefix(500).replacingOccurrences(of: "\n", with: "\\n")
                     DebugLog.shared.write("[template] parse failed: err=\(error) raw=\"\(snippet)\" len=\(raw.count)")

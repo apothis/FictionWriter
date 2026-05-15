@@ -105,16 +105,43 @@ func phase7OllamaBeatExtractorTests() -> TestSuite {
         }
     }
 
-    s.test("OllamaBeatExtractor surfaces parse errors when response is malformed JSON") {
-        let stub = StubOllamaProvider(responses: [.success("not json at all")])
+    s.test("OllamaBeatExtractor retries on noJSONObjectFound and recovers if second attempt succeeds") {
+        // HANDOFF §15.16 follow-up #1 — Pass-A on NSFW shows ~30%
+        // transient JSON-parse failures. The retry budget already
+        // covers empty content; extending it to noJSONObjectFound
+        // (preamble noise that ate the open-brace, etc.) means the
+        // user no longer has to hit "Re-ingest" on the first failure.
+        let stub = StubOllamaProvider(responses: [
+            .success("preamble: {malformed missing braces"),
+            .success(cannedSkeleton),
+        ])
+        let extractor = OllamaBeatExtractor(provider: stub)
+        var result: Result<ExtractedSceneSkeleton, Error>? = nil
+        extractor.extractSkeleton(from: "x") { r in result = r }
+        stub.flush()  // first attempt: parse-fail → retry triggers
+        stub.flush()  // retry attempt: success
+        if case .success(let skel) = result {
+            try expectEqual(skel.beats.count, 1)
+        } else {
+            try expectFalse(true, "expected success on retry after parse failure")
+        }
+    }
+
+    s.test("OllamaBeatExtractor surfaces parse errors after retry exhausts") {
+        // Both attempts malformed → final result is failure.
+        let stub = StubOllamaProvider(responses: [
+            .success("not json at all"),
+            .success("still not json"),
+        ])
         let extractor = OllamaBeatExtractor(provider: stub)
         var result: Result<ExtractedSceneSkeleton, Error>? = nil
         extractor.extractSkeleton(from: "x") { r in result = r }
         stub.flush()
+        stub.flush()
         if case .failure = result {
             // pass
         } else {
-            try expectFalse(true, "expected parse failure")
+            try expectFalse(true, "expected parse failure after retry exhausts")
         }
     }
 
