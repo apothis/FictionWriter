@@ -394,10 +394,28 @@ public final class AppState {
         }
     }
 
+    /// Per-session memo of scenes that have already triggered an
+    /// entity-discovery auto-fire. Phase 9 auto-trigger piggybacks on
+    /// the ledger-extraction completion (first time only per scene per
+    /// session); the user can re-run discovery manually via the Bible
+    /// menu after that. Transient — cleared on app relaunch.
+    private var sceneEntityDiscoveryFired: Set<UUID> = []
+
     private func handleExtractionComplete(
         sceneId: UUID,
         result: Result<[LedgerExtraction.ExtractedFact], Error>
     ) {
+        // Phase 9 auto-trigger: piggyback on ledger extraction.
+        // First time per session per scene only — keeps the user from
+        // getting spammed with discovery runs on every 200-word edit.
+        // Fires regardless of ledger result (success or failure) so
+        // a scene that fails ledger extraction can still get its
+        // entity discovery pass.
+        if !sceneEntityDiscoveryFired.contains(sceneId) {
+            sceneEntityDiscoveryFired.insert(sceneId)
+            DebugLog.shared.write("[proposals] auto-firing entity discovery on first ledger event for scene=\(sceneId)")
+            runEntityDiscovery(for: sceneId)
+        }
         switch result {
         case .failure:
             // The coordinator already wrote a `[ledger] extraction
