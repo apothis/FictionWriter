@@ -317,6 +317,83 @@ public final class AppState {
 
     public static let proposedEntitiesDidChangeNotification = Notification.Name("LoomProposedEntitiesDidChange")
 
+    /// Fire the full entity-discovery pipeline against `sceneId` and
+    /// append the results to the project's `ProposedEntitiesStore`.
+    /// Async — returns immediately; the pipeline takes ~30s and
+    /// notifies via `proposedEntitiesDidChangeNotification` on
+    /// completion. No-op on in-memory session, missing extractor
+    /// profile, or unknown scene id.
+    public func runEntityDiscovery(for sceneId: UUID) {
+        guard let projectURL = currentSession.url else {
+            DebugLog.shared.write("[proposals] runEntityDiscovery dropped — in-memory session")
+            return
+        }
+        guard let profile = settings.extractorServer() else {
+            DebugLog.shared.write("[proposals] runEntityDiscovery dropped — no extractor profile configured")
+            return
+        }
+        guard let scene = currentSession.scenes[sceneId] else {
+            DebugLog.shared.write("[proposals] runEntityDiscovery dropped — unknown scene id=\(sceneId)")
+            return
+        }
+        // Build known-names from bible characters + settings (with
+        // aliases). The extractor expands proper-noun tokens via
+        // Fix 4 internally — caller passes the raw list.
+        var knownNames: [String] = []
+        var existingEntities: [EntityDedupEngine.ExistingEntity] = []
+        for c in currentSession.project.bible.characters {
+            knownNames.append(c.name)
+            knownNames.append(contentsOf: c.aliases)
+            existingEntities.append(.init(id: c.id, canonicalName: c.name, aliases: c.aliases))
+        }
+        for s in currentSession.project.bible.settings {
+            knownNames.append(s.name)
+            knownNames.append(contentsOf: s.aliases)
+            existingEntities.append(.init(id: s.id, canonicalName: s.name, aliases: s.aliases))
+        }
+        let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
+        let extractor = OllamaEntityDiscoveryExtractor(
+            client: OllamaClient(baseURL: profile.baseURL, model: model)
+        )
+        let embedder = embeddingClientFactory(projectURL)
+
+        DebugLog.shared.write("[proposals] firing entity-discovery: scene=\(sceneId) known=\(knownNames.count) existing=\(existingEntities.count)")
+        extractor.extract(
+            scenePose: scene.prose,
+            sceneId: sceneId,
+            knownEntityNames: knownNames,
+            existingEntities: existingEntities,
+            embedder: embedder
+        ) { [weak self] result in
+            DispatchQueue.main.async {
+                self?.handleEntityDiscoveryComplete(projectURL: projectURL, result: result)
+            }
+        }
+    }
+
+    private func handleEntityDiscoveryComplete(
+        projectURL: URL,
+        result: Result<[EntityDiscovery.ProposedEntity], Error>
+    ) {
+        switch result {
+        case .failure(let err):
+            DebugLog.shared.write("[proposals] entity-discovery failed: \(err)")
+        case .success(let proposals):
+            DebugLog.shared.write("[proposals] entity-discovery produced \(proposals.count) proposals")
+            guard !proposals.isEmpty else { return }
+            do {
+                try ProposedEntitiesStore.append(entities: proposals, facts: [], in: projectURL)
+            } catch {
+                DebugLog.shared.write("[proposals] failed to persist proposals: \(error)")
+                return
+            }
+            NotificationCenter.default.post(
+                name: Self.proposedEntitiesDidChangeNotification,
+                object: self
+            )
+        }
+    }
+
     private func handleExtractionComplete(
         sceneId: UUID,
         result: Result<[LedgerExtraction.ExtractedFact], Error>
