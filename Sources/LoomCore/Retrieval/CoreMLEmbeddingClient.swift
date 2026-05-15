@@ -32,6 +32,14 @@ import Tokenizers
 /// CLT-compatible at runtime (no Xcode required). `MLModel` is a
 /// system framework; `xcrun coremlcompiler` ships with CLT.
 public final class CoreMLEmbeddingClient: EmbeddingClient {
+    /// Phase 8.c — the canonical model-id string written into the
+    /// chunk-sidecar `dModel.id` field at ingest time and compared
+    /// at retrieval/UI time to detect stale fingerprints. Surfaced
+    /// as a static so callers (Bible Workspace snapshot builder)
+    /// don't have to instantiate the client just to read its
+    /// modelId. Must stay in sync with the `init` default below.
+    public static let expectedModelId: String = "AnnaWegmann/Style-Embedding (CoreML)"
+
     public let modelId: String
     public let dim: Int
     /// Max sequence length the bundled mlpackage was traced with.

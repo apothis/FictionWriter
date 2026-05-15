@@ -92,6 +92,12 @@ export interface SnapshotReference {
   createdAt: string;
   body: string;
   chunkCount: number | null;
+  // Phase 8.c — Wegmann re-ingest UX. true → vectors were embedded
+  // under a different model than the current default; UI shows a
+  // "needs re-ingest" badge. false → fresh. null → no info (either
+  // not yet ingested, or no current embedder configured).
+  // Optional for legacy-payload tolerance.
+  dModelStale?: boolean | null;
 }
 
 // Phase 7.b.5 — bridge projection of `TemplateScene`. Mirrors

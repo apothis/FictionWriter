@@ -345,14 +345,22 @@ public struct SnapshotReference: Codable, Equatable {
     public var createdAt: Date
     public var body: String
     public var chunkCount: Int?
+    /// Phase 8.c — Wegmann re-ingest UX (HANDOFF §15.16 #3).
+    /// `true` when the persisted dModel fingerprint differs from the
+    /// current expected embedder; UI surfaces a "needs re-ingest"
+    /// badge on stale rows. `nil` means "can't tell" (no persisted
+    /// fingerprint OR no current embedder), which the UI renders as
+    /// "no badge". `false` means freshly-ingested.
+    public var dModelStale: Bool?
 
-    public init(from ref: ReferenceText, chunkCount: Int?) {
+    public init(from ref: ReferenceText, chunkCount: Int?, dModelStale: Bool? = nil) {
         self.id = ref.id
         self.name = ref.name
         self.nsfw = ref.nsfw
         self.createdAt = ref.createdAt
         self.body = ref.body
         self.chunkCount = chunkCount
+        self.dModelStale = dModelStale
     }
 
     // Same explicit-null-on-nil contract as SnapshotTemplateScene
@@ -366,6 +374,21 @@ public struct SnapshotReference: Codable, Equatable {
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(body, forKey: .body)
         try c.encode(chunkCount, forKey: .chunkCount)
+        try c.encode(dModelStale, forKey: .dModelStale)
+    }
+
+    /// Pure-data: derive the staleness flag from a persisted
+    /// fingerprint + the current expected embedder model id.
+    /// nil → "can't tell"; false → fresh; true → stale (vectors
+    /// won't compose with the current embedder's queries).
+    public static func computeDModelStale(
+        persisted: ReferenceTextIndex.ModelFingerprint?,
+        expectedModelId: String?
+    ) -> Bool? {
+        guard let persisted = persisted, let expected = expectedModelId else {
+            return nil
+        }
+        return persisted.id != expected
     }
 }
 

@@ -797,7 +797,7 @@ public final class ProjectSession {
     /// Sort order is alphabetical by name — disk enumeration via
     /// `FileManager.contentsOfDirectory` is unordered, so this is the
     /// stable presentation order for the React side.
-    public func listReferenceSnapshots() -> [SnapshotReference] {
+    public func listReferenceSnapshots(expectedDModelId: String? = nil) -> [SnapshotReference] {
         guard let url = self.url else { return [] }
         let ids: [UUID]
         do {
@@ -812,8 +812,14 @@ public final class ProjectSession {
                 DebugLog.shared.write("[reference] listReferenceSnapshots: skipped malformed id=\(id)")
                 continue
             }
-            let chunkCount = ReferenceStorage.loadIndex(for: id, in: url)?.chunks.count
-            snaps.append(SnapshotReference(from: ref, chunkCount: chunkCount))
+            let index = ReferenceStorage.loadIndex(for: id, in: url)
+            let chunkCount = index?.chunks.count
+            // Phase 8.c — fingerprint staleness check (HANDOFF #3).
+            let stale = SnapshotReference.computeDModelStale(
+                persisted: index?.dModel,
+                expectedModelId: expectedDModelId
+            )
+            snaps.append(SnapshotReference(from: ref, chunkCount: chunkCount, dModelStale: stale))
         }
         snaps.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         return snaps

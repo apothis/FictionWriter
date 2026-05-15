@@ -387,6 +387,14 @@ function ReferenceRow({
             {wordCount} word{wordCount === 1 ? "" : "s"}
           </span>
           <span className={ingestState.className}>{ingestState.label}</span>
+          {reference.dModelStale === true && (
+            <span
+              className="rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-400"
+              title="This reference was ingested under a different embedder model. Re-ingest to make its vectors compose correctly with the current retriever."
+            >
+              needs re-ingest
+            </span>
+          )}
         </div>
       </div>
       {reference.body && (

@@ -201,7 +201,9 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         let snap = BibleWorkspaceSnapshot.build(
             project: session.project,
             scenes: session.scenes,
-            references: session.listReferenceSnapshots(),
+            references: session.listReferenceSnapshots(
+                expectedDModelId: CoreMLEmbeddingClient.expectedModelId
+            ),
             templateScenes: session.listTemplateSceneSnapshots(),
             sceneExemplars: session.listSceneExemplarSnapshots(),
             isProjectOnDisk: session.url != nil,
