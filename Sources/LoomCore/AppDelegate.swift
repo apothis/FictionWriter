@@ -418,6 +418,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         let pickerLabel = NSTextField(labelWithString: "Template")
         pickerLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
 
+        // Phase 8.b.x — per-template field persistence. Load state
+        // for the initially-selected template + repopulate on picker
+        // change. State sidecar lives at
+        // `<project>/template-gen-state/<templateId>.json`. Saved on
+        // Generate. Per-template so multiple templates remember
+        // their own cast / hint / toggle independently.
+        let projectURL: URL? = session.url
+
         let castLabel = NSTextField(labelWithString: "Cast / setting / situation")
         castLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
 
@@ -525,6 +533,33 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         picker.widthAnchor.constraint(equalToConstant: accessoryWidth).isActive = true
         alert.accessoryView = stack
 
+        // Per-template state restore + picker-change handler. Loads
+        // the saved state into the fields when the user selects a
+        // template. The handler also fires for the initial selection
+        // (index 0) below.
+        let stateController = TemplateGenMenuStateController(
+            templates: templates,
+            picker: picker,
+            castTextView: textView,
+            castPlaceholder: placeholder,
+            castPlaceholderDelegate: textDelegate,
+            hintTextView: hintTextView,
+            hintPlaceholder: hintPlaceholder,
+            hintPlaceholderDelegate: hintDelegate,
+            imitateToggle: imitateToggle,
+            projectURL: projectURL
+        )
+        picker.target = stateController
+        picker.action = #selector(TemplateGenMenuStateController.pickerChanged(_:))
+        objc_setAssociatedObject(
+            picker, &TemplateGenMenuStateController.assocKey,
+            stateController, .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+        // Restore for the initial selection (index 0) before the
+        // modal runs, so the fields are populated when the alert
+        // appears.
+        stateController.restoreState(forTemplateIndex: picker.indexOfSelectedItem)
+
         let response = alert.runModal()
         guard response == .alertFirstButtonReturn else { return }
         let idx = picker.indexOfSelectedItem
@@ -543,6 +578,25 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         let extraInstruction = (rawHint == hintPlaceholder ? "" : rawHint)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         DebugLog.shared.write("[template-gen] menu: launching template=\(chosen.name) id=\(chosen.id) castMapping-chars=\(castMapping.count) imitateContent=\(imitateContent) extraInstruction-chars=\(extraInstruction.count)")
+
+        // Phase 8.b.x — persist the just-submitted state so the
+        // next open of the menu for this template pre-fills the
+        // fields. Save is best-effort; failure is logged but does
+        // not block generation.
+        if let projectURL = projectURL {
+            let state = TemplateGenState(
+                castMapping: castMapping,
+                extraInstruction: extraInstruction,
+                imitateContent: imitateContent,
+                savedAt: Date()
+            )
+            do {
+                try TemplateGenStateStore.save(state, templateId: chosen.id, in: projectURL)
+            } catch {
+                DebugLog.shared.write("[template-gen] state save failed: \(error)")
+            }
+        }
+
         NotificationCenter.default.post(
             name: EditorViewController.requestStartTemplateGenerationNotification,
             object: self,
@@ -740,10 +794,134 @@ private final class TemplateGenCastMappingPlaceholderDelegate: NSObject, NSTextV
         self.placeholder = placeholder
     }
 
-    func textDidBeginEditing(_ notification: Notification) {
-        guard !clearedOnce, let tv = textView, tv.string == placeholder else { return }
+    /// Phase 8.b.x — explicitly flip the cleared flag from the
+    /// per-template state controller when it pre-fills the field
+    /// with persisted text (so subsequent edits aren't re-cleared
+    /// to the placeholder).
+    func markAsCleared() {
+        clearedOnce = true
+    }
+
+    /// Reset to the not-yet-cleared state when the controller
+    /// repopulates the placeholder (no persisted text for the new
+    /// template).
+    func markAsNotCleared() {
+        clearedOnce = false
+    }
+
+    /// Fires BEFORE AppKit's first keystroke is committed to the
+    /// text buffer. Using `textShouldBeginEditing` (rather than the
+    /// post-edit `textDidBeginEditing`) eliminates a race where the
+    /// user's first character was being eaten — observed in the
+    /// 2026-05-15 smoke gen-log: cast mapping arrived as "arah is 18"
+    /// (leading "S" missing) when the user typed quickly into a
+    /// placeholder-active textView.
+    func textShouldBeginEditing(_ textObject: NSText) -> Bool {
+        guard !clearedOnce, let tv = textView, tv.string == placeholder else { return true }
         clearedOnce = true
         tv.string = ""
         tv.textColor = .labelColor
+        return true
+    }
+}
+
+/// Phase 8.b.x — owns the per-template state-restore logic for the
+/// Write-Scene-From-Template NSAlert. Lives for the duration of the
+/// modal (associated-object retained by the NSPopUpButton). When the
+/// user picks a different template from the popup, fills the cast/
+/// hint/imitate-toggle fields from disk (or clears them if no
+/// state has been saved yet). Save-on-Generate is handled inline in
+/// the caller after the modal returns.
+///
+/// Not annotated `@MainActor` because AppKit menu actions already
+/// run on the main thread; the annotation would push the call sites
+/// through MainActor-isolation checks unnecessarily.
+private final class TemplateGenMenuStateController: NSObject {
+    nonisolated(unsafe) static var assocKey: UInt8 = 0
+
+    private let templates: [SnapshotTemplateScene]
+    private let picker: NSPopUpButton
+    private let castTextView: NSTextView
+    private let castPlaceholder: String
+    private let castPlaceholderDelegate: TemplateGenCastMappingPlaceholderDelegate
+    private let hintTextView: NSTextView
+    private let hintPlaceholder: String
+    private let hintPlaceholderDelegate: TemplateGenCastMappingPlaceholderDelegate
+    private let imitateToggle: NSButton
+    private let projectURL: URL?
+
+    init(
+        templates: [SnapshotTemplateScene],
+        picker: NSPopUpButton,
+        castTextView: NSTextView,
+        castPlaceholder: String,
+        castPlaceholderDelegate: TemplateGenCastMappingPlaceholderDelegate,
+        hintTextView: NSTextView,
+        hintPlaceholder: String,
+        hintPlaceholderDelegate: TemplateGenCastMappingPlaceholderDelegate,
+        imitateToggle: NSButton,
+        projectURL: URL?
+    ) {
+        self.templates = templates
+        self.picker = picker
+        self.castTextView = castTextView
+        self.castPlaceholder = castPlaceholder
+        self.castPlaceholderDelegate = castPlaceholderDelegate
+        self.hintTextView = hintTextView
+        self.hintPlaceholder = hintPlaceholder
+        self.hintPlaceholderDelegate = hintPlaceholderDelegate
+        self.imitateToggle = imitateToggle
+        self.projectURL = projectURL
+    }
+
+    @objc func pickerChanged(_ sender: NSPopUpButton) {
+        restoreState(forTemplateIndex: sender.indexOfSelectedItem)
+    }
+
+    func restoreState(forTemplateIndex idx: Int) {
+        guard idx >= 0, idx < templates.count,
+              let url = projectURL else {
+            applyEmpty()
+            return
+        }
+        let templateId = templates[idx].id
+        if let state = TemplateGenStateStore.load(templateId: templateId, in: url) {
+            applyState(state)
+        } else {
+            applyEmpty()
+        }
+    }
+
+    private func applyState(_ state: TemplateGenState) {
+        // Cast field: persisted text means "user has edited"; bypass
+        // placeholder logic + show real-content color.
+        castTextView.string = state.castMapping
+        castTextView.textColor = .labelColor
+        castPlaceholderDelegate.markAsCleared()
+
+        // Hint field: empty string from disk → leave the placeholder
+        // visible so the affordance is still discoverable. Otherwise
+        // populate.
+        if state.extraInstruction.isEmpty {
+            hintTextView.string = hintPlaceholder
+            hintTextView.textColor = .placeholderTextColor
+            hintPlaceholderDelegate.markAsNotCleared()
+        } else {
+            hintTextView.string = state.extraInstruction
+            hintTextView.textColor = .labelColor
+            hintPlaceholderDelegate.markAsCleared()
+        }
+
+        imitateToggle.state = state.imitateContent ? .on : .off
+    }
+
+    private func applyEmpty() {
+        castTextView.string = castPlaceholder
+        castTextView.textColor = .placeholderTextColor
+        castPlaceholderDelegate.markAsNotCleared()
+        hintTextView.string = hintPlaceholder
+        hintTextView.textColor = .placeholderTextColor
+        hintPlaceholderDelegate.markAsNotCleared()
+        imitateToggle.state = .off
     }
 }

@@ -152,14 +152,14 @@ public enum BeatGeneration {
             if imitateContent {
                 systemFraming = """
                     [SYSTEM]
-                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT.
+                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT. Output ONLY the beat's prose — do NOT emit any prompt-shaped headers like `[VALIDATE BEAT]`, `[BEAT CHECK]`, `[Length: ...]`, `[Pacing: ...]`, or any bracket-wrapped UPPERCASE block. End at a natural sentence boundary without commentary.
 
                     The TEMPLATE SCENE below is a CONTENT + VOICE EXEMPLAR. Substitute the cast described in the NEW CAST block below; otherwise, preserve the source's content register, vocabulary, and act patterns where appropriate. Study the template's prose voice, sentence rhythm, register, and modality handling, and let the new beat read as a companion to it.
                     """
             } else {
                 systemFraming = """
                     [SYSTEM]
-                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT.
+                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT. Output ONLY the beat's prose — do NOT emit any prompt-shaped headers like `[VALIDATE BEAT]`, `[BEAT CHECK]`, `[Length: ...]`, `[Pacing: ...]`, or any bracket-wrapped UPPERCASE block. End at a natural sentence boundary without commentary.
 
                     The TEMPLATE SCENE below is provided as a VOICE EXEMPLAR — study its prose voice, sentence rhythm, register, and modality handling. Do NOT reuse its plot, characters, settings, or specific events. The new scene's content comes from the NEW CAST mapping. The template is showing you HOW to write, not WHAT to write.
                     """
@@ -181,12 +181,12 @@ public enum BeatGeneration {
             if imitateContent {
                 systemFraming = """
                     [SYSTEM]
-                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT. Substitute the cast described in the NEW CAST block below; otherwise, preserve the content register, vocabulary, and act patterns that any retrieved style exemplars demonstrate.
+                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT. Output ONLY the beat's prose — do NOT emit any prompt-shaped headers like `[VALIDATE BEAT]`, `[BEAT CHECK]`, `[Length: ...]`, `[Pacing: ...]`, or any bracket-wrapped UPPERCASE block. End at a natural sentence boundary without commentary. Substitute the cast described in the NEW CAST block below; otherwise, preserve the content register, vocabulary, and act patterns that any retrieved style exemplars demonstrate.
                     """
             } else {
                 systemFraming = """
                     [SYSTEM]
-                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT. The new scene's content comes from the NEW CAST mapping.
+                    You are a fiction writer. Your job is to write ONE beat of a scene whose structural skeleton is given below. Follow the current beat's modality, function, and target word count precisely. Do NOT write the whole scene — only the one beat marked CURRENT. Output ONLY the beat's prose — do NOT emit any prompt-shaped headers like `[VALIDATE BEAT]`, `[BEAT CHECK]`, `[Length: ...]`, `[Pacing: ...]`, or any bracket-wrapped UPPERCASE block. End at a natural sentence boundary without commentary. The new scene's content comes from the NEW CAST mapping.
                     """
             }
             templateBlock = ""

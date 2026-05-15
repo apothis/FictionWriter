@@ -60,6 +60,19 @@ public final class TemplateGenerationCoordinator {
     /// inspector listens for this same shape from `GenerationCoordinator`;
     /// adding it here gives template gens parity with Continue.
     public static let didWriteLogEntryNotification = Notification.Name("LoomTemplateGenerationCoordinator.didWriteLogEntry")
+    /// Phase 8.b.x — posted after a completed beat's tail has been
+    /// sanitized (hallucinated meta-blocks stripped, excess
+    /// whitespace collapsed). The editor uses the delta to remove
+    /// the corresponding characters from its NSTextStorage so the
+    /// visible text-view matches `insertedText`.
+    /// `userInfo:`
+    ///   - `beatIndex: Int` — which beat was sanitized
+    ///   - `deleteFromOffset: Int` — UTF-16 offset where the deletion
+    ///     starts (in the live text view's coordinate space)
+    ///   - `deleteCount: Int` — number of UTF-16 code units to delete
+    /// No notification fires when the beat's output passes through
+    /// the sanitizer unchanged.
+    public static let didSanitizeBeatNotification = Notification.Name("LoomTemplateGenerationCoordinator.didSanitizeBeat")
 
     public private(set) var isGenerating: Bool = false
     public private(set) var currentBeatIndex: Int = 0
@@ -73,6 +86,12 @@ public final class TemplateGenerationCoordinator {
     private var generationStartedAt: Date = .distantPast
     private var generationStartOffset: Int = 0
     private var cancelled: Bool = false
+    /// Phase 8.b.x — `insertedText.utf16.count` snapshot taken at the
+    /// moment the current beat's stream began. Used to slice this
+    /// beat's substring for sanitization on completion + compute the
+    /// editor-side deletion range when the sanitizer trims trailing
+    /// rubbish.
+    private var currentBeatStartInsertedTextLength: Int = 0
     private var pendingSceneId: UUID?
     private var pendingTemplateId: UUID?
     private var pendingSkeleton: ExtractedSceneSkeleton?
@@ -206,6 +225,16 @@ public final class TemplateGenerationCoordinator {
         }
 
         currentBeatIndex = index
+        // Phase 8.b.x — snapshot the length of insertedText BEFORE
+        // this beat's stream begins. On completion we slice
+        // insertedText[startLen...] as "this beat's output", run it
+        // through BeatOutputSanitizer, then update insertedText +
+        // insertionOffset + post a deletion-delta notification if the
+        // sanitizer trimmed anything. Snapshot is taken on retry too
+        // (insertedText didn't grow during the failed empty attempt).
+        if retryAttemptsRemaining == 1 {
+            currentBeatStartInsertedTextLength = (insertedText as NSString).length
+        }
         let beat = skeleton.beats[index]
         // Phase 8.b.4 — per-beat retrieval. Build the query, ask the
         // retriever (if wired), pass the result into buildBeatPrompt.
@@ -254,11 +283,32 @@ public final class TemplateGenerationCoordinator {
         // `[END BEAT 7 PROSE]` the writer emits at the final beat
         // (mimicking the prompt's structural label shape). Narrower
         // than a bare `[` so prose bracketed openings still stream.
-        let stops = ["=== END", "[BEAT SKELETON", "[INSTRUCTION", "[SYSTEM]", "[NEW CAST]", "[NEXT-BEAT HINT", "[END"]
+        // Phase 8.b.x — extended stop list. The new entries
+        // (`[VALIDATE`, `[BEAT CHECK`, `[Length`, `[Pacing`,
+        // `[Dialogue`, `[VOICE`) catch the prompt-shaped meta-blocks
+        // gemma-4-Deckard-Heretic-Thinking emits at beat-end (see
+        // 2026-05-15 smoke + BeatOutputSanitizer comments). Stop
+        // sequences are the preventive layer; BeatOutputSanitizer.strip
+        // catches anything that slips past at insertion time.
+        let stops = [
+            "=== END", "[BEAT SKELETON", "[INSTRUCTION", "[SYSTEM]",
+            "[NEW CAST]", "[NEXT-BEAT HINT", "[END",
+            "[VALIDATE", "[BEAT CHECK", "[BEAT VALIDATION",
+            "[LENGTH CHECK", "[PACING CHECK", "[CHECK]",
+            "[VOICE TARGET",
+        ]
         self.lastStopSequences = stops
 
+        // Phase 8.b.x — beat budget bumped from 2× targetWords to
+        // 4× with a 256-token floor. The previous floor of 64 tokens
+        // (~50 words) clipped beats with small `targetWords` mid-
+        // word when the writer wanted to elaborate; the 2026-05-15
+        // gen-log shows beat 0 (target 40w) cut at "Emily" after
+        // ~70 words. 4× gives the writer room to end at a natural
+        // sentence boundary; the SYSTEM framing + per-beat
+        // instruction still enforce length discipline.
         let params = SamplerParams(
-            maxLength: max(64, beat.targetWords * 2)
+            maxLength: max(256, beat.targetWords * 4)
         )
 
         let profileId = session.project.settings.serverProfileId
@@ -336,6 +386,13 @@ public final class TemplateGenerationCoordinator {
                 fireBeat(index: beatIndex, retryAttemptsRemaining: retryAttemptsRemaining - 1)
                 return
             }
+            // Phase 8.b.x — sanitize this beat's tail before it
+            // becomes `priorBeatsProse` for subsequent beats. Breaks
+            // the meta-block leakage cascade observed in the
+            // 2026-05-15 smoke. Also posts a deletion-delta
+            // notification so the editor can drop the rubbish from
+            // the visible text view.
+            sanitizeCompletedBeatTail(beatIndex: beatIndex)
             // Tokens were already emitted via the streaming onToken
             // callback. Advance to the next beat — first emit the
             // inter-beat paragraph break so the next beat's tokens
@@ -350,6 +407,49 @@ public final class TemplateGenerationCoordinator {
             DebugLog.shared.write("[template-gen] beat \(beatIndex) failed: \(err)")
             finishGeneration(error: err)
         }
+    }
+
+    /// Phase 8.b.x — defense-in-depth filter on the just-completed
+    /// beat. Slices `insertedText[currentBeatStartInsertedTextLength...]`
+    /// as the beat's contribution, runs it through
+    /// `BeatOutputSanitizer.strip`, and if the result is shorter,
+    /// trims the rolling buffer + posts a deletion notification so
+    /// the editor's NSTextStorage can drop the same characters from
+    /// the visible text view. No-op when the sanitizer passes the
+    /// output through unchanged. Operates in UTF-16 units to stay
+    /// consistent with the offsets the editor already uses.
+    private func sanitizeCompletedBeatTail(beatIndex: Int) {
+        let totalNS = insertedText as NSString
+        let totalLen = totalNS.length
+        let start = currentBeatStartInsertedTextLength
+        guard start <= totalLen else { return }
+        let beatRange = NSRange(location: start, length: totalLen - start)
+        guard beatRange.length > 0 else { return }
+        let beatTail = totalNS.substring(with: beatRange)
+        let cleaned = BeatOutputSanitizer.strip(beatTail)
+        guard cleaned != beatTail else { return }
+
+        // Replace the tail in insertedText.
+        let cleanedNS = cleaned as NSString
+        let newTotal = totalNS.replacingCharacters(in: beatRange, with: cleaned)
+        insertedText = newTotal
+        let deleteCount = beatRange.length - cleanedNS.length
+        let deleteFromOffset = insertionOffset - deleteCount
+        insertionOffset -= deleteCount
+
+        DebugLog.shared.write(
+            "[template-gen] beat \(beatIndex) sanitized: dropped \(deleteCount) chars " +
+            "(meta-block leakage / trailing whitespace)"
+        )
+        NotificationCenter.default.post(
+            name: Self.didSanitizeBeatNotification,
+            object: self,
+            userInfo: [
+                "beatIndex": beatIndex,
+                "deleteFromOffset": deleteFromOffset,
+                "deleteCount": deleteCount,
+            ]
+        )
     }
 
     private func finishGeneration(error: Error?) {

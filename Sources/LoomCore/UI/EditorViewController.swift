@@ -35,6 +35,14 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     private var templateGenStartObserver: NSObjectProtocol?
     private var templateGenTokenObserver: NSObjectProtocol?
     private var templateGenFinishObserver: NSObjectProtocol?
+    /// Phase 8.b.x — handler for the coordinator's per-beat
+    /// sanitization notification. When the writer emits a hallucinated
+    /// `[VALIDATE BEAT]` / `[BEAT CHECK]` meta-block or runs of
+    /// trailing whitespace, the coordinator trims them from
+    /// `insertedText` and posts a notification with the deletion
+    /// range so the editor can drop the same characters from the
+    /// visible text view.
+    private var templateGenSanitizeObserver: NSObjectProtocol?
     private var templateGenRequestObserver: NSObjectProtocol?
     private var insertAgainObserver: NSObjectProtocol?
     private var pushPastRefusalObserver: NSObjectProtocol?
@@ -98,6 +106,7 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = templateGenStartObserver { NotificationCenter.default.removeObserver(o) }
         if let o = templateGenTokenObserver { NotificationCenter.default.removeObserver(o) }
         if let o = templateGenFinishObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = templateGenSanitizeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = templateGenRequestObserver { NotificationCenter.default.removeObserver(o) }
         if let o = insertAgainObserver { NotificationCenter.default.removeObserver(o) }
         if let o = pushPastRefusalObserver { NotificationCenter.default.removeObserver(o) }
@@ -364,6 +373,37 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             let insertAt = (self.streamingStartOffset ?? offset) + self.streamingInsertedLength
             self.insertGeneratedToken(visible, at: insertAt)
             self.streamingInsertedLength += (visible as NSString).length
+        }
+        templateGenSanitizeObserver = NotificationCenter.default.addObserver(
+            forName: TemplateGenerationCoordinator.didSanitizeBeatNotification,
+            object: templateCoordinator,
+            queue: .main
+        ) { [weak self] note in
+            guard let self = self,
+                  let storage = self.textView.textStorage,
+                  let deleteFrom = note.userInfo?["deleteFromOffset"] as? Int,
+                  let deleteCount = note.userInfo?["deleteCount"] as? Int,
+                  deleteCount > 0
+            else { return }
+            let nsLength = storage.length
+            // Clamp defensively — the user MAY have edited the
+            // generated range mid-stream (it's still the same
+            // NSTextStorage), in which case the offsets are stale.
+            // Refuse to delete out-of-range characters.
+            guard deleteFrom >= 0, deleteFrom + deleteCount <= nsLength else {
+                DebugLog.shared.write(
+                    "[template-gen-editor] sanitize delete out of range: from=\(deleteFrom) count=\(deleteCount) docLen=\(nsLength); skipping"
+                )
+                return
+            }
+            self.suppressWriteback = true
+            storage.deleteCharacters(in: NSRange(location: deleteFrom, length: deleteCount))
+            self.suppressWriteback = false
+            self.streamingInsertedLength -= deleteCount
+            // Keep the cursor at the new end-of-inserted-range so the
+            // next beat's first token lands cleanly.
+            let newCursor = (self.streamingStartOffset ?? 0) + self.streamingInsertedLength
+            self.textView.setSelectedRange(NSRange(location: newCursor, length: 0))
         }
         templateGenFinishObserver = NotificationCenter.default.addObserver(
             forName: TemplateGenerationCoordinator.didFinishNotification,
