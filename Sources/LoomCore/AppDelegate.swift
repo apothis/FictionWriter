@@ -301,6 +301,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         writeFromTemplate.target = self
         writeFromTemplate.toolTip = "Generate a new scene using a Template Scene's extracted structural skeleton (beat ordering, modality flow, pacing) but with new characters and content. (Phase 7 — see LOOM_SCENE_TEMPLATE.md)"
         bibleMenu.addItem(writeFromTemplate)
+        bibleMenu.addItem(.separator())
+        // Phase 9 — manual trigger for the entity-discovery pipeline.
+        // Auto-trigger landing later; for now the user invokes per
+        // scene from the menu.
+        let discoverEntities = NSMenuItem(
+            title: "Discover Entities in Current Scene",
+            action: #selector(discoverEntitiesClicked),
+            keyEquivalent: "")
+        discoverEntities.target = self
+        discoverEntities.toolTip = "Run the entity-discovery pipeline against the current scene. Proposed characters and places appear in the Bible Workspace under \"Entity proposals\". (Phase 9 — see LOOM_ENTITY_DISCOVERY_SPIKE.md)"
+        bibleMenu.addItem(discoverEntities)
         bibleMenuItem.submenu = bibleMenu
 
         NSApp.mainMenu = main
@@ -374,6 +385,36 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     public static let requestRolledOutcomeNotification = Notification.Name("LoomBible.requestRolledOutcome")
 
     // MARK: - Phase 7.b.6 — template-scene generation menu
+
+    @objc private func discoverEntitiesClicked() {
+        let session = AppState.shared.currentSession
+        guard let sceneId = session.currentSceneId else {
+            let alert = NSAlert()
+            alert.messageText = "No active scene"
+            alert.informativeText = "Open a scene in the editor before running entity discovery."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        // Confirm before firing — pipeline takes ~30s and the user
+        // may have invoked accidentally.
+        let confirm = NSAlert()
+        confirm.messageText = "Run entity discovery on this scene?"
+        confirm.informativeText = "The pipeline takes around 30 seconds and runs in the background. New proposed characters and places will appear in the Bible Workspace under \"Entity proposals\" when it finishes."
+        confirm.alertStyle = .informational
+        confirm.addButton(withTitle: "Run")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        AppState.shared.runEntityDiscovery(for: sceneId)
+        let started = NSAlert()
+        started.messageText = "Entity discovery started"
+        started.informativeText = "Open the Bible Workspace to see results when the pipeline completes (~30 seconds)."
+        started.alertStyle = .informational
+        started.addButton(withTitle: "OK")
+        started.runModal()
+    }
 
     @objc private func writeSceneFromTemplateClicked() {
         let session = AppState.shared.currentSession
