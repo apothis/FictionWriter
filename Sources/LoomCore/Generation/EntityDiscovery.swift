@@ -131,4 +131,245 @@ public enum EntityDiscovery {
         }
         return sawAnatomy
     }
+
+    // MARK: - Stage A2: candidate generation (grammar / schema / prompt / parser)
+
+    /// Candidate generation output — a single entity mention as it
+    /// first appears in the scene prose. Light shape on purpose;
+    /// Stage D normalises into the richer `ProposedEntity` tuple.
+    public struct Candidate: Equatable {
+        public let surface: String
+        public let kind: Kind
+        public let firstSeenQuote: String
+
+        public init(surface: String, kind: Kind, firstSeenQuote: String) {
+            self.surface = surface
+            self.kind = kind
+            self.firstSeenQuote = firstSeenQuote
+        }
+    }
+
+    public enum ParseError: Error {
+        case noJSONArrayFound
+        case noJSONObjectFound
+        case malformedJSON
+    }
+
+    /// GBNF grammar for Stage A2 (kobold-side). Empirical guards
+    /// from LedgerExtraction §164 baked in: single-optional-space
+    /// `ws`, rules on one line, simple string-escape handling.
+    public static func candidateGenerationGBNF() -> String {
+        return "root ::= \"[\" ws (candidate (ws \",\" ws candidate)*)? ws \"]\"\n"
+            + "candidate ::= \"{\" ws \"\\\"surface\\\":\" ws string ws \",\" ws \"\\\"kind\\\":\" ws kind ws \",\" ws \"\\\"first_seen_quote\\\":\" ws string ws \"}\"\n"
+            + "kind ::= \"\\\"character\\\"\" | \"\\\"place\\\"\"\n"
+            + "string ::= \"\\\"\" ([^\"\\\\] | \"\\\\\" .)* \"\\\"\"\n"
+            + "ws ::= \" \"?"
+    }
+
+    /// JSON Schema for Stage A2 (Ollama-side `format` field).
+    public static func candidateGenerationJSONSchema() -> [String: Any] {
+        return [
+            "type": "array",
+            "items": [
+                "type": "object",
+                "properties": [
+                    "surface": ["type": "string"],
+                    "kind": ["type": "string", "enum": ["character", "place"]],
+                    "first_seen_quote": ["type": "string"],
+                ],
+                "required": ["surface", "kind", "first_seen_quote"],
+            ],
+        ]
+    }
+
+    public static let candidateGenerationPromptInstruction =
+        "Identify new characters and named places mentioned in the scene below. Only emit entities introduced with a clear proper noun — do not emit entries for generic references like \"the man\", \"the bedroom\", \"the cafe\". For each entity, emit one entry with the surface form as it appears, the kind (character or place), and a verbatim quote where the entity first appears."
+
+    public static func buildCandidateGenerationPrompt(
+        scenePose: String,
+        knownEntityNames: [String]
+    ) -> String {
+        let knownJSON: String = {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = (try? encoder.encode(knownEntityNames)) ?? Data()
+            return String(data: data, encoding: .utf8) ?? "[]"
+        }()
+        return """
+        \(Self.candidateGenerationPromptInstruction)
+
+        Do NOT emit entries for entities already in this known list:
+        \(knownJSON)
+
+        Scene:
+        \(scenePose)
+
+        Emit the JSON array.
+        """
+    }
+
+    /// Parser tolerant of preamble / postamble and mid-array
+    /// truncation — mirrors `LedgerExtraction.parseExtractedFacts`.
+    public static func parseCandidates(_ raw: String) throws -> [Candidate] {
+        guard let first = raw.firstIndex(of: "[") else {
+            throw ParseError.noJSONArrayFound
+        }
+        // Strict full-array decode first.
+        if let last = raw.lastIndex(of: "]"), last > first {
+            let slice = String(raw[first...last])
+            if let data = slice.data(using: .utf8),
+               let items = try? JSONDecoder().decode([RawCandidate].self, from: data)
+            {
+                return items.compactMap { candidateFromRaw($0) }
+            }
+        }
+        // Per-object recovery for truncated arrays.
+        return recoverCandidatesPerObject(raw[first...])
+    }
+
+    private struct RawCandidate: Decodable {
+        let surface: String?
+        let kind: String?
+        let first_seen_quote: String?
+    }
+
+    private static func candidateFromRaw(_ r: RawCandidate) -> Candidate? {
+        guard let s = r.surface, !s.isEmpty,
+              let k = r.kind, let kind = Kind(rawValue: k),
+              let q = r.first_seen_quote
+        else { return nil }
+        return Candidate(surface: s, kind: kind, firstSeenQuote: q)
+    }
+
+    private static func recoverCandidatesPerObject(_ slice: Substring) -> [Candidate] {
+        var out: [Candidate] = []
+        var depth = 0
+        var start: String.Index?
+        for i in slice.indices {
+            let c = slice[i]
+            if c == "{" {
+                if depth == 0 { start = i }
+                depth += 1
+            } else if c == "}" {
+                depth -= 1
+                if depth == 0, let s = start {
+                    let objStr = String(slice[s...i])
+                    if let data = objStr.data(using: .utf8),
+                       let r = try? JSONDecoder().decode(RawCandidate.self, from: data),
+                       let cand = candidateFromRaw(r)
+                    {
+                        out.append(cand)
+                    }
+                    start = nil
+                }
+            }
+        }
+        return out
+    }
+
+    // MARK: - Stage D: normalisation (grammar / schema / prompt / parser)
+
+    /// Normalised entity — Stage D output. Becomes the body of a
+    /// `ProposedEntity` once the orchestrator adds id + sceneId +
+    /// confidence (which come from the pipeline, not the LLM).
+    public struct NormalisedEntity: Equatable {
+        public let kind: Kind
+        public let canonicalName: String
+        public let aliases: [String]
+        public let oneLine: String
+        public let evidenceQuote: String
+
+        public init(kind: Kind, canonicalName: String, aliases: [String], oneLine: String, evidenceQuote: String) {
+            self.kind = kind
+            self.canonicalName = canonicalName
+            self.aliases = aliases
+            self.oneLine = oneLine
+            self.evidenceQuote = evidenceQuote
+        }
+    }
+
+    public static func normalisationGBNF() -> String {
+        return "root ::= \"{\" ws \"\\\"kind\\\":\" ws kind ws \",\" ws \"\\\"canonical_name\\\":\" ws string ws \",\" ws \"\\\"aliases\\\":\" ws aliases ws \",\" ws \"\\\"one_line\\\":\" ws string ws \",\" ws \"\\\"evidence_quote\\\":\" ws string ws \"}\"\n"
+            + "kind ::= \"\\\"character\\\"\" | \"\\\"place\\\"\"\n"
+            + "aliases ::= \"[\" ws (string (ws \",\" ws string)*)? ws \"]\"\n"
+            + "string ::= \"\\\"\" ([^\"\\\\] | \"\\\\\" .)* \"\\\"\"\n"
+            + "ws ::= \" \"?"
+    }
+
+    public static func normalisationJSONSchema() -> [String: Any] {
+        return [
+            "type": "object",
+            "properties": [
+                "kind": ["type": "string", "enum": ["character", "place"]],
+                "canonical_name": ["type": "string"],
+                "aliases": ["type": "array", "items": ["type": "string"]],
+                "one_line": ["type": "string"],
+                "evidence_quote": ["type": "string"],
+            ],
+            "required": ["kind", "canonical_name", "aliases", "one_line", "evidence_quote"],
+        ]
+    }
+
+    public static let normalisationPromptInstruction =
+        "Normalise the entity candidate below into a structured bible entry. For canonical_name, use the most complete/formal form of the name that appears in the scene (e.g. \"Marius Thorn\" not \"Marius\"). For aliases, list every other surface form of this entity that appears in the scene. For one_line, write a single sentence describing this entity based on the scene. For evidence_quote, cite a verbatim span from the scene that anchors the entity's identity."
+
+    public static func buildNormalisationPrompt(
+        candidateSurface: String,
+        candidateKind: Kind,
+        firstSeenQuote: String,
+        scenePose: String
+    ) -> String {
+        return """
+        \(Self.normalisationPromptInstruction)
+
+        Candidate surface: "\(candidateSurface)"
+        Kind: \(candidateKind.rawValue)
+        First seen quote: "\(firstSeenQuote)"
+
+        Scene:
+        \(scenePose)
+
+        Emit the JSON object.
+        """
+    }
+
+    public static func parseNormalisedEntity(_ raw: String) throws -> NormalisedEntity {
+        guard let first = raw.firstIndex(of: "{") else {
+            throw ParseError.noJSONObjectFound
+        }
+        // Find balanced closing brace from `first`.
+        var depth = 0
+        var end: String.Index?
+        for i in raw[first...].indices {
+            let c = raw[i]
+            if c == "{" { depth += 1 }
+            else if c == "}" {
+                depth -= 1
+                if depth == 0 { end = i; break }
+            }
+        }
+        guard let last = end else { throw ParseError.malformedJSON }
+        let slice = String(raw[first...last])
+        struct R: Decodable {
+            let kind: String?
+            let canonical_name: String?
+            let aliases: [String]?
+            let one_line: String?
+            let evidence_quote: String?
+        }
+        guard let data = slice.data(using: .utf8),
+              let r = try? JSONDecoder().decode(R.self, from: data),
+              let kRaw = r.kind, let kind = Kind(rawValue: kRaw),
+              let name = r.canonical_name,
+              let oneLine = r.one_line,
+              let quote = r.evidence_quote
+        else { throw ParseError.malformedJSON }
+        return NormalisedEntity(
+            kind: kind,
+            canonicalName: name,
+            aliases: r.aliases ?? [],
+            oneLine: oneLine,
+            evidenceQuote: quote
+        )
+    }
 }
