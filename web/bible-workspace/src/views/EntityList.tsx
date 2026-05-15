@@ -25,6 +25,7 @@ interface Props {
   onAddTemplateScene: () => void;
   onAddSceneExemplar: () => void;
   onOpenSuggestions: () => void;
+  onOpenEntityProposals: () => void;
 }
 
 export function EntityList({
@@ -39,11 +40,16 @@ export function EntityList({
   onAddTemplateScene,
   onAddSceneExemplar,
   onOpenSuggestions,
+  onOpenEntityProposals,
 }: Props) {
   const sceneExemplars = snapshot.sceneExemplars ?? [];
   return (
     <div className="flex h-full flex-col">
-      <Header snapshot={snapshot} onOpenSuggestions={onOpenSuggestions} />
+      <Header
+        snapshot={snapshot}
+        onOpenSuggestions={onOpenSuggestions}
+        onOpenEntityProposals={onOpenEntityProposals}
+      />
       <div className="flex-1 overflow-auto">
         <Section title="Characters" count={snapshot.characters.length}>
           {snapshot.characters.length === 0 ? (
@@ -166,11 +172,14 @@ export function EntityList({
 function Header({
   snapshot,
   onOpenSuggestions,
+  onOpenEntityProposals,
 }: {
   snapshot: BibleWorkspaceSnapshot;
   onOpenSuggestions: () => void;
+  onOpenEntityProposals: () => void;
 }) {
   const pendingCount = snapshot.suggestions.length;
+  const proposalsCount = (snapshot.proposedEntities ?? []).length;
   return (
     <div className="flex items-baseline justify-between border-b border-loom-border px-6 py-4">
       <div>
@@ -182,15 +191,26 @@ function Header({
           {snapshot.scenes.length === 1 ? "" : "s"}
         </p>
       </div>
-      {pendingCount > 0 && (
-        <button
-          type="button"
-          onClick={onOpenSuggestions}
-          className="rounded-md border border-loom-accent/40 bg-loom-accent/10 px-3 py-1.5 text-xs font-medium text-loom-accent hover:bg-loom-accent/20 focus:outline-none focus:ring-1 focus:ring-loom-accent"
-        >
-          {pendingCount} pending suggestion{pendingCount === 1 ? "" : "s"} →
-        </button>
-      )}
+      <div className="flex gap-2">
+        {proposalsCount > 0 && (
+          <button
+            type="button"
+            onClick={onOpenEntityProposals}
+            className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+          >
+            {proposalsCount} entity proposal{proposalsCount === 1 ? "" : "s"} →
+          </button>
+        )}
+        {pendingCount > 0 && (
+          <button
+            type="button"
+            onClick={onOpenSuggestions}
+            className="rounded-md border border-loom-accent/40 bg-loom-accent/10 px-3 py-1.5 text-xs font-medium text-loom-accent hover:bg-loom-accent/20 focus:outline-none focus:ring-1 focus:ring-loom-accent"
+          >
+            {pendingCount} pending suggestion{pendingCount === 1 ? "" : "s"} →
+          </button>
+        )}
+      </div>
     </div>
   );
 }

@@ -151,6 +151,45 @@ export interface BibleWorkspaceSnapshot {
   // unified Scene Exemplar editor reads BOTH and flips its Ingest
   // button to "Ingesting…" when its id appears in either.
   ingestingReferenceIds?: string[];
+  // Phase 9 entity-discovery — pending proposals from the discovery
+  // pipeline (Tools/EntityDiscoverySpike output, eventually editor-
+  // triggered live discovery). EntityProposalsQueue.tsx renders this
+  // list; accept/reject route through the bridge to AppState.
+  // Optional for legacy-payload tolerance — default to [].
+  proposedEntities?: SnapshotProposedEntity[];
+}
+
+// Phase 9 entity-discovery — webview projection of a ProposedEntity.
+// `kind` is "character" | "place"; `sourceSceneTitle` is pre-resolved
+// at snapshot-build time so the view doesn't have to cross-reference
+// `scenes[]` for every row. `attachedFacts` embedded inline so the
+// row card can expand without a second bridge call.
+export interface SnapshotProposedEntity {
+  id: string;
+  kind: "character" | "place";
+  canonicalName: string;
+  aliases: string[];
+  oneLine: string;
+  evidenceQuote: string;
+  sourceSceneId: string;
+  sourceSceneTitle: string;
+  confidence: number;
+  attachedFacts: SnapshotProposedFact[];
+}
+
+export interface SnapshotProposedFact {
+  fact: string;
+  certainty: string;
+  evidenceQuote: string;
+}
+
+// Payload accompanying acceptEntityProposal — what the user
+// committed to (may differ from the LLM's original proposal if
+// they edited the form fields).
+export interface ProposedEntityAcceptance {
+  canonicalName: string;
+  aliases: string[];
+  oneLine: string;
 }
 
 // Mirrors CharacterPatch.swift — every field optional. The React

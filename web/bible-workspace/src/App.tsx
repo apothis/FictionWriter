@@ -15,6 +15,7 @@ import { ReferenceEditor } from "./views/ReferenceEditor";
 import { TemplateSceneEditor } from "./views/TemplateSceneEditor";
 import { SceneExemplarEditor } from "./views/SceneExemplarEditor";
 import { SuggestionsQueue } from "./views/SuggestionsQueue";
+import { EntityProposalsQueue } from "./views/EntityProposalsQueue";
 
 // Top-level routing. Sessions 2-5 extended the Selection union as
 // each editor surface landed. Phase 5 production A2.2 added the
@@ -27,6 +28,7 @@ type Selection =
   | { kind: "template"; id: string }
   | { kind: "sceneExemplar"; id: string }
   | { kind: "suggestions" }
+  | { kind: "entityProposals" }
   | null;
 
 export function App() {
@@ -180,6 +182,25 @@ export function App() {
     );
   }
 
+  if (selection?.kind === "entityProposals") {
+    return (
+      <EntityProposalsQueue
+        proposals={snapshot.proposedEntities ?? []}
+        onAccept={(proposalId, accepted) =>
+          postIntent({
+            kind: "acceptEntityProposal",
+            proposalId,
+            accepted,
+          })
+        }
+        onReject={(proposalId) =>
+          postIntent({ kind: "rejectEntityProposal", proposalId })
+        }
+        onBack={() => setSelection(null)}
+      />
+    );
+  }
+
   return renderList();
 
   function renderList() {
@@ -194,6 +215,7 @@ export function App() {
           setSelection({ kind: "sceneExemplar", id })
         }
         onOpenSuggestions={() => setSelection({ kind: "suggestions" })}
+        onOpenEntityProposals={() => setSelection({ kind: "entityProposals" })}
         onAddLorebookEntry={() => {
           const name = `Entry ${snapshot!.lorebook.length + 1}`;
           postIntent({ kind: "addLorebookEntry", name });
