@@ -1,0 +1,351 @@
+{
+  "_description": "Hand-graded gold fixture for the Phase 9 entity-discovery spike (LOOM_ENTITY_DISCOVERY_SPIKE.md §6.1). 8 scenes covering: cold-start discovery (no bible → first character + first place), incremental discovery (adding second character to known bible), null-discovery (scenes with no new entities — must propose nothing), NSFW with named characters introduced under heavy pronoun load, definite-NP/anatomy-descriptor distractors, proper-noun-by-possessive places, title-prefixed character names, and same-person-under-two-names dedup. Scenes 0-4 are reused verbatim from LedgerSpike/fixture.json (same Mia/Anders/Karim arc); scenes 5-7 are NEW and standalone, written for this spike. Each scene carries a `starting_bible` (what's known when the scene is processed), `gold_entities` (what the discovery pipeline SHOULD propose), `gold_distractors` (surface forms that look entity-like but should be REJECTED with reasoning), and `gold_facts` (facts attached to each gold entity). Together these grade precision (proposals matching gold) and recall (gold entities found).",
+  "schema_version": 1,
+  "scenes": [
+    {
+      "id": "eds-00",
+      "title": "The Knock",
+      "tag": "SFW",
+      "source": "LedgerSpike/fixture.json scene 0 (verbatim)",
+      "prose": "Mia was halfway through her wine when the knock came. Three short raps, then silence. She set the glass on the kitchen counter and crossed the hallway, the floorboards complaining under her bare feet.\n\nThe man on the landing was younger than she'd expected — maybe thirty, dark coat damp from the rain. He had the careful posture of someone who knew he didn't belong.\n\n\"Sorry to bother you,\" he said. \"I'm looking for number nineteen. The directory downstairs is — uh — not helpful.\"\n\n\"Down one floor, opposite corner.\" Mia kept her hand on the door. \"You alright?\"\n\n\"Better in a second.\" He gave her a tight, embarrassed smile. \"Anders. I'm meant to be at a dinner.\"\n\n\"Mia.\" She didn't offer her hand.\n\n\"Thanks, Mia.\" He glanced down the corridor. \"Have a good evening.\"\n\nShe closed the door and listened to his footsteps recede. Halfway through her wine again before she realised she was smiling.",
+      "starting_bible": {
+        "characters": [
+          { "name": "Mia", "aliases": ["Mia Vance", "Miss Vance"] }
+        ],
+        "settings": []
+      },
+      "gold_entities": [
+        {
+          "kind": "character",
+          "canonical_name": "Anders",
+          "aliases": ["the man on the landing", "the stranger"],
+          "is_new": true,
+          "merges_with_bible_name": null,
+          "is_worth_tracking": true,
+          "one_line": "A man around thirty who knocked on Mia's door looking for flat nineteen.",
+          "evidence_quote": "\"Anders. I'm meant to be at a dinner.\"",
+          "reasoning": "Proper noun explicitly introduced in dialogue. Has a name + speech act + reason for being there. Definite track-worthy."
+        }
+      ],
+      "gold_distractors": [
+        {
+          "surface": "the man on the landing",
+          "kind": "character",
+          "reasoning": "Definite-NP referring to Anders before he gives his name. Should NOT propose as a separate entity — should resolve as alias of Anders (or be left un-proposed and tagged by the user manually). v1 spike: not proposing separately is the correct behavior."
+        },
+        {
+          "surface": "the Bergmans",
+          "kind": "character",
+          "reasoning": "Not actually mentioned in this scene — appears in scene 1 (eds-01). Distractor here is the implicit referent ('flat nineteen' belongs to someone); LLM should not invent a 'Bergmans' entity from a flat number alone."
+        },
+        {
+          "surface": "number nineteen",
+          "kind": "place",
+          "reasoning": "Flat number, not a named place. Not bible-worthy."
+        }
+      ],
+      "gold_facts": [
+        { "entity_canonical_name": "Mia", "fact": "Mia was drinking wine alone in her flat.", "certainty": "asserted", "evidence_quote": "Mia was halfway through her wine" },
+        { "entity_canonical_name": "Mia", "fact": "Mia learned the stranger's name is Anders.", "certainty": "asserted", "evidence_quote": "\"Anders. I'm meant to be at a dinner.\"" },
+        { "entity_canonical_name": "Mia", "fact": "Mia gave the stranger directions to flat nineteen.", "certainty": "asserted", "evidence_quote": "\"Down one floor, opposite corner.\"" },
+        { "entity_canonical_name": "Anders", "fact": "Anders was lost and looking for flat nineteen.", "certainty": "asserted", "evidence_quote": "\"I'm looking for number nineteen.\"" },
+        { "entity_canonical_name": "Anders", "fact": "Anders was going to a dinner.", "certainty": "asserted", "evidence_quote": "\"I'm meant to be at a dinner.\"" },
+        { "entity_canonical_name": "Anders", "fact": "Anders's coat was damp from rain.", "certainty": "asserted", "evidence_quote": "dark coat damp from the rain" }
+      ]
+    },
+    {
+      "id": "eds-01",
+      "title": "Coffee with Karim",
+      "tag": "SFW",
+      "source": "LedgerSpike/fixture.json scene 1 (verbatim)",
+      "prose": "Karim was already at the table when Mia got to the cafe, two coffees in front of him.\n\n\"You're late,\" he said, sliding one across.\n\n\"I'm always late.\" Mia sat. \"I had a stranger at my door last night.\"\n\n\"A stranger.\" Karim raised an eyebrow.\n\n\"Looking for the Bergmans' flat. Nice enough. Embarrassed about getting the directory wrong.\"\n\n\"Mia.\" Her brother's tone took on the careful patience he reserved for her worse decisions. \"Tell me you didn't invite a stranger in.\"\n\n\"I gave him directions and closed the door.\"\n\nHe sipped his coffee. \"Speaking of which — work hired someone. Anders something. Started Monday. Reasonable, doesn't talk too much. You'd like him.\"\n\n\"Hm.\" Mia turned the cup in her hands. The name caught somewhere in her chest and stayed there, but she said nothing. Lots of men were called Anders.",
+      "starting_bible": {
+        "characters": [
+          { "name": "Mia", "aliases": ["Mia Vance", "Miss Vance"] },
+          { "name": "Anders", "aliases": ["Anders Voll", "the stranger"] }
+        ],
+        "settings": []
+      },
+      "gold_entities": [
+        {
+          "kind": "character",
+          "canonical_name": "Karim",
+          "aliases": ["Karim Vance"],
+          "is_new": true,
+          "merges_with_bible_name": null,
+          "is_worth_tracking": true,
+          "one_line": "Mia's brother; coffee meeting; works at the same firm that hired Anders.",
+          "evidence_quote": "Karim was already at the table when Mia got to the cafe",
+          "reasoning": "Proper noun, repeatedly mentioned, family relationship to known character, surname shared with Mia (Vance — discoverable from Mia's bible alias). Clear character. The fact 'work hired someone. Anders something.' also tells us he works with Anders — relationship-rich entity."
+        }
+      ],
+      "gold_distractors": [
+        {
+          "surface": "the Bergmans",
+          "kind": "character",
+          "reasoning": "Definite-NP plural surname referring to whoever lives at flat nineteen — not actually present in any scene, mentioned only in Mia's recap. v1 should NOT propose: zero presence, zero facts, no on-page evidence. (Borderline: could be a worth-tracking 'they live in the building' note for the user but well below the v1 threshold.)"
+        },
+        {
+          "surface": "the cafe",
+          "kind": "place",
+          "reasoning": "Generic spatial reference — no proper noun, no distinguishing feature, only one mention. Not bible-worthy."
+        },
+        {
+          "surface": "work",
+          "kind": "place",
+          "reasoning": "Generic noun, not a named workplace. Not bible-worthy."
+        }
+      ],
+      "gold_facts": [
+        { "entity_canonical_name": "Mia", "fact": "Mia told Karim about the stranger at her door.", "certainty": "asserted", "evidence_quote": "\"I had a stranger at my door last night.\"" },
+        { "entity_canonical_name": "Karim", "fact": "Karim is Mia's brother.", "certainty": "asserted", "evidence_quote": "Her brother's tone" },
+        { "entity_canonical_name": "Karim", "fact": "Karim has a new coworker named Anders who started Monday.", "certainty": "asserted", "evidence_quote": "\"work hired someone. Anders something. Started Monday.\"" },
+        { "entity_canonical_name": "Mia", "fact": "Mia did not connect Karim's coworker Anders with the stranger at her door.", "certainty": "unknown", "evidence_quote": "Lots of men were called Anders." }
+      ]
+    },
+    {
+      "id": "eds-02",
+      "title": "First Night",
+      "tag": "NSFW",
+      "source": "LedgerSpike/fixture.json scene 2 (verbatim)",
+      "prose": "It was the third time they'd had dinner, and the first time Anders stayed.\n\nMia let him kiss her in the hallway, in the kitchen, against the bedroom door. By the time her dress hit the floor she'd stopped pretending to be in control of anything, and that was the part that surprised her most — how good it felt to stop pretending.\n\nHis mouth was patient. He took his time with her, hands flat against her hips, then her thighs, then everywhere she wanted them. She'd told herself, beforehand, that she wouldn't make a sound. That lasted maybe a minute.\n\nAfterward she lay against his chest, hair stuck to her cheek, watching the streetlight bend across the ceiling. He traced a slow line down her spine.\n\n\"You're quieter than I expected,\" he said.\n\n\"Liar.\"\n\nHe laughed, low. She felt it through his ribs.",
+      "starting_bible": {
+        "characters": [
+          { "name": "Mia", "aliases": ["Mia Vance", "Miss Vance"] },
+          { "name": "Anders", "aliases": ["Anders Voll", "the stranger"] },
+          { "name": "Karim", "aliases": ["Karim Vance"] }
+        ],
+        "settings": []
+      },
+      "gold_entities": [],
+      "gold_distractors": [
+        {
+          "surface": "the bedroom",
+          "kind": "place",
+          "reasoning": "Generic interior space, no proper noun, no recurrence-as-locale. Not bible-worthy. Null-discovery test: scenes 2-4 should propose ZERO new entities — measures false-positive rate."
+        }
+      ],
+      "gold_facts": [
+        { "entity_canonical_name": "Mia", "fact": "Mia and Anders had sex at Mia's flat.", "certainty": "asserted", "evidence_quote": "the first time Anders stayed" },
+        { "entity_canonical_name": "Mia", "fact": "This was Mia and Anders's third dinner together.", "certainty": "asserted", "evidence_quote": "It was the third time they'd had dinner" },
+        { "entity_canonical_name": "Anders", "fact": "Anders stayed the night at Mia's flat for the first time.", "certainty": "asserted", "evidence_quote": "the first time Anders stayed" }
+      ]
+    },
+    {
+      "id": "eds-03",
+      "title": "The Coworker",
+      "tag": "SFW",
+      "source": "LedgerSpike/fixture.json scene 3 (verbatim)",
+      "prose": "They were in Mia's kitchen, two weeks later. Anders was making pasta. Badly.\n\n\"My boss is impossible,\" he said over the hiss of the pan. \"But the new junior — Karim — actually halfway competent. Showed me a fix on a query yesterday that would have taken me a week.\"\n\nMia, on her stool, went very still.\n\n\"Karim what.\"\n\n\"Vance, I think. Why?\"\n\n\"He's my brother.\"\n\nAnders turned. \"You're joking.\"\n\n\"I'm really not.\"\n\nHe stared at her for a long second. \"Right.\" Then: \"He doesn't know it's me, does he. He's mentioned a sister. Never names.\"\n\n\"No.\" She set down her wine. \"He doesn't.\"\n\n\"Well.\" Anders looked at the pasta. The pasta looked back. \"That's going to be an interesting Monday.\"",
+      "starting_bible": {
+        "characters": [
+          { "name": "Mia", "aliases": ["Mia Vance", "Miss Vance"] },
+          { "name": "Anders", "aliases": ["Anders Voll", "the stranger"] },
+          { "name": "Karim", "aliases": ["Karim Vance"] }
+        ],
+        "settings": []
+      },
+      "gold_entities": [],
+      "gold_distractors": [
+        {
+          "surface": "my boss",
+          "kind": "character",
+          "reasoning": "Definite-NP, no proper noun, single mention, no on-page presence. Anders's boss is mentioned only as a complaint. Below v1 threshold even though the entity is real — would need a recurring mention with a stable descriptor before promotion."
+        }
+      ],
+      "gold_facts": [
+        { "entity_canonical_name": "Mia", "fact": "Mia learned Anders works with her brother Karim.", "certainty": "asserted", "evidence_quote": "\"He's my brother.\"" },
+        { "entity_canonical_name": "Anders", "fact": "Anders learned Karim is Mia's brother.", "certainty": "asserted", "evidence_quote": "\"You're joking.\"" },
+        { "entity_canonical_name": "Karim", "fact": "Karim does not yet know his coworker Anders is dating his sister.", "certainty": "unknown", "evidence_quote": "\"He doesn't know it's me, does he.\"" },
+        { "entity_canonical_name": "Anders", "fact": "Anders thinks Karim is a competent junior coworker.", "certainty": "asserted", "evidence_quote": "\"actually halfway competent\"" }
+      ]
+    },
+    {
+      "id": "eds-04",
+      "title": "Confession",
+      "tag": "NSFW",
+      "source": "LedgerSpike/fixture.json scene 4 (verbatim)",
+      "prose": "She'd been quiet all evening, and Anders had known to leave it alone, which was one of the reasons she'd already decided to keep him.\n\nThey'd gone to bed early. After, lying tangled in the sheet with her cheek against his shoulder, Mia finally said it.\n\n\"I'm going to tell Karim.\"\n\n\"Tomorrow?\"\n\n\"Tomorrow.\"\n\nHe shifted so he could see her face. The streetlight made his eyes look almost grey.\n\n\"Are you scared?\"\n\n\"A little. He'll be weird about it. He's always weird about it.\"\n\n\"Then I'll be there when you tell him.\"\n\nShe pressed her mouth to his collarbone, then lower. \"You don't have to.\"\n\n\"I'd like to.\"\n\nShe didn't answer in words. There were better answers available. By the time she came back up for air he'd stopped pretending he could form sentences either, and the conversation about her brother could wait until morning.",
+      "starting_bible": {
+        "characters": [
+          { "name": "Mia", "aliases": ["Mia Vance", "Miss Vance"] },
+          { "name": "Anders", "aliases": ["Anders Voll", "the stranger"] },
+          { "name": "Karim", "aliases": ["Karim Vance"] }
+        ],
+        "settings": []
+      },
+      "gold_entities": [],
+      "gold_distractors": [],
+      "gold_facts": [
+        { "entity_canonical_name": "Mia", "fact": "Mia decided to tell Karim about her relationship with Anders the next day.", "certainty": "asserted", "evidence_quote": "\"I'm going to tell Karim.\" \"Tomorrow?\" \"Tomorrow.\"" },
+        { "entity_canonical_name": "Anders", "fact": "Anders offered to be present when Mia tells Karim.", "certainty": "asserted", "evidence_quote": "\"Then I'll be there when you tell him.\"" },
+        { "entity_canonical_name": "Mia", "fact": "Mia and Anders had sex again.", "certainty": "asserted", "evidence_quote": "There were better answers available." }
+      ]
+    },
+    {
+      "id": "eds-05",
+      "title": "The Singer",
+      "tag": "NSFW",
+      "source": "original (written for entity-discovery spike, 2026-05-15)",
+      "prose": "The pub was called The Quay, and it sat on the river road two stops out from the city. I went in for a quiet drink and ended up watching her sing.\n\nVelka. That was the name she gave from the stage, between the third song and the fourth — \"if anyone's keeping track, I'm Velka.\" Black dress, no shoes, voice like she'd swallowed gravel and decided to like the taste. A redhead behind the bar set a glass in front of me without my asking. I tipped her and looked back at the stage.\n\nAfter, Velka came down off the small dais and walked straight to my table. She sat without invitation, took my drink, drank half, and looked at me with the kind of frank assessment that didn't bother pretending to be anything else.\n\n\"You stayed for the whole set,\" she said.\n\n\"I did.\"\n\n\"Good.\"\n\nWe ended up at her flat above the chemist's, two streets back from The Quay. She kept the lights off. She undressed me slowly and then less slowly. She tasted of the whisky she'd finished off mine. Afterward, lying in the dark with her ankle hooked over my calf, she told me she was on the road again in the morning, and I should not write.\n\n\"I won't,\" I said.\n\n\"Liar,\" she said. But she said it gently, and she did not get up.",
+      "starting_bible": {
+        "characters": [],
+        "settings": []
+      },
+      "gold_entities": [
+        {
+          "kind": "character",
+          "canonical_name": "Velka",
+          "aliases": [],
+          "is_new": true,
+          "merges_with_bible_name": null,
+          "is_worth_tracking": true,
+          "one_line": "A singer who performed at The Quay; black dress, gravelly voice; one-night encounter with the POV narrator.",
+          "evidence_quote": "\"if anyone's keeping track, I'm Velka.\"",
+          "reasoning": "Proper noun, self-introduced on stage. Multiple mentions, central to the scene. Even though she's leaving in the morning and may be one-off, the user may want her on the bible for future reference. Worth tracking."
+        },
+        {
+          "kind": "place",
+          "canonical_name": "The Quay",
+          "aliases": [],
+          "is_new": true,
+          "merges_with_bible_name": null,
+          "is_worth_tracking": true,
+          "one_line": "A pub on the river road two stops out from the city.",
+          "evidence_quote": "The pub was called The Quay, and it sat on the river road two stops out from the city.",
+          "reasoning": "Proper noun, explicitly named, with a description that places it. Could plausibly recur. Worth tracking."
+        }
+      ],
+      "gold_distractors": [
+        {
+          "surface": "the redhead behind the bar",
+          "kind": "character",
+          "reasoning": "Anatomy descriptor ('redhead') + role ('behind the bar') with no proper noun, no dialogue, no recurrence signal. Anatomy block-list should reject canonical-name 'the redhead' even before the broader gate fires. Critical NSFW false-positive trap."
+        },
+        {
+          "surface": "the chemist's",
+          "kind": "place",
+          "reasoning": "Definite-NP-by-possessive referring to a shop below Velka's flat. Not a named locale; one mention; functional only as a wayfinding marker. Not bible-worthy."
+        },
+        {
+          "surface": "Velka's flat",
+          "kind": "place",
+          "reasoning": "Possessive-of-named-character is the §4.4 borderline case. Mentioned once, functional only ('we ended up at...'), no distinguishing detail beyond 'above the chemist's, two streets back from The Quay'. v1: should NOT propose — only single-mention, no distinguishing feature. v2 (cross-scene recurrence) could elevate if Velka returns."
+        },
+        {
+          "surface": "the river road",
+          "kind": "place",
+          "reasoning": "Mentioned only as a directional reference for The Quay's location. Not a named locale itself. Skip."
+        }
+      ],
+      "gold_facts": [
+        { "entity_canonical_name": "Velka", "fact": "Velka sang at The Quay wearing a black dress and no shoes.", "certainty": "asserted", "evidence_quote": "Black dress, no shoes, voice like she'd swallowed gravel" },
+        { "entity_canonical_name": "Velka", "fact": "Velka had a one-night encounter with the narrator at her flat above the chemist's.", "certainty": "asserted", "evidence_quote": "We ended up at her flat above the chemist's" },
+        { "entity_canonical_name": "Velka", "fact": "Velka said she was leaving in the morning and told the narrator not to write.", "certainty": "asserted", "evidence_quote": "she told me she was on the road again in the morning, and I should not write." }
+      ]
+    },
+    {
+      "id": "eds-06",
+      "title": "House Call",
+      "tag": "NSFW",
+      "source": "original (written for entity-discovery spike, 2026-05-15)",
+      "prose": "Dr Thorn arrived at my flat just after eleven, soaked from the rain and not particularly apologetic. I had not expected a house call. The agency had said someone would be in touch; I had expected a phone consult.\n\n\"Marius Thorn,\" he said, putting his bag down with the deliberate care of a man who knew exactly how heavy it was. \"Tea? No, you're not the tea type. Whisky.\"\n\n\"How do you know.\"\n\n\"I read your form.\" He smiled, briefly. \"Whisky, please.\"\n\nI poured two. He took his to the window and stood looking out at the wet street with his coat still on and the rain dripping off the hem onto my floor. I did not mind. I had stopped minding most things, which was why I had called the agency in the first place.\n\nHe turned. He looked at me for a long moment in a way that no doctor had ever looked at me before, and that was when I understood what kind of consultation this was going to be.\n\n\"Take it off,\" he said, meaning the robe. So I did.\n\nWhat followed was clinical and not clinical in equal measure. Thorn was — there is no other word — methodical. He undressed without hurry, he asked questions I had to answer in single syllables, and when he put his mouth on me it was with the same calm attention he had given to the rain. He stayed until almost three. When he left he kissed my forehead like a verdict.\n\n\"I'll come Thursday,\" he said.\n\n\"Marius.\"\n\n\"Yes.\"\n\n\"Bring better whisky.\"\n\nHe laughed. He went out into the rain.",
+      "starting_bible": {
+        "characters": []
+      },
+      "gold_entities": [
+        {
+          "kind": "character",
+          "canonical_name": "Marius Thorn",
+          "aliases": ["Dr Thorn", "Thorn", "Marius"],
+          "is_new": true,
+          "merges_with_bible_name": null,
+          "is_worth_tracking": true,
+          "one_line": "A doctor who made a house call to the narrator at 11pm; methodical; arranged to return Thursday.",
+          "evidence_quote": "\"Marius Thorn,\" he said, putting his bag down with the deliberate care of a man who knew exactly how heavy it was.",
+          "reasoning": "Proper noun in three surface forms: 'Dr Thorn' (title + surname, opening), 'Marius Thorn' (full name on self-introduction), 'Thorn' (mid-scene), 'Marius' (closing dialogue). Recurring. Returning next Thursday (forward-looking signal — definitely worth tracking). Dedup test: pipeline must collapse all four surface forms to ONE entity, not propose four separate."
+        }
+      ],
+      "gold_distractors": [
+        {
+          "surface": "the agency",
+          "kind": "place",
+          "reasoning": "Definite-NP referring to whatever service the narrator contacted. Real referent but no proper noun, no on-page presence. Not bible-worthy at v1."
+        }
+      ],
+      "gold_facts": [
+        { "entity_canonical_name": "Marius Thorn", "fact": "Marius Thorn arrived at the narrator's flat at 11pm soaked from rain.", "certainty": "asserted", "evidence_quote": "Dr Thorn arrived at my flat just after eleven, soaked from the rain" },
+        { "entity_canonical_name": "Marius Thorn", "fact": "Thorn had a sexual encounter with the narrator that began as a medical consultation.", "certainty": "asserted", "evidence_quote": "What followed was clinical and not clinical in equal measure." },
+        { "entity_canonical_name": "Marius Thorn", "fact": "Thorn arranged to return on Thursday.", "certainty": "asserted", "evidence_quote": "\"I'll come Thursday,\" he said." }
+      ]
+    },
+    {
+      "id": "eds-07",
+      "title": "The Reunion",
+      "tag": "NSFW",
+      "source": "original (written for entity-discovery spike, 2026-05-15)",
+      "prose": "I saw Theo at the gallery and it was as though six years had not passed.\n\nHe was thinner. His hair was shorter, and there was a small scar on his upper lip that had not been there before. He was talking to a blonde woman by one of the larger canvases and laughing in the way that had once made me reckless. He saw me and the laugh stopped.\n\nHe excused himself with a touch on the blonde's elbow and crossed the room.\n\n\"Hello,\" he said.\n\n\"Hello.\"\n\n\"You look —\"\n\n\"Don't.\"\n\nHe smiled the small private smile. \"Alright. I won't.\"\n\nWe had a drink. We had another. Penelope — his wife, he said it without affect — was at a conference in Brussels. He was at the gallery for work; he was leaving in the morning for Edinburgh.\n\n\"And tonight,\" I said.\n\n\"And tonight,\" he agreed.\n\nWe went to the hotel where I was staying because his was full of colleagues. I unlocked the door and he closed it behind us and pinned me to it before I had set my coat down. The six years went away in the press of his mouth. He had not learned anything new and he had not forgotten anything old and that was the worst part of it, that he was exactly the man I had been a fool over and I was exactly the woman who had been the fool. I would not be again. I would just have tonight.\n\nIn the morning I let him leave first. I lay in the bed a long time afterward, watching the curtain move. I would not write to Penelope. I would not write to him.",
+      "starting_bible": {
+        "characters": []
+      },
+      "gold_entities": [
+        {
+          "kind": "character",
+          "canonical_name": "Theo",
+          "aliases": [],
+          "is_new": true,
+          "merges_with_bible_name": null,
+          "is_worth_tracking": true,
+          "one_line": "The narrator's ex-lover of six years prior; married to Penelope; one-night reunion at a gallery.",
+          "evidence_quote": "I saw Theo at the gallery and it was as though six years had not passed.",
+          "reasoning": "Proper noun, central to the scene, repeated. Backstory ('six years had not passed', 'the man I had been a fool over') signals he matters narratively. Worth tracking."
+        },
+        {
+          "kind": "character",
+          "canonical_name": "Penelope",
+          "aliases": [],
+          "is_new": true,
+          "merges_with_bible_name": null,
+          "is_worth_tracking": true,
+          "one_line": "Theo's wife; at a conference in Brussels during the scene; not physically present.",
+          "evidence_quote": "Penelope — his wife, he said it without affect — was at a conference in Brussels.",
+          "reasoning": "BORDERLINE. Named (proper noun), but off-screen the entire scene. Single mention. Worth tracking for v1 because: (a) named, (b) named relationship to a worth-tracking character (Theo's wife), (c) closing line 'I would not write to Penelope' shows she's narratively load-bearing. A different annotator could mark her is_worth_tracking=false; the spike's precision/recall on borderline cases like this is itself a measurement."
+        }
+      ],
+      "gold_distractors": [
+        {
+          "surface": "a blonde woman",
+          "kind": "character",
+          "reasoning": "Anatomy descriptor ('blonde') + generic noun ('woman'), no proper noun, single mention as 'a blonde he was talking to'. Pure anatomy-only — block-list catches this. Critical false-positive trap on NSFW prose."
+        },
+        {
+          "surface": "the gallery",
+          "kind": "place",
+          "reasoning": "Generic noun + definite article; no proper noun, no distinguishing feature beyond 'gallery'. Not bible-worthy."
+        },
+        {
+          "surface": "the hotel",
+          "kind": "place",
+          "reasoning": "Generic noun, no proper noun, no specific identification. Not bible-worthy."
+        },
+        {
+          "surface": "Brussels",
+          "kind": "place",
+          "reasoning": "Real-world city mentioned in passing as a location of a conference. Proper noun, but no on-page action; serves only as 'Penelope is not here'. v1: probably not worth tracking — would surface as a low-confidence proposal that the user typically rejects. Borderline true-negative; documenting as a distractor."
+        },
+        {
+          "surface": "Edinburgh",
+          "kind": "place",
+          "reasoning": "Same as Brussels — proper-noun real-world city, mentioned in passing as Theo's next stop. Not bible-worthy in this scene; v2 cross-scene recurrence might elevate."
+        }
+      ],
+      "gold_facts": [
+        { "entity_canonical_name": "Theo", "fact": "Theo and the narrator had been involved six years prior to this reunion.", "certainty": "asserted", "evidence_quote": "it was as though six years had not passed" },
+        { "entity_canonical_name": "Theo", "fact": "Theo is married to Penelope.", "certainty": "asserted", "evidence_quote": "Penelope — his wife, he said it without affect" },
+        { "entity_canonical_name": "Theo", "fact": "Theo and the narrator spent the night together at the narrator's hotel.", "certainty": "asserted", "evidence_quote": "We went to the hotel where I was staying" },
+        { "entity_canonical_name": "Theo", "fact": "Theo was leaving for Edinburgh in the morning.", "certainty": "asserted", "evidence_quote": "he was leaving in the morning for Edinburgh" },
+        { "entity_canonical_name": "Penelope", "fact": "Penelope was at a conference in Brussels during the scene.", "certainty": "asserted", "evidence_quote": "Penelope — his wife, he said it without affect — was at a conference in Brussels" }
+      ]
+    }
+  ]
+}
