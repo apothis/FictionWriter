@@ -99,6 +99,27 @@ let ollamaURLString = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_URL
 let ollamaModel = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_MODEL"]
     ?? "gemma4_2b:latest"
 
+/// Optional `--into <project-path>`: when present, every accepted
+/// proposal (precision-filtered through Stages B-D as usual) gets
+/// appended to that project's ProposedEntitiesStore so the Bible
+/// Workspace webview's EntityProposalsQueue can review them.
+let intoProjectURL: URL? = {
+    let args = CommandLine.arguments
+    guard let idx = args.firstIndex(of: "--into"), idx + 1 < args.count else {
+        return nil
+    }
+    let path = args[idx + 1]
+    let expanded = (path as NSString).expandingTildeInPath
+    let url = URL(fileURLWithPath: expanded, isDirectory: true)
+    var isDir: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+          isDir.boolValue else {
+        logProgress("ERROR: --into target does not exist or is not a directory: \(expanded)")
+        exit(2)
+    }
+    return url
+}()
+
 // MARK: - Sync-on-async HTTP wrapper
 
 func ollamaExtractSync(prompt: String, schema: [String: Any], temperature: Double = 0.2) -> Result<String, Error> {
@@ -612,6 +633,38 @@ let embedder: EmbeddingClient? = {
 var results: [PipelineSceneResult] = []
 for scene in fixture.scenes {
     results.append(runScene(scene, embedder: embedder))
+}
+
+// Optional `--into <project>` writes the spike's normalised
+// proposals into the target project's ProposedEntitiesStore so the
+// Bible Workspace webview can render them. The fixture's eds-NN
+// scene ids don't correspond to any real project scene, so source
+// scene UUIDs are synthesised here and the snapshot renders them as
+// "(unknown scene)" — demo-grade plumbing; real editor-triggered
+// discovery will bind to actual scene UUIDs.
+if let projectURL = intoProjectURL {
+    var entities: [EntityDiscovery.ProposedEntity] = []
+    for r in results {
+        let syntheticSceneId = UUID()
+        for n in r.normalised {
+            entities.append(EntityDiscovery.ProposedEntity(
+                id: UUID(),
+                kind: n.kind,
+                canonicalName: n.canonicalName,
+                aliases: n.aliases,
+                oneLine: n.oneLine,
+                evidenceQuote: n.evidenceQuote,
+                sourceSceneId: syntheticSceneId,
+                confidence: 0.8
+            ))
+        }
+    }
+    do {
+        try ProposedEntitiesStore.append(entities: entities, facts: [], in: projectURL)
+        logProgress("--into: wrote \(entities.count) proposals to \(projectURL.appendingPathComponent("proposed-entities/proposed-entities.json").path)")
+    } catch {
+        logProgress("--into: ERROR writing proposals: \(error)")
+    }
 }
 
 let aggregate = EntityDiscoveryScorer.score(inputs: results.map(\.scoreInput))
