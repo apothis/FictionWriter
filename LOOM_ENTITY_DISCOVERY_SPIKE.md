@@ -323,12 +323,23 @@ One gold entity (Karim in `eds-01`) is missed across all three runs. The failure
 
 ### 9.4 The latency story
 
-Run 3 was 30.7s/scene avg — 0.7s over the §1 target. Run-to-run variability on the same fixture spans 2-3s (Run 2 was 32.2s, Run 1 was 49.2s with one transient retry). The bottleneck is sequential Stage D calls (each ~10s under JSON-Schema-constrained generation). For productionisation:
+Run 3 was 30.7s/scene avg sequential. Runs 4 + 5 attempted to push lower; neither cleared the bar. The empirical floor on this setup is ~33s/scene.
 
-- **Parallelise Stage D**: each candidate is independent — concurrent `URLSession.dataTask`. An eds-07 with 4 candidates would drop from ~45s to ~13s. Not load-bearing for the v1 ship gate but the obvious lever if latency UX bites.
-- **Conditional Stage D**: candidates with no aliases / clean canonical form could skip Stage D entirely. Save 50% of Stage D calls in the common case.
+**Run 4 — parallel Stage D + over-eager retry**: 34.8s/scene (worse). Two findings:
+- **Stage D parallelisation is net-neutral on Ollama.** Ollama serialises requests on the model load slot — concurrent `URLSession.dataTask` calls land in a server-side queue. eds-05 (2 candidates parallel) was 39s vs 41s sequential — marginal at best. The DispatchGroup machinery stays in the runner for code clarity but the wall-clock win is small.
+- **Retry-on-"all filtered as known" was wrong.** That condition fires on legitimate null-discovery scenes (eds-02/03/04 — starting bible already covers everyone). The model emits the same mode-collapsed output at temp 0.4 as at 0.2, so the retry costs ~15s per false-trigger without recovering anything.
 
-Neither belongs in the spike scope; both belong in §6.5 Phase 9 productionisation.
+**Run 5 — parallel Stage D + retry on errors only**: 33.2s/scene. Retry fired exactly once (eds-01 parse error), worked as insurance. The conservative retry is keeper.
+
+**What sets the floor**: Stage A2 alone takes ~17s per scene on gemma4_2b under JSON-Schema constraint (measurable on the null-discovery scenes that skip Stage D). Add a couple of parallel Stage D calls and you're at 30-50s naturally. The §1 ≤ 30 s target was set without empirical evidence; the real floor for this model + setup is closer to 33s.
+
+For productionisation if latency UX actually bites:
+- **Scene-level parallelism** (different from candidate-level Stage D parallelism): run multiple scenes' Stage A2 calls concurrently. Ollama still serialises but multiple in-flight requests reduce per-call setup overhead.
+- **Streaming output**: switch to token streaming so the user sees first-candidate UI before the full Stage A2 completes.
+- **Smaller / faster model for Stage A2**: gemma4_2b is already light; a 1.5B distillation might be enough for the "list named entities" task while keeping gemma4_2b for the harder Stage D normalisation.
+- **Conditional Stage D**: candidates with no aliases / clean canonical form could skip Stage D entirely (~50% savings in the common case).
+
+None of these belong in the spike. The pipeline shape is validated; latency is a productionisation tail.
 
 ### 9.5 What this means for the bigger questions
 
