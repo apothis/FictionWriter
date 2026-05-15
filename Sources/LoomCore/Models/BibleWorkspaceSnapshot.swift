@@ -57,6 +57,12 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     /// "Ingest" button to "Ingesting…" when its id appears in
     /// either (one ingest action fans out to both).
     public let ingestingReferenceIds: [UUID]
+    /// Phase 9 — scenes whose entity-discovery pipeline is currently
+    /// in flight. Same wire format + semantics as
+    /// `extractingTemplateIds` / `ingestingReferenceIds`. The
+    /// EntityList header reads this to surface a "Discovering N
+    /// scene(s)…" indicator while the user waits for results.
+    public let discoveringSceneIds: [UUID]
     /// Whether the underlying project is persisted on disk. False for
     /// "Untitled" in-memory sessions where `ProjectSession.url` is nil.
     /// References + TemplateScenes are file-system entities; their
@@ -87,6 +93,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         isProjectOnDisk: Bool = true,
         extractingTemplateIds: [UUID] = [],
         ingestingReferenceIds: [UUID] = [],
+        discoveringSceneIds: [UUID] = [],
         proposedEntities: [SnapshotProposedEntity] = []
     ) {
         self.projectTitle = projectTitle
@@ -100,13 +107,14 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.isProjectOnDisk = isProjectOnDisk
         self.extractingTemplateIds = extractingTemplateIds
         self.ingestingReferenceIds = ingestingReferenceIds
+        self.discoveringSceneIds = discoveringSceneIds
         self.proposedEntities = proposedEntities
     }
 
     private enum CodingKeys: String, CodingKey {
         case projectTitle, characters, lorebook, scenes, suggestions
         case references, templateScenes, sceneExemplars, isProjectOnDisk
-        case extractingTemplateIds, ingestingReferenceIds, proposedEntities
+        case extractingTemplateIds, ingestingReferenceIds, discoveringSceneIds, proposedEntities
     }
 
     public init(from decoder: Decoder) throws {
@@ -126,6 +134,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.extractingTemplateIds = idStrings.compactMap(UUID.init(uuidString:))
         let ingestStrings = try c.decodeIfPresent([String].self, forKey: .ingestingReferenceIds) ?? []
         self.ingestingReferenceIds = ingestStrings.compactMap(UUID.init(uuidString:))
+        let discoveringStrings = try c.decodeIfPresent([String].self, forKey: .discoveringSceneIds) ?? []
+        self.discoveringSceneIds = discoveringStrings.compactMap(UUID.init(uuidString:))
         self.proposedEntities = try c.decodeIfPresent([SnapshotProposedEntity].self, forKey: .proposedEntities) ?? []
     }
 
@@ -144,6 +154,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         // by default, matching the rest of the wire contract.
         try c.encode(extractingTemplateIds.map(\.uuidString), forKey: .extractingTemplateIds)
         try c.encode(ingestingReferenceIds.map(\.uuidString), forKey: .ingestingReferenceIds)
+        try c.encode(discoveringSceneIds.map(\.uuidString), forKey: .discoveringSceneIds)
         try c.encode(proposedEntities, forKey: .proposedEntities)
     }
 
@@ -163,6 +174,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         isProjectOnDisk: Bool = true,
         extractingTemplateIds: [UUID] = [],
         ingestingReferenceIds: [UUID] = [],
+        discoveringSceneIds: [UUID] = [],
         proposedEntities: [SnapshotProposedEntity] = [],
         suggestionsQueue: LedgerSuggestionsQueue
     ) -> BibleWorkspaceSnapshot {
@@ -195,6 +207,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             isProjectOnDisk: isProjectOnDisk,
             extractingTemplateIds: extractingTemplateIds,
             ingestingReferenceIds: ingestingReferenceIds,
+            discoveringSceneIds: discoveringSceneIds,
             proposedEntities: proposedEntities
         )
     }

@@ -180,6 +180,7 @@ function Header({
 }) {
   const pendingCount = snapshot.suggestions.length;
   const proposalsCount = (snapshot.proposedEntities ?? []).length;
+  const discoveringCount = (snapshot.discoveringSceneIds ?? []).length;
   return (
     <div className="flex items-baseline justify-between border-b border-loom-border px-6 py-4">
       <div>
@@ -192,6 +193,16 @@ function Header({
         </p>
       </div>
       <div className="flex gap-2">
+        {discoveringCount > 0 && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400"
+            title="Entity discovery is running on at least one scene. Results land in the Entity proposals queue when complete (~30 s/scene)."
+          >
+            <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+            Discovering {discoveringCount} scene
+            {discoveringCount === 1 ? "" : "s"}…
+          </span>
+        )}
         {proposalsCount > 0 && (
           <button
             type="button"

@@ -37,6 +37,12 @@ public final class AppState {
     /// cleared on app relaunch.
     public private(set) var ingestingReferenceIds: Set<UUID> = []
 
+    /// Phase 9 — scenes whose entity-discovery pipeline is currently
+    /// in flight. Same shape as the two above. The Bible Workspace
+    /// reads this on every snapshot push so the React UI can show a
+    /// "Discovering N scene(s)…" indicator while the user waits.
+    public private(set) var discoveringSceneIds: Set<UUID> = []
+
     /// Phase 4 #7 sub-task 2 — debounced post-scene knowledge-ledger
     /// side-call coordinator. Constructed once at app init; the
     /// extractorProvider closure consults `settings.extractorServer()`
@@ -364,6 +370,14 @@ public final class AppState {
             knownNames.append(contentsOf: o.aliases)
             existingEntities.append(.init(id: o.id, canonicalName: o.name, aliases: o.aliases))
         }
+        // In-flight guard: ignore re-entrant calls on the same scene
+        // (menu double-click, auto-trigger racing a manual fire). The
+        // existing fire continues to completion; UI flips back to
+        // "Discovering…" idle when it lands.
+        guard !discoveringSceneIds.contains(sceneId) else {
+            DebugLog.shared.write("[proposals] runEntityDiscovery ignored — already in flight for scene=\(sceneId)")
+            return
+        }
         let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
         let extractor = OllamaEntityDiscoveryExtractor(
             client: OllamaClient(baseURL: profile.baseURL, model: model)
@@ -371,6 +385,15 @@ public final class AppState {
         let embedder = embeddingClientFactory(projectURL)
 
         DebugLog.shared.write("[proposals] firing entity-discovery: scene=\(sceneId) known=\(knownNames.count) existing=\(existingEntities.count)")
+        // Mark in-flight + push notification BEFORE the async call
+        // returns so the UI flips immediately. The notification is
+        // shared with accept/reject on the same store; observers
+        // re-build the snapshot which will include the new id.
+        discoveringSceneIds.insert(sceneId)
+        NotificationCenter.default.post(
+            name: Self.proposedEntitiesDidChangeNotification,
+            object: self
+        )
         extractor.extract(
             scenePose: scene.prose,
             sceneId: sceneId,
@@ -379,7 +402,18 @@ public final class AppState {
             embedder: embedder
         ) { [weak self] result in
             DispatchQueue.main.async {
-                self?.handleEntityDiscoveryComplete(projectURL: projectURL, sceneId: sceneId, result: result)
+                guard let self = self else { return }
+                self.discoveringSceneIds.remove(sceneId)
+                self.handleEntityDiscoveryComplete(projectURL: projectURL, sceneId: sceneId, result: result)
+                // handleEntityDiscoveryComplete posts on success; the
+                // failure branch needs its own post so the UI clears
+                // the indicator either way.
+                if case .failure = result {
+                    NotificationCenter.default.post(
+                        name: Self.proposedEntitiesDidChangeNotification,
+                        object: self
+                    )
+                }
             }
         }
     }

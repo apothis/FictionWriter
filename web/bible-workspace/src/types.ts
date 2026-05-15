@@ -157,6 +157,11 @@ export interface BibleWorkspaceSnapshot {
   // unified Scene Exemplar editor reads BOTH and flips its Ingest
   // button to "Ingesting…" when its id appears in either.
   ingestingReferenceIds?: string[];
+  // Phase 9 — scenes whose entity-discovery pipeline is currently in
+  // flight. Same wire format as extractingTemplateIds. The EntityList
+  // header surfaces a "Discovering N scene(s)…" indicator while non-
+  // empty so the user knows results are coming.
+  discoveringSceneIds?: string[];
   // Phase 9 entity-discovery — pending proposals from the discovery
   // pipeline (Tools/EntityDiscoverySpike output, eventually editor-
   // triggered live discovery). EntityProposalsQueue.tsx renders this
