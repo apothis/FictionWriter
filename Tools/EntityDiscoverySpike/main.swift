@@ -192,36 +192,28 @@ func runStageA2WithRetry(
 
     // First attempt at temp 0.2 (deterministic-ish).
     let first = attempt(0.2)
-    switch first {
-    case .ok(let cands):
-        let surviving = cands.filter { !EntityDiscovery.isKnownSurface($0.surface, knownNames: knownNames) }
-        if !surviving.isEmpty || cands.isEmpty {
-            // Either we have unfiltered candidates, OR the model
-            // emitted nothing at all (genuine null result — don't
-            // retry, the prose really has no new entities).
-            return (cands, false, nil)
-        }
-        // Some candidates but all filtered as known → suspicious.
-        // The model probably interpreted "do not emit known" too
-        // broadly; retry at higher temperature for diversity.
-        logProgress("[\(sceneId)]   Stage A2 retry: \(cands.count) candidates all filtered as known")
-    case .err(let err):
-        logProgress("[\(sceneId)]   Stage A2 retry: \(err)")
+    if case .ok(let cands) = first {
+        // Success — even an empty result counts as a genuine answer
+        // (null-discovery scenes legitimately produce []). Mode-
+        // collapse vs null-discovery isn't disambiguable from the
+        // output alone (run-4 finding: retrying on "all filtered as
+        // known" eats latency in null-discovery scenes without
+        // recovering anything in the mode-collapse case at temp 0.4).
+        _ = knownNames
+        return (cands, false, nil)
     }
 
-    // Retry at temp 0.4 — more diversity, can recover entities the
-    // first attempt's mode collapsed on.
+    // First attempt errored (transport or parse). Retry once at
+    // temp 0.4 — cheap insurance against transient JSON-parse
+    // failures (run-1 saw 1/8 = 12.5% on eds-01).
+    if case .err(let err) = first {
+        logProgress("[\(sceneId)]   Stage A2 retry: \(err)")
+    }
     let second = attempt(0.4)
     switch second {
     case .ok(let cands):
         return (cands, true, nil)
     case .err(let err):
-        // Return whatever the first attempt gave us (which may be
-        // an empty list under failure) plus the retry error so the
-        // report sees both attempts failed.
-        if case .ok(let firstCands) = first {
-            return (firstCands, true, err)
-        }
         return ([], true, err)
     }
 }
