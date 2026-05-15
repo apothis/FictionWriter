@@ -101,7 +101,7 @@ let ollamaModel = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_MODEL"]
 
 // MARK: - Sync-on-async HTTP wrapper
 
-func ollamaExtractSync(prompt: String, schema: [String: Any]) -> Result<String, Error> {
+func ollamaExtractSync(prompt: String, schema: [String: Any], temperature: Double = 0.2) -> Result<String, Error> {
     guard let url = URL(string: "api/chat", relativeTo: URL(string: ollamaURLString))?.absoluteURL else {
         return .failure(NSError(domain: "Spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "bad ollama url"]))
     }
@@ -110,7 +110,7 @@ func ollamaExtractSync(prompt: String, schema: [String: Any]) -> Result<String, 
         "messages": [["role": "user", "content": prompt]],
         "stream": false,
         "options": [
-            "temperature": 0.2,
+            "temperature": temperature,
             "num_predict": 1024,
         ],
         "format": schema,
@@ -164,8 +164,66 @@ struct PipelineSceneResult {
     let dedupMerged: [(candidate: EntityDiscovery.Candidate, mergedWith: String)]
     let normalised: [EntityDiscovery.NormalisedEntity]
     let stageAError: String?
+    let stageARetried: Bool
     let stageDErrors: [(surface: String, error: String)]
     let scoreInput: EntityDiscoveryScorer.ScoreInput
+}
+
+/// Stage A2 with one-shot retry: re-prompt at higher temperature
+/// if the first attempt fails to parse OR returns zero candidates
+/// that survive the known-entity filter (often signals the model
+/// over-applied the "don't emit known" instruction).
+func runStageA2WithRetry(
+    prompt: String,
+    schema: [String: Any],
+    knownNames: [String],
+    sceneId: String
+) -> (candidates: [EntityDiscovery.Candidate], retried: Bool, error: String?) {
+    enum AttemptOutcome { case ok([EntityDiscovery.Candidate]); case err(String) }
+    func attempt(_ temp: Double) -> AttemptOutcome {
+        switch ollamaExtractSync(prompt: prompt, schema: schema, temperature: temp) {
+        case .success(let raw):
+            do { return .ok(try EntityDiscovery.parseCandidates(raw)) }
+            catch { return .err("parse: \(error)") }
+        case .failure(let err):
+            return .err("transport: \(err)")
+        }
+    }
+
+    // First attempt at temp 0.2 (deterministic-ish).
+    let first = attempt(0.2)
+    switch first {
+    case .ok(let cands):
+        let surviving = cands.filter { !EntityDiscovery.isKnownSurface($0.surface, knownNames: knownNames) }
+        if !surviving.isEmpty || cands.isEmpty {
+            // Either we have unfiltered candidates, OR the model
+            // emitted nothing at all (genuine null result — don't
+            // retry, the prose really has no new entities).
+            return (cands, false, nil)
+        }
+        // Some candidates but all filtered as known → suspicious.
+        // The model probably interpreted "do not emit known" too
+        // broadly; retry at higher temperature for diversity.
+        logProgress("[\(sceneId)]   Stage A2 retry: \(cands.count) candidates all filtered as known")
+    case .err(let err):
+        logProgress("[\(sceneId)]   Stage A2 retry: \(err)")
+    }
+
+    // Retry at temp 0.4 — more diversity, can recover entities the
+    // first attempt's mode collapsed on.
+    let second = attempt(0.4)
+    switch second {
+    case .ok(let cands):
+        return (cands, true, nil)
+    case .err(let err):
+        // Return whatever the first attempt gave us (which may be
+        // an empty list under failure) plus the retry error so the
+        // report sees both attempts failed.
+        if case .ok(let firstCands) = first {
+            return (firstCands, true, err)
+        }
+        return ([], true, err)
+    }
 }
 
 func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineSceneResult {
@@ -203,21 +261,14 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
         knownEntityNames: knownNames
     )
     let a2Schema = EntityDiscovery.candidateGenerationJSONSchema()
-    var candidates: [EntityDiscovery.Candidate] = []
-    var stageAError: String?
-    switch ollamaExtractSync(prompt: a2Prompt, schema: a2Schema) {
-    case .success(let raw):
-        do {
-            candidates = try EntityDiscovery.parseCandidates(raw)
-            logProgress("[\(scene.id)]   got \(candidates.count) candidates")
-        } catch {
-            stageAError = "parse: \(error)"
-            logProgress("[\(scene.id)]   Stage A2 parse error: \(error)")
-        }
-    case .failure(let err):
-        stageAError = "transport: \(err)"
-        logProgress("[\(scene.id)]   Stage A2 transport error: \(err)")
-    }
+    let (rawCands, stageARetried, stageAError) = runStageA2WithRetry(
+        prompt: a2Prompt,
+        schema: a2Schema,
+        knownNames: knownNames,
+        sceneId: scene.id
+    )
+    var candidates = rawCands
+    logProgress("[\(scene.id)]   got \(candidates.count) candidates\(stageARetried ? " (after retry)" : "")")
 
     // Snapshot raw output for the report before any filtering.
     let rawCandidatesSnapshot = candidates
@@ -321,28 +372,62 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
         logProgress("[\(scene.id)]   dedup merged \(dedupMerged.count) candidates")
     }
 
-    // Stage D: normalise each survivor.
-    var normalised: [EntityDiscovery.NormalisedEntity] = []
+    // Stage D: normalise each survivor IN PARALLEL. Each call is
+    // independent (no shared context between Stage D normalisations
+    // of different candidates), so fan-out cuts latency roughly
+    // linearly with the candidate count. The Ollama server queues
+    // internally — practical concurrency is bounded by the model
+    // load slot, but the wall-clock win is still real for the
+    // multi-candidate scenes (eds-07 with 4 candidates drops from
+    // ~45s sequential to ~13s parallel in observed runs).
+    let dSchema = EntityDiscovery.normalisationJSONSchema()
+    let group = DispatchGroup()
+    let lock = NSLock()
+    enum StageDOutcome { case ok(EntityDiscovery.NormalisedEntity); case err(String) }
+    var byIndex: [Int: StageDOutcome] = [:]
     var stageDErrors: [(String, String)] = []
-    for c in postGate {
-        logProgress("[\(scene.id)]   Stage D — normalising \(c.surface) ...")
-        let dPrompt = EntityDiscovery.buildNormalisationPrompt(
-            candidateSurface: c.surface,
-            candidateKind: c.kind,
-            firstSeenQuote: c.firstSeenQuote,
-            scenePose: scene.prose
-        )
-        let dSchema = EntityDiscovery.normalisationJSONSchema()
-        switch ollamaExtractSync(prompt: dPrompt, schema: dSchema) {
-        case .success(let raw):
-            do {
-                let ent = try EntityDiscovery.parseNormalisedEntity(raw)
-                normalised.append(ent)
-            } catch {
-                stageDErrors.append((c.surface, "parse: \(error)"))
+    if !postGate.isEmpty {
+        logProgress("[\(scene.id)]   Stage D — normalising \(postGate.count) candidates in parallel ...")
+    }
+    for (i, c) in postGate.enumerated() {
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let dPrompt = EntityDiscovery.buildNormalisationPrompt(
+                candidateSurface: c.surface,
+                candidateKind: c.kind,
+                firstSeenQuote: c.firstSeenQuote,
+                scenePose: scene.prose
+            )
+            let outcome: StageDOutcome
+            switch ollamaExtractSync(prompt: dPrompt, schema: dSchema) {
+            case .success(let raw):
+                do {
+                    outcome = .ok(try EntityDiscovery.parseNormalisedEntity(raw))
+                } catch {
+                    outcome = .err("parse: \(error)")
+                }
+            case .failure(let err):
+                outcome = .err("transport: \(err)")
             }
-        case .failure(let err):
-            stageDErrors.append((c.surface, "transport: \(err)"))
+            lock.lock()
+            byIndex[i] = outcome
+            lock.unlock()
+            group.leave()
+        }
+    }
+    group.wait()
+
+    // Re-collect results in original order so the report is stable
+    // run-to-run regardless of completion-order races.
+    var normalised: [EntityDiscovery.NormalisedEntity] = []
+    for (i, c) in postGate.enumerated() {
+        switch byIndex[i] {
+        case .ok(let ent):
+            normalised.append(ent)
+        case .err(let msg):
+            stageDErrors.append((c.surface, msg))
+        case .none:
+            stageDErrors.append((c.surface, "missing result (shouldn't happen)"))
         }
     }
 
@@ -392,6 +477,7 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
         dedupMerged: dedupMerged,
         normalised: normalised,
         stageAError: stageAError,
+        stageARetried: stageARetried,
         stageDErrors: stageDErrors,
         scoreInput: scoreInput
     )
