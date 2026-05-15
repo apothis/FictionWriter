@@ -237,6 +237,34 @@ func phase7TemplateGenLogTests() -> TestSuite {
         // otherwise the row reads "Continue · Template: Doorway test"
         // which is contradictory.
         try expectFalse(summary.contains("Continue"))
+        // HANDOFF §15.16 follow-up #2: the row should also surface the
+        // beat count so the user can tell at a glance how big the
+        // template was.
+        try expectTrue(summary.contains("3 beats"))
+    }
+
+    s.test("HistoryEntryRowView.summaryString singularises 1 beat correctly") {
+        let info = TemplateGenerationInfo(
+            templateId: UUID(),
+            templateName: "Tiny template",
+            castMapping: "x",
+            beatCount: 1,
+            beatModalitySequence: ["action"],
+            voiceDescriptor: nil
+        )
+        let entry = GenerationLogEntry(
+            sceneId: UUID(),
+            mode: .continueProse,
+            promptAssembly: PromptAssembly(
+                contextChiclets: [], fullPrompt: "x", promptTokens: 0,
+                aboveCacheTokens: 0, belowCacheTokens: 0, evictedLayers: [],
+                template: .raw
+            ),
+            response: GenerationResponse(rawText: "y", completionTokens: 5, elapsedMs: 10),
+            templateGenerationInfo: info
+        )
+        let summary = HistoryEntryRowView.summaryString(for: entry)
+        try expectTrue(summary.contains("1 beat") && !summary.contains("1 beats"))
     }
 
     s.test("TemplateGenerationCoordinator does NOT log on cancel before any beat completes") {

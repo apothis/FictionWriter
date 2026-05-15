@@ -293,7 +293,10 @@ final class HistoryEntryRowView {
         let timeStr = f.string(from: entry.timestamp)
         let label: String
         if let info = entry.templateGenerationInfo {
-            label = "Template: \(info.templateName)"
+            // HANDOFF §15.16 #2 — surface the beat count so the user
+            // can tell at a glance how big the template was.
+            let beats = info.beatCount == 1 ? "1 beat" : "\(info.beatCount) beats"
+            label = "Template: \(info.templateName) · \(beats)"
         } else {
             switch entry.mode {
             case .continueProse: label = "Continue"
