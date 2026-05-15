@@ -366,20 +366,29 @@ public final class AppState {
             embedder: embedder
         ) { [weak self] result in
             DispatchQueue.main.async {
-                self?.handleEntityDiscoveryComplete(projectURL: projectURL, result: result)
+                self?.handleEntityDiscoveryComplete(projectURL: projectURL, sceneId: sceneId, result: result)
             }
         }
     }
 
     private func handleEntityDiscoveryComplete(
         projectURL: URL,
+        sceneId: UUID,
         result: Result<[EntityDiscovery.ProposedEntity], Error>
     ) {
         switch result {
         case .failure(let err):
             DebugLog.shared.write("[proposals] entity-discovery failed: \(err)")
+            // Don't update baseline on failure — next eligible ledger
+            // event re-tries.
         case .success(let proposals):
             DebugLog.shared.write("[proposals] entity-discovery produced \(proposals.count) proposals")
+            // Update baseline regardless of result.count — a clean
+            // null-discovery result is still a successful pass and
+            // shouldn't re-fire on the next 500-word edit.
+            if let scene = currentSession.scenes[sceneId] {
+                entityDiscoveryBaselines[sceneId] = WordCount.count(scene.prose)
+            }
             guard !proposals.isEmpty else { return }
             do {
                 try ProposedEntitiesStore.append(entities: proposals, facts: [], in: projectURL)
@@ -394,27 +403,34 @@ public final class AppState {
         }
     }
 
-    /// Per-session memo of scenes that have already triggered an
+    /// Per-scene word-count baseline at the last successful
     /// entity-discovery auto-fire. Phase 9 auto-trigger piggybacks on
-    /// the ledger-extraction completion (first time only per scene per
-    /// session); the user can re-run discovery manually via the Bible
-    /// menu after that. Transient — cleared on app relaunch.
-    private var sceneEntityDiscoveryFired: Set<UUID> = []
+    /// the ledger-extraction completion; `EntityDiscoveryTrigger`
+    /// evaluates whether the scene's current word count crossed the
+    /// threshold since the baseline. Transient — cleared on app
+    /// relaunch (so a fresh session re-discovers on first eligible
+    /// ledger event, which is the right user expectation).
+    private var entityDiscoveryBaselines: [UUID: Int] = [:]
 
     private func handleExtractionComplete(
         sceneId: UUID,
         result: Result<[LedgerExtraction.ExtractedFact], Error>
     ) {
         // Phase 9 auto-trigger: piggyback on ledger extraction.
-        // First time per session per scene only — keeps the user from
-        // getting spammed with discovery runs on every 200-word edit.
-        // Fires regardless of ledger result (success or failure) so
-        // a scene that fails ledger extraction can still get its
-        // entity discovery pass.
-        if !sceneEntityDiscoveryFired.contains(sceneId) {
-            sceneEntityDiscoveryFired.insert(sceneId)
-            DebugLog.shared.write("[proposals] auto-firing entity discovery on first ledger event for scene=\(sceneId)")
-            runEntityDiscovery(for: sceneId)
+        // Per-scene word-count baseline — fire when the scene
+        // changes by ≥500 words since the last successful discovery
+        // (or once it first crosses 500 words). Fires regardless of
+        // ledger success/failure so a failed ledger doesn't block
+        // discovery on the same edit pass.
+        if let scene = currentSession.scenes[sceneId] {
+            let words = WordCount.count(scene.prose)
+            if EntityDiscoveryTrigger.shouldFire(
+                currentWordCount: words,
+                baselineWordCount: entityDiscoveryBaselines[sceneId]
+            ) {
+                DebugLog.shared.write("[proposals] auto-firing entity discovery (words=\(words), baseline=\(entityDiscoveryBaselines[sceneId].map(String.init) ?? "nil")) for scene=\(sceneId)")
+                runEntityDiscovery(for: sceneId)
+            }
         }
         switch result {
         case .failure:
