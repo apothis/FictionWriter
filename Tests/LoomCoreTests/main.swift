@@ -170,6 +170,7 @@ let suites: [TestSuite] = [
     phase8SceneExemplarSessionTests(),
     phase8BeatPromptExtraInstructionTests(),
     phase8cCoreMLEmbeddingClientTests(),
+    phase8cCoreMLCompileCacheTests(),
     phase8BeatOutputSanitizerTests(),
     phase8TemplateGenSanitizeTests(),
     phase8TemplateGenStateStoreTests(),

@@ -155,14 +155,32 @@ public final class CoreMLEmbeddingClient: EmbeddingClient {
 
         let pkgURL = bundleURL.appendingPathComponent("StyleEmbedding.mlpackage")
         // CoreML expects a compiled `.mlmodelc` at runtime. SPM
-        // copies the `.mlpackage` as-is; `MLModel.compileModel(at:)`
-        // produces an `.mlmodelc` on-the-fly. First-launch cost is
-        // ~hundreds of ms; cached by macOS thereafter.
+        // copies the `.mlpackage` as-is; we route the compile through
+        // `CoreMLCompileCache` so the output lands at a stable path
+        // and gets reused on subsequent launches — without the cache,
+        // Apple's `compileModel(at:)` leaks ~237 MB into TMPDIR on
+        // every call (real incident: 30 leaked copies = 6.9 GB).
         let compiled: URL
         if pkgURL.pathExtension == "mlmodelc" {
             compiled = pkgURL
         } else {
-            compiled = try MLModel.compileModel(at: pkgURL)
+            let cacheDir = CoreMLCompileCache.defaultCacheDir()
+            switch try CoreMLCompileCache.reserveCachedURL(pkgURL: pkgURL, cacheDir: cacheDir) {
+            case .cached(let url):
+                compiled = url
+            case .needsCompile(let target):
+                let fm = FileManager.default
+                let scratch = try MLModel.compileModel(at: pkgURL)
+                // `compileModel` returns a freshly-created `.mlmodelc`
+                // in TMPDIR; move it into the cache so the next launch
+                // hits `.cached`. `moveItem` is cross-volume-safe
+                // because both paths live under the user's home.
+                if fm.fileExists(atPath: target.path) {
+                    try? fm.removeItem(at: target)
+                }
+                try fm.moveItem(at: scratch, to: target)
+                compiled = target
+            }
         }
         let config = MLModelConfiguration()
         config.computeUnits = .all
