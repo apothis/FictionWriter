@@ -132,6 +132,79 @@ public enum EntityDiscovery {
         return sawAnatomy
     }
 
+    // MARK: - Pre-gate: known-entity filter (§6.4 first-run fix)
+
+    /// Returns true iff `surface` (case-insensitive, whitespace-
+    /// trimmed) is an exact match for any name in `knownNames`. Used
+    /// to drop Stage A2 candidates that the model re-emitted despite
+    /// the prompt instructing it not to (gemma4_2b ignores prompt
+    /// blacklists; structural enforcement does not). Partial overlap
+    /// ("Vance" vs "Karim Vance") is NOT caught here — that's the
+    /// dedup stage's cosine-similarity job.
+    public static func isKnownSurface(_ surface: String, knownNames: [String]) -> Bool {
+        let needle = surface.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return false }
+        for name in knownNames {
+            if name.lowercased().trimmingCharacters(in: .whitespaces) == needle {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Filter a list of Stage A2 candidates, keeping only those
+    /// whose surface is NOT in `knownNames`. Order-preserving.
+    public static func filterKnown(_ candidates: [Candidate], knownNames: [String]) -> [Candidate] {
+        candidates.filter { !isKnownSurface($0.surface, knownNames: knownNames) }
+    }
+
+    /// Place-specific recurrence gate (§6.4 first-run fix). A
+    /// `.place` candidate passes iff its surface starts with "The "
+    /// (definite article as part of the proper name) OR it appears
+    /// ≥ 2 times in the scene prose. Characters bypass this filter
+    /// entirely — they have separate gate logic. Single-pass-mention
+    /// real-world cities (Brussels, Edinburgh in eds-07) are exactly
+    /// the failure mode this catches.
+    public static func passesPlaceRecurrence(surface: String, kind: Kind, scenePose: String) -> Bool {
+        guard kind == .place else { return true }
+        let trimmed = surface.trimmingCharacters(in: .whitespaces)
+        if trimmed.lowercased().hasPrefix("the ") {
+            return true
+        }
+        return wordOccurrenceCount(needle: trimmed, in: scenePose) >= 2
+    }
+
+    /// Whole-word case-insensitive count of `needle` in `haystack`.
+    /// "Brusselsprouts" doesn't count as a "Brussels" mention.
+    static func wordOccurrenceCount(needle: String, in haystack: String) -> Int {
+        let lowerHaystack = haystack.lowercased()
+        let lowerNeedle = needle.lowercased()
+        guard !lowerNeedle.isEmpty else { return 0 }
+        var count = 0
+        var searchRange = lowerHaystack.startIndex..<lowerHaystack.endIndex
+        while let r = lowerHaystack.range(of: lowerNeedle, range: searchRange) {
+            let beforeOK: Bool
+            if r.lowerBound == lowerHaystack.startIndex {
+                beforeOK = true
+            } else {
+                let c = lowerHaystack[lowerHaystack.index(before: r.lowerBound)]
+                beforeOK = !c.isLetter && !c.isNumber
+            }
+            let afterOK: Bool
+            if r.upperBound == lowerHaystack.endIndex {
+                afterOK = true
+            } else {
+                let c = lowerHaystack[r.upperBound]
+                afterOK = !c.isLetter && !c.isNumber
+            }
+            if beforeOK && afterOK {
+                count += 1
+            }
+            searchRange = r.upperBound..<lowerHaystack.endIndex
+        }
+        return count
+    }
+
     // MARK: - Stage A2: candidate generation (grammar / schema / prompt / parser)
 
     /// Candidate generation output — a single entity mention as it

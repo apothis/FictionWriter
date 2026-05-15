@@ -157,15 +157,18 @@ struct PipelineSceneResult {
     let tag: String
     let elapsedSec: TimeInterval
     let rawCandidates: [EntityDiscovery.Candidate]
+    let droppedAsKnown: [EntityDiscovery.Candidate]
+    let droppedByPlaceRecurrence: [EntityDiscovery.Candidate]
     let postGate: [EntityDiscovery.Candidate]
     let gateRejects: [(candidate: EntityDiscovery.Candidate, verdict: EntityPromotionGate.Verdict)]
+    let dedupMerged: [(candidate: EntityDiscovery.Candidate, mergedWith: String)]
     let normalised: [EntityDiscovery.NormalisedEntity]
     let stageAError: String?
     let stageDErrors: [(surface: String, error: String)]
     let scoreInput: EntityDiscoveryScorer.ScoreInput
 }
 
-func runScene(_ scene: FixtureScene) -> PipelineSceneResult {
+func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineSceneResult {
     let started = Date()
     let knownNames: [String] = {
         var names: [String] = []
@@ -176,6 +179,20 @@ func runScene(_ scene: FixtureScene) -> PipelineSceneResult {
             for s in sets { names.append(s.name); names.append(contentsOf: s.aliases) }
         }
         return names
+    }()
+    let existingEntities: [EntityDedupEngine.ExistingEntity] = {
+        var out: [EntityDedupEngine.ExistingEntity] = []
+        if let chars = scene.starting_bible.characters {
+            for c in chars {
+                out.append(.init(id: UUID(), canonicalName: c.name, aliases: c.aliases))
+            }
+        }
+        if let sets = scene.starting_bible.settings {
+            for s in sets {
+                out.append(.init(id: UUID(), canonicalName: s.name, aliases: s.aliases))
+            }
+        }
+        return out
     }()
 
     logProgress("[\(scene.id)] Stage A2 — candidate gen ...")
@@ -200,6 +217,22 @@ func runScene(_ scene: FixtureScene) -> PipelineSceneResult {
         logProgress("[\(scene.id)]   Stage A2 transport error: \(err)")
     }
 
+    // Snapshot raw output for the report before any filtering.
+    let rawCandidatesSnapshot = candidates
+
+    // Fix-1: pre-gate known-entity filter (structural enforcement
+    // of the prompt's "don't re-propose known entities" instruction
+    // since gemma4_2b ignores it).
+    var droppedAsKnown: [EntityDiscovery.Candidate] = []
+    candidates = candidates.filter { c in
+        let known = EntityDiscovery.isKnownSurface(c.surface, knownNames: knownNames)
+        if known { droppedAsKnown.append(c) }
+        return !known
+    }
+    if droppedAsKnown.count > 0 {
+        logProgress("[\(scene.id)]   dropped \(droppedAsKnown.count)/\(rawCandidatesSnapshot.count) as already-known")
+    }
+
     // Stage B: promotion gate.
     var postGate: [EntityDiscovery.Candidate] = []
     var gateRejects: [(EntityDiscovery.Candidate, EntityPromotionGate.Verdict)] = []
@@ -211,7 +244,80 @@ func runScene(_ scene: FixtureScene) -> PipelineSceneResult {
             gateRejects.append((c, verdict))
         }
     }
-    logProgress("[\(scene.id)]   \(postGate.count) survive gate, \(gateRejects.count) rejected")
+    logProgress("[\(scene.id)]   \(postGate.count) survive gate, \(gateRejects.count) gate-rejected")
+
+    // Fix-3: place recurrence filter (drops single-mention non-
+    // "The"-prefix places like Brussels, Edinburgh).
+    var droppedByPlaceRecurrence: [EntityDiscovery.Candidate] = []
+    postGate = postGate.filter { c in
+        let pass = EntityDiscovery.passesPlaceRecurrence(
+            surface: c.surface, kind: c.kind, scenePose: scene.prose
+        )
+        if !pass { droppedByPlaceRecurrence.append(c) }
+        return pass
+    }
+    if droppedByPlaceRecurrence.count > 0 {
+        logProgress("[\(scene.id)]   dropped \(droppedByPlaceRecurrence.count) as single-mention places")
+    }
+
+    // Fix-2: Stage C dedup against starting-bible entities. Same-
+    // person-different-surface ("Marius Thorn" / "Dr Thorn") is
+    // the typical case. Embedding-based — skipped if no embedder
+    // is available (fallback for environments without the
+    // CoreML bundle).
+    var dedupMerged: [(EntityDiscovery.Candidate, String)] = []
+    if let embedder = embedder, !existingEntities.isEmpty {
+        // First pass: dedup vs starting bible.
+        postGate = postGate.filter { c in
+            let v = EntityDedupEngine.evaluate(
+                candidateName: c.surface,
+                candidateEvidenceQuote: c.firstSeenQuote,
+                existingEntities: existingEntities,
+                embedder: embedder
+            )
+            switch v {
+            case .mergesWith(let id, _):
+                let merged = existingEntities.first(where: { $0.id == id })?.canonicalName ?? "?"
+                dedupMerged.append((c, merged))
+                return false
+            case .ambiguous, .proposeAsNew:
+                return true
+            }
+        }
+    }
+    // Second pass: dedup within this batch — same candidate
+    // proposed twice ("Marius Thorn" and "Dr Thorn") collapses
+    // to one. Iterative: accept first, embed against accepted,
+    // collapse subsequent.
+    if let embedder = embedder, postGate.count > 1 {
+        var accepted: [EntityDedupEngine.ExistingEntity] = []
+        var kept: [EntityDiscovery.Candidate] = []
+        for c in postGate {
+            if accepted.isEmpty {
+                accepted.append(.init(id: UUID(), canonicalName: c.surface, aliases: []))
+                kept.append(c)
+                continue
+            }
+            let v = EntityDedupEngine.evaluate(
+                candidateName: c.surface,
+                candidateEvidenceQuote: c.firstSeenQuote,
+                existingEntities: accepted,
+                embedder: embedder
+            )
+            switch v {
+            case .mergesWith(let id, _):
+                let merged = accepted.first(where: { $0.id == id })?.canonicalName ?? "?"
+                dedupMerged.append((c, merged))
+            case .ambiguous, .proposeAsNew:
+                accepted.append(.init(id: UUID(), canonicalName: c.surface, aliases: []))
+                kept.append(c)
+            }
+        }
+        postGate = kept
+    }
+    if dedupMerged.count > 0 {
+        logProgress("[\(scene.id)]   dedup merged \(dedupMerged.count) candidates")
+    }
 
     // Stage D: normalise each survivor.
     var normalised: [EntityDiscovery.NormalisedEntity] = []
@@ -267,9 +373,12 @@ func runScene(_ scene: FixtureScene) -> PipelineSceneResult {
         sceneTitle: scene.title,
         tag: scene.tag,
         elapsedSec: elapsed,
-        rawCandidates: candidates,
+        rawCandidates: rawCandidatesSnapshot,
+        droppedAsKnown: droppedAsKnown,
+        droppedByPlaceRecurrence: droppedByPlaceRecurrence,
         postGate: postGate,
         gateRejects: gateRejects,
+        dedupMerged: dedupMerged,
         normalised: normalised,
         stageAError: stageAError,
         stageDErrors: stageDErrors,
@@ -301,14 +410,18 @@ func renderReport(results: [PipelineSceneResult], aggregate: EntityDiscoveryScor
 
     // Per-scene
     out += "## Per-scene breakdown\n\n"
-    out += "| Scene | Tag | Raw → Gate → Norm | TP | FP | FN | Latency |\n"
+    out += "| Scene | Tag | Raw → -Known → +Gate → +Place → +Dedup → Norm | TP | FP | FN | Latency |\n"
     out += "|---|---|---|---|---|---|---|\n"
     for r in results {
         let tally = aggregate.perScene[r.sceneId]
         let tp = tally?.truePositives ?? 0
         let fp = tally?.falsePositives ?? 0
         let fn = tally?.falseNegatives ?? 0
-        out += "| \(r.sceneId) **\(r.sceneTitle)** | \(r.tag) | \(r.rawCandidates.count) → \(r.postGate.count) → \(r.normalised.count) | \(tp) | \(fp) | \(fn) | \(String(format: "%.1fs", r.elapsedSec)) |\n"
+        let afterKnown = r.rawCandidates.count - r.droppedAsKnown.count
+        let afterGate = afterKnown - r.gateRejects.count
+        let afterPlace = afterGate - r.droppedByPlaceRecurrence.count
+        let afterDedup = r.postGate.count
+        out += "| \(r.sceneId) **\(r.sceneTitle)** | \(r.tag) | \(r.rawCandidates.count) → \(afterKnown) → \(afterGate) → \(afterPlace) → \(afterDedup) → \(r.normalised.count) | \(tp) | \(fp) | \(fn) | \(String(format: "%.1fs", r.elapsedSec)) |\n"
     }
     out += "\n"
 
@@ -391,9 +504,25 @@ do { fixture = try loadFixture() } catch {
 }
 logProgress("Loaded \(fixture.scenes.count) scenes. Ollama: \(ollamaModel) at \(ollamaURLString)")
 
+// Try to resolve the CoreML Wegmann bundle for dedup. The bundle
+// lives in LoomCore's resources; from a sibling executable target
+// `Bundle.module` resolves to this Tools/ target which has no
+// resources. Fall back to constructing a path from CWD.
+let embedder: EmbeddingClient? = {
+    let cwd = FileManager.default.currentDirectoryPath
+    let bundle = URL(fileURLWithPath: cwd)
+        .appendingPathComponent("Sources/LoomCore/Resources/StyleEmbedding")
+    if FileManager.default.fileExists(atPath: bundle.path) {
+        logProgress("Dedup: CoreML Wegmann at \(bundle.path)")
+        return CoreMLEmbeddingClient(bundleURL: bundle)
+    }
+    logProgress("Dedup: no embedder available — skipping Stage C")
+    return nil
+}()
+
 var results: [PipelineSceneResult] = []
 for scene in fixture.scenes {
-    results.append(runScene(scene))
+    results.append(runScene(scene, embedder: embedder))
 }
 
 let aggregate = EntityDiscoveryScorer.score(inputs: results.map(\.scoreInput))
