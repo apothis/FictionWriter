@@ -1172,3 +1172,74 @@ Fix (97ffa42): **end-of-gen reconciliation**. At `didFinishNotification`, `Edito
 6. **Generation-grade probes** (§6.2 / §6.4 / §6.5): deferred to 8.c. They validate locked decisions and require live Phase 8.b code to be meaningful.
 
 **Phase 8.b smoked + iterated to clean output.** Editor view + gen-log are now byte-equivalent post-reconcile. Per-template state persistence (with gen-log backfill) lets the user iterate without re-typing. Native CoreML inference replaces the Python subprocess. The strategic-anchor NSFW use case generates cleanly with the `Imitate content` toggle on.
+
+### 15.17 Session ledger — 2026-05-15 → 2026-05-16 (Phase 9 entity discovery + writer-model A/B + §15.16 carryover sweep)
+
+Single-day arc producing 37 commits across three threads: writer-model selection research, the entire Phase 9 entity-discovery feature spike-to-production, and a sweep of the §15.16 carryover follow-ups (#1, #2, #3, #4 all shipped). Tests grew from 1286 to 1448 (+162) — entire Phase 9 surface plus four targeted regressions. All on `main`, all pushed to `origin`.
+
+#### Writer-model A/B (3 commits)
+
+User asked for research on uncensored fiction-writing models for 24GB VRAM. Spawned a research agent that surveyed UGI Leaderboard, EQ-Bench Creative v3, TheDrummer / DavidAU / MuXodious / ReadyArt finetune lineages, and r/LocalLLaMA consensus. Top picks: DavidAU Qwen3.6-27B Heretic2 Finetune Thinking; Gemma-4 31B Deckard Heretic (already in use); TheDrummer Cydonia-24B-v4.3 + the MuXodious "absolute heresy" abliteration of it; Goetia-24B-v1.3-absolute-heresy (DELLA merge of every Mistral-Small-3.x prose-tuned variant). User downloaded Goetia.
+
+Two code changes to support the swap:
+- `c4c6205 feat: auto-detect Mistral-Small-24B finetunes → mistralV7` — `InstructTemplates.detect` now recognises Cydonia / Goetia / Magidonia / Harbinger / Hearthfire / Skyfall as Mistral V7 Tekken (their filenames don't contain "mistral" so the existing detector fell through to .raw, producing garbage at gen time).
+- `413a5fb feat: per-model-family sampler override at request-construction time` — `SamplerParams.familyOverride(forModelName:)` returns Drummer-recommended (`temp 0.8, min_p 0.025, rep_pen 1.05`) for the Mistral-Small-3.x family. Applied in `GenerationCoordinator.makeSamplerParams` after the project's `GenerationDefaults` so the family override wins on detection. Logged to DebugLog when applied so it's not silent magic.
+
+#### Phase 9 entity discovery — full spike-to-production arc (28 commits)
+
+User asked: can the existing fact extractor also detect new characters/places and propose them for the bible? Plan + research synthesis landed in `LOOM_ENTITY_DISCOVERY_SPIKE.md` (committed `32046f2`); §9 post-spike appendix added after the third live run (`e7cdef2`).
+
+**Spike phase** — pure-data scaffolding TDD, then live eval runner (`Tools/EntityDiscoverySpike`) against gemma4_2b on 8 hand-graded fixture scenes (5 reused from LedgerSpike, 3 newly authored NSFW scenes for entity-discovery signals — "the redhead behind the bar" anatomy distractor, "Marius Thorn / Dr Thorn" dedup test, "Brussels / Edinburgh" passing-mention place distractor, etc.). Five live runs:
+
+| Run | Precision | Recall | F1 | Latency | Notes |
+|---|---|---|---|---|---|
+| 1 | 33.3% | 85.7% | 48.0% | 49.2s | Three structural failure modes identified |
+| 2 | 75.0% | 85.7% | 80.0% | 32.2s | + Fix 1/2/3 (known-filter, dedup-wire, place-recurrence) |
+| 3 | **100%** | **85.7%** | **92.3%** | 30.7s | + Fix 4/5 (token-expansion, post-Stage-D dedup) — GO threshold cleared |
+| 4 | 100% | 85.7% | 92.3% | 34.8s | Parallel Stage D + over-eager retry — *worse* (Ollama serialises on the model load slot anyway; retry on "all known" was wrong) |
+| 5 | 100% | 85.7% | 92.3% | 33.2s | Conservative retry (errors only) — kept |
+
+§6.4 decision: GO. Recall miss at eds-01 (Karim) is upstream of all filters — gemma4_2b consistently doesn't emit Karim regardless of prompt or temperature. Documented as a model-behaviour limitation; addressed later by Stage A2 retry-on-`noJSONArrayFound` (commit `e2ff8f3`) which catches the parse-fail variant of the same class of issue.
+
+**Production phase** — six commits land the §4 UI vertical slice (slice option 4 from the user's choice):
+- `4d75b69` `ProposedEntitiesStore` (sidecar JSON) + `BibleWorkspaceSnapshot.proposedEntities` field
+- `c20affb` Bridge intents `acceptEntityProposal` / `rejectEntityProposal` + `AppState` handlers (promote to `Character` / `Setting` / `BibleObject` with attached facts)
+- `cbe1103` Snapshot wiring through `BibleWorkspaceWindowController`
+- `beaf512` TS types + `EntityProposalsQueue.tsx` view + emerald header badge — vite-dev-verified with mock snapshots, intent payloads inspected via mock postMessage
+- `6bd6883` `EntityDiscoverySpike --into <project>` flag — runner writes proposals into a real project's store; demo-grade (synthesised scene IDs render as "(unknown scene)" in the UI)
+
+**Editor-triggered live discovery** — five more commits make discovery actually fire in the running app:
+- `abdc03e` `OllamaEntityDiscoveryExtractor` — async wrapper around Stages A2+B+C+D+post-Stage-D dedup, mirrors `OllamaLedgerExtractor`'s shape, full TDD via deferred-stub provider
+- `1620ba8` `AppState.runEntityDiscovery(for sceneId:)` — single editor-callable entry point
+- `3ee6b97` Bible menu item "Discover Entities in Current Scene"
+- `8a900ea` Auto-trigger via `LedgerExtractionCoordinator.onExtractionComplete` piggyback (avoids needing a separate Phase 9 coordinator)
+- `67f6ff1` `EntityDiscoveryTrigger` (per-scene 500-word baseline) so substantial rewrites re-fire
+
+**Polish** — three more:
+- `2b171de` Object discovery (BibleObject) — third `Kind` enum value, additive (gate already handled it; place-recurrence shorts on kind != .place; AppState acceptance + UI badge added)
+- `be4537e` In-flight indicator — amber pulsing-dot pill in EntityList header while discovery is running
+- `e2ff8f3` Stage A2 retry-on-`noJSONArrayFound` — closes the recall-gap path for the eds-01-style Karim miss
+
+Final state: end-to-end working in Loom.app. User opens scene → ledger fires → discovery auto-fires (or manual via menu) → in-flight pill appears → ~30s later proposals queue gets entries → user reviews / edits / accepts → bible row materialises with attached facts. Three trigger paths (auto, menu, demo `--into` for a CLI bootstrap), three entity kinds (character/place/object), retry on parse fail, dedup against existing bible, all pure-data tested + live-verified.
+
+#### §15.16 carryover follow-ups — all four shipped
+
+- `6b6e714` **#1** `OllamaBeatExtractor` retries on `noJSONObjectFound` — same fix shape later mirrored to `OllamaEntityDiscoveryExtractor`.
+- `f01ecc2` **#2** History tab template-gen surfaces beat count — "Template: Doorway test · 3 beats" (singularises "1 beat" correctly).
+- `9909d2d` **#3** Wegmann re-ingest UX — `SnapshotReference.computeDModelStale` derives staleness from persisted `dModel` vs `CoreMLEmbeddingClient.expectedModelId`; amber "needs re-ingest" badge in EntityList for stale references; only renders when `dModelStale === true` (not for fresh or not-yet-ingested).
+- `807183d` **#4** Pronoun-consistency SYSTEM clause — appended `"Use the pronouns specified in the NEW CAST block consistently for each character throughout the beat."` to all four `BeatGeneration.buildBeatPrompt` framings (template-body × imitateContent matrix). Positive-constraint framing per `feedback_prompt_blacklist_evasion`.
+
+#### Open follow-ups carried forward
+
+1. **#5 Pass-A on References at ingest** — still deferred per §15.16 ("only worth doing if live smoke shows the chunk-level modality is missing beats").
+2. **#6 Generation-grade probes** — still deferred to 8.c. Heavy work (~3-5 hours of writer-LLM time + hand-grading by user); requires sustained user attention.
+3. **Phase 9 v2 deferred items** (per `LOOM_ENTITY_DISCOVERY_SPIKE.md` §5):
+   - Cross-scene coref (needs Python NER like BookNLP — toolchain-pressure risk per `feedback_verify_local_toolchain`)
+   - Lorebook auto-discovery (different concept shape; abstract not entity)
+   - Relationship-fact discovery (extends Pass-B fact format)
+   - Faction discovery (similar to lorebook)
+   - Bulk import (whole-manuscript runner — useful when importing existing prose)
+4. **Live smoke of Phase 9 in the user's actual project** — the unit tests don't prove the auto-trigger fires correctly with real ledger events. Highest-value next step is using the feature, not building more.
+5. **Writer-model A/B against Goetia** — user has Goetia downloaded; needs to load in koboldcpp at the writer URL and exercise to confirm prose quality vs the current Gemma-4 31B Deckard Heretic. Mistral-V7 template + per-family samplers should auto-apply.
+
+**Phase 9 entity discovery is shippable.** The full feature loop works in `Loom.app`. The plan-doc reads "PROCEED" at §6.4. 1448/1448 tests green. Next session's load-bearing question is no longer "build this?" — it's "does it surface useful entities on real prose?"
