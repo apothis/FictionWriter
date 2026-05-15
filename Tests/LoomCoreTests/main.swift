@@ -173,6 +173,7 @@ let suites: [TestSuite] = [
     phase8BeatOutputSanitizerTests(),
     phase8TemplateGenSanitizeTests(),
     phase8TemplateGenStateStoreTests(),
+    phase8SamplerFamilyOverrideTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

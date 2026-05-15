@@ -156,8 +156,14 @@ public final class GenerationCoordinator {
             "[gen] recent-prose-window: chars=\(assembled.userBlock.count) tokens=\(assembled.belowCacheTokens) from-cursor=\(cursorOffset)"
         )
 
-        // Wire sampler params from project's GenerationDefaults.
-        let params = makeSamplerParams(from: session.project.settings.generationDefaults)
+        // Wire sampler params from project's GenerationDefaults,
+        // with a per-model-family override layered on top (e.g.
+        // Mistral-Small-3.x finetunes want temp=0.8 min_p=0.025
+        // rep_pen=1.05 rather than the Gemma-4-tuned defaults).
+        let params = makeSamplerParams(
+            from: session.project.settings.generationDefaults,
+            modelName: AppState.shared.lastProbedModelName
+        )
         let request = GenerateRequest(
             prompt: assembled.fullPrompt,
             stopSequences: assembled.stopSequences,
@@ -319,13 +325,22 @@ public final class GenerationCoordinator {
     /// Map Loom's user-facing GenerationDefaults to the kobold-API
     /// SamplerParams shape. Kept here (not on GenerationDefaults) so
     /// the model layer doesn't depend on the networking layer.
-    private func makeSamplerParams(from defaults: GenerationDefaults) -> SamplerParams {
-        SamplerParams(
-            temperature: defaults.temperature,
+    private func makeSamplerParams(
+        from defaults: GenerationDefaults,
+        modelName: String?
+    ) -> SamplerParams {
+        let override = SamplerParams.familyOverride(forModelName: modelName)
+        if let ov = override {
+            DebugLog.shared.write(
+                "[gen] model-family sampler override (\(modelName ?? "?")): temp=\(ov.temperature) min_p=\(ov.minP) rep_pen=\(ov.repPen)"
+            )
+        }
+        return SamplerParams(
+            temperature: override?.temperature ?? defaults.temperature,
             topP: 0.95,
             topK: defaults.topK,
-            minP: defaults.minP,
-            repPen: 1.07,
+            minP: override?.minP ?? defaults.minP,
+            repPen: override?.repPen ?? 1.07,
             repPenRange: 1024,
             maxLength: defaults.maxOutputTokens,
             samplerOrder: [6, 0, 1, 3, 4, 2, 5],

@@ -54,4 +54,36 @@ public struct SamplerParams: Equatable {
     }
 
     public static let phase1Defaults = SamplerParams()
+
+    /// Family-specific sampler override applied at request-construction
+    /// time. Caller substitutes these three values in over its basis
+    /// params (project GenerationDefaults). Returns nil for families
+    /// where the existing defaults are already correct.
+    public static func familyOverride(forModelName name: String?) -> SamplerFamilyOverride? {
+        guard let lower = name?.lowercased(), !lower.isEmpty else { return nil }
+        // Mistral-Small-3.x finetune family — community-recommended
+        // samplers per MuXodious Harbinger / Magidonia-heresy cards
+        // and Drummer Cydonia-v2 / Magidonia-v4.3 discussions.
+        if lower.contains("cydonia") || lower.contains("goetia")
+            || lower.contains("magidonia") || lower.contains("harbinger")
+            || lower.contains("hearthfire") || lower.contains("skyfall")
+        {
+            return SamplerFamilyOverride(temperature: 0.8, minP: 0.025, repPen: 1.05)
+        }
+        return nil
+    }
+}
+
+/// Family-specific sampler override (three values that vary across
+/// finetune families — everything else stays at project defaults).
+public struct SamplerFamilyOverride: Equatable {
+    public let temperature: Double
+    public let minP: Double
+    public let repPen: Double
+
+    public init(temperature: Double, minP: Double, repPen: Double) {
+        self.temperature = temperature
+        self.minP = minP
+        self.repPen = repPen
+    }
 }
