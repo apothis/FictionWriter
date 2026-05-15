@@ -1095,3 +1095,80 @@ The §15.14 list (items 1-10) carries forward unchanged. Phase 8 adds:
 - **Generation-grade probes (§6.2 / §6.4 / §6.5)**: deferred to 8.c. They validate locked decisions (D5, D7) and require live exercise of Phase 8.b code to be meaningful.
 
 **Architecturally complete (modulo smoke).** Phase 8.b's design — unified data model + per-beat retrieval + beat-aware filtering + soft-D4 toggle — is fully in production code. The live-app pass is the next gating step.
+
+### 15.16 Session ledger — 2026-05-14 → 2026-05-15 (Phase 8.b smoke + iterations + CoreML migration)
+
+Single-session arc continuing immediately after §15.15. Three rounds of live-smoke feedback against `/Volumes/SSD1/test2` (Emily-Maya NSFW scene exemplar; gemma-4-31B-Deckard-Heretic-Thinking writer; Pass-A via gemma4_2b). Each round produced a concrete gen-log JSON in `/Volumes/SSD1/test2/generation-log/`; the forensics-driven fix list grew from "looks ok" through three layered defenses + a unified end-of-gen reconciler. Plus a side-arc: drop the Python venv from runtime via CoreML conversion of Wegmann.
+
+#### Per-call hint feature
+
+Added BEFORE the smoke rounds. The Write-Scene-From-Template menu gains a third textarea (`Additional instructions (optional)`) and the BeatGeneration prompt assembly renders an `[ADDITIONAL INSTRUCTION — user-supplied hint for this generation]` block immediately before `[INSTRUCTION]` (after `[STYLE EXEMPLARS]`). 4 TDD tests; default empty string preserves Phase 7 byte-for-byte. Plumbed through TemplateGenerationCoordinator (start) + EditorViewController + AppDelegate's NSAlert + the notification userInfo.
+
+#### CoreML migration (drop Python venv at runtime)
+
+Pre-arc question: "now that we're on Wegmann, can we run inference without the Python venv?" Answer was yes via CoreML + huggingface/swift-transformers 1.0.
+
+1. **Cosine-equivalence probe** at `Tools/CoreMLProbe/probe_wegmann_coreml.py` validates the conversion path: torch wrapper around `AutoModel.from_pretrained("AnnaWegmann/Style-Embedding")` does mean-pool + L2-norm, trace via `torch.jit.trace`, convert via `coremltools.convert(convert_to="mlprogram", minimum_deployment_target=macOS14)`, load the `.mlpackage` via Apple's CoreML, compare cosines against the sentence-transformers reference path. Result: **min 0.999993, max 0.999998 cosine across 5 register-spanning test strings; ~3s end-to-end conversion; FP16 mlpackage ≈ 250MB**. Within 1e-4 = byte-equivalent for production. Existing `.index` sidecars stay valid (no forced re-ingest).
+2. **Production build script** at `Tools/CoreMLProbe/build_mlpackage.py` outputs `Sources/LoomCore/Resources/StyleEmbedding/` containing `StyleEmbedding.mlpackage` + HuggingFace fast-tokenizer files (`tokenizer.json` + `tokenizer_config.json` + special-tokens). Resource bundle gitignored; regenerated before `swift build` (same pattern as the BibleWorkspace dist directory). Total bundle 253 MB.
+3. **Swift client** at `Sources/LoomCore/Retrieval/CoreMLEmbeddingClient.swift` (~190 LOC + 3 TDD tests). Conforms to existing `EmbeddingClient` protocol. Lazy-loads the mlpackage via `MLModel.compileModel(at:)` + the tokenizer via `swift-transformers` `AutoTokenizer.from(modelFolder:)`. DispatchSemaphore bridges the async tokenizer load to the synchronous embed contract. Per-call: BPE-tokenize → pad/truncate to 128 tokens (RoBERTa pad token resolved from the loaded tokenizer) → `MLModel.prediction(from:)` → 768-vec output.
+4. **AppState factory**: `defaultEmbeddingClientFactory` returns `CoreMLEmbeddingClient` when `Bundle.module.url(forResource: "StyleEmbedding", ...)` resolves; falls back to `PythonEmbeddingClient` if the bundle is missing (fresh-clone bootstrap before the build script has been run).
+5. **Loom.app bundle**: 257 MB total (248 MB of which is the mlpackage). CLT-only compatible at runtime (no Xcode required for MLModel + xcrun coremlcompiler). Per-embed latency: ~5–15 ms (vs Python's 50–80 ms).
+6. **`Package.swift`** gains `.package(url: "https://github.com/huggingface/swift-transformers", from: "1.0.0")` + `.product(name: "Tokenizers", ...)` on LoomCore. `Resources/StyleEmbedding` declared as a `.copy` resource alongside `Resources/BibleWorkspace`.
+
+#### Smoke round 1 — meta-block leakage cascade
+
+First live gen with the new Phase 8 pipeline. User reported "weird paragraph spacing, strangeness in the text, and some odd blocks." Forensics on the gen-log:
+
+- The writer LLM hallucinated `[VALIDATE BEAT]` + `Length check: ...` + `Pacing: Sentences = [1, 6, 7,` blocks at beat tails (Phase 7's stop list didn't catch them — none of the literal patterns matched).
+- Leakage **cascaded**: once it landed in `insertedText`, every subsequent beat saw it in `[BEATS BEFORE THIS]` and learned to repeat. 6 of 10 beats poisoned.
+- Beat 0 truncated mid-word at "Emily" (writer hit `numPredict = max(64, beat.targetWords * 2)` = 80 tokens; wanted ~95).
+- First gen's `castMapping` came across with leading "S" missing ("arah is 18..." instead of "Sarah is 18..."). Reproducible race in `TemplateGenCastMappingPlaceholderDelegate.textDidBeginEditing` — the placeholder cleared AFTER AppKit's first keystroke had been committed.
+- User-requested polish: Write-Scene-From-Template fields should **persist** so the user can iterate on cast/hint/toggle without re-typing 200+ chars each time.
+
+Six-fix commit (576ee4b):
+- `BeatOutputSanitizer.strip` (new pure-data, 9 TDD tests): truncates at first bracket-meta-header OR first header-less meta-line; collapses `\n{3,}` → `\n\n`; trims trailing whitespace.
+- TemplateGenerationCoordinator sanitizes each beat's tail of `insertedText` on completion; posts a new `didSanitizeBeatNotification` carrying `{beatIndex, deleteFromOffset, deleteCount}` so the editor's NSTextStorage can drop the rubbish.
+- EditorViewController observes the notification + calls `textStorage.deleteCharacters(in:)`.
+- Stop sequences extended.
+- SYSTEM framing gets explicit anti-leakage clause ("do NOT emit any prompt-shaped headers like `[VALIDATE BEAT]`, …") applied to all four variants.
+- `numPredict` bumped from `max(64, target*2)` → `max(256, target*4)`.
+- Placeholder delegate switched from `textDidBeginEditing` → `textShouldBeginEditing` so the clear fires BEFORE AppKit commits the keystroke. Fixes the leading-S loss.
+- `TemplateGenStateStore` (new + 6 TDD tests): per-template sidecar at `<project>/template-gen-state/<id>.json` holding `{castMapping, extraInstruction, imitateContent, savedAt}`. AppDelegate's NSAlert gains a `TemplateGenMenuStateController` that wires the NSPopUpButton's target/action so picker-change pre-fills fields from disk; save-on-Generate writes back.
+
+#### Smoke round 2 — backfill from gen-log
+
+User reported the per-template state wasn't restoring. Root cause: the user's earlier gens (round 1 forensics) predated the sidecar mechanism — nothing was on disk under the new schema, so menu opens showed empty fields.
+
+Fix (b99f0a8): `TemplateGenStateStore.loadOrBackfill(templateId:in:)` tries the sidecar first, falls back to scanning `<project>/generation-log/*.json` for the most recent entry whose `templateGenerationInfo.templateId` matches. Synthesises a `TemplateGenState` from its `castMapping` (+ `imitateContent` / `extraInstruction` if the entry carries them; legacy entries default to `false` / `""`). Schema bump: `TemplateGenerationInfo` gains optional `imitateContent` and `extraInstruction` fields; back-compat decode tolerant. 4 additional TDD tests on the backfill path.
+
+#### Smoke round 3 — pattern generalisation + new leakage shape
+
+Second live gen surfaced a new leakage shape: `[CHECK BEAT]` (word-order reversed from `[BEAT CHECK]`) plus a totally different inner format — `Is Beat 4 written above? YES` / `Modality: action? YES` / `Function: reveal? YES` / etc. The enumerated literals in `bracketHeaderPatterns` didn't match. Cascade propagated to beats 5-9 again.
+
+Fix (e97517d): switched from enumerated string literals to a **vocabulary-anchored** detector. Any `[<META_WORD> ...]` line-start gets cut, where META_WORD ∈ {`BEAT`, `CHECK`, `VALIDATE`, `LENGTH`, `PACING`, `VOICE`, `DIALOGUE`, `SCENE`, `PROSE`, `OUTPUT`, `NOTE`, `META`, `SELF`, `VERIFY`}. False-positive guard: only fires when the bracket's FIRST word is in the vocabulary — prose-shaped brackets like `[OUTSIDE THE OFFICE]`, `[LATER]`, `[CHAPTER 2]`, `[FLASHBACK]` are preserved (tested). Stop sequences extended with the same vocabulary as prefix-shape stops. 3 additional TDD tests.
+
+#### Smoke round 4 — editor-coordinator divergence + end-of-gen reconciler
+
+Third live gen surfaced a different problem: the editor textView showed mid-word truncations ("her" instead of "hers.", "hungr" instead of "hungrily.", "Emily m" instead of "Emily murmurs.", "craving mo" instead of "craving more.") — but the gen-log's `rawText` had the **complete** prose. Editor was 2-7 chars short at each beat boundary. Also a writer-model gender slip ("him" referring to Maya) — content quality issue, out of scope for an automatic fix.
+
+Root cause analysis: the streaming-time pipeline (StreamingThinkBlockStripper + sanitize-delete + token observer in editor) can drift from the coordinator's canonical `insertedText` in subtle ways — hold-backs across beat boundaries, sanitize-delete bounds-check skips, race conditions in token-event ordering. Hard to fully untangle.
+
+Fix (97ffa42): **end-of-gen reconciliation**. At `didFinishNotification`, `EditorViewController.reconcileTemplateGenEditorWithCoordinator()` calls `storage.replaceCharacters(in: editorRange, with: templateCoordinator.insertedText)`. Idempotent — no-ops when the editor already matches (the common clean case), corrects when streaming drifted. Bypasses every layer between streaming and final view. The editor's content is now guaranteed byte-equivalent to the gen-log's `rawText` at the moment of finish.
+
+#### State at session end
+
+- **Tests**: 1286/1286 pass. New tests across `BeatOutputSanitizer`, `TemplateGenSanitize`, `TemplateGenStateStore`, `CoreMLEmbeddingClient`, `BeatPromptExtraInstruction`, `BeatPromptStyleExemplars` — total +35 since §15.15.
+- **Loom.app**: built, signed, launching cleanly. CoreML path verified live. Per-template state persistence + gen-log backfill working.
+- **Branch**: ~14 commits added since §15.15 close. Local-only until the user pushes.
+- **Phase 8.b sub-rows**: all 8 implemented + smoked. 8.b.2 stays deferred (Pass-A on References at ingest) — Phase 8.c if smoke surfaces a quality gap.
+
+#### Open follow-ups carried forward
+
+1. **Pronoun consistency** (smoke round 4): the writer used "him" once when referring to a female-female cast. Mitigations: explicit pronoun line in `Additional Instructions`, or stronger SYSTEM clause ("Use pronouns implied by the cast description consistently"). Not landed — user said "it's fine, leave it" for now.
+2. **History tab one-liner** (carryover from §15.14): `templateGenerationInfo` is on disk but `HistoryInspectorViewController` renders the entry as "Continue". Small follow-up: surface `templateName` + beat count when `templateGenerationInfo != nil`.
+3. **`OllamaBeatExtractor` retry-on-`noJSONObjectFound`**: one-line `callWithRetry` extension to cover the ~30% transient JSON-parse failure rate on NSFW Pass-A extraction. Surfaced in §15.15 Phase 8.a closeout; still pending.
+4. **Phase 5 → Wegmann re-ingest UX**: existing Reference `.index` sidecars under the old StyleDistance fingerprint are stale. `RetrievalService` doesn't currently check `ModelFingerprint.id` at retrieval time. Add a fingerprint-mismatch warning + "needs re-ingest" badge on stale References — Phase 8.c material.
+5. **Pass-A on References at ingest** (8.b.2): chunk-level modality from `NarrativeModeClassifier` suffices for v1 beat-aware retrieval; deferred.
+6. **Generation-grade probes** (§6.2 / §6.4 / §6.5): deferred to 8.c. They validate locked decisions and require live Phase 8.b code to be meaningful.
+
+**Phase 8.b smoked + iterated to clean output.** Editor view + gen-log are now byte-equivalent post-reconcile. Per-template state persistence (with gen-log backfill) lets the user iterate without re-typing. Native CoreML inference replaces the Python subprocess. The strategic-anchor NSFW use case generates cleanly with the `Imitate content` toggle on.
