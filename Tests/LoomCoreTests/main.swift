@@ -182,6 +182,8 @@ let suites: [TestSuite] = [
     phase9GrammarsAndPromptsTests(),
     phase9KnownEntityFilterTests(),
     phase9PlaceRecurrenceTests(),
+    phase9KnownNameTokenExpansionTests(),
+    phase9PostStageDDedupTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

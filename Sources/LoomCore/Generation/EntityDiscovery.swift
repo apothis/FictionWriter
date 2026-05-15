@@ -158,6 +158,27 @@ public enum EntityDiscovery {
         candidates.filter { !isKnownSurface($0.surface, knownNames: knownNames) }
     }
 
+    /// Expand a known-names list with proper-noun tokens extracted
+    /// from multi-word entries. "Karim Vance" → adds "Karim" + "Vance"
+    /// so a Stage A2 candidate emitted as just "Vance" gets filtered
+    /// as already-known. Token criteria: starts uppercase + length
+    /// ≥ 3 (drops titles "Mr"/"Dr" and determiners "the"/"an" that
+    /// would over-match). Output deduplicated, order not preserved.
+    public static func expandKnownNamesWithTokens(_ names: [String]) -> [String] {
+        var out = Set<String>(names)
+        for name in names {
+            let tokens = name.split(separator: " ").map(String.init)
+            guard tokens.count >= 2 else { continue }
+            for t in tokens {
+                guard t.count >= 3 else { continue }
+                guard let first = t.unicodeScalars.first,
+                      CharacterSet.uppercaseLetters.contains(first) else { continue }
+                out.insert(t)
+            }
+        }
+        return Array(out)
+    }
+
     /// Place-specific recurrence gate (§6.4 first-run fix). A
     /// `.place` candidate passes iff its surface starts with "The "
     /// (definite article as part of the proper name) OR it appears
@@ -404,6 +425,40 @@ public enum EntityDiscovery {
 
         Emit the JSON object.
         """
+    }
+
+    /// Post-Stage-D dedup: merge entries sharing a canonical_name
+    /// (case-insensitive, trimmed) AND kind. Aliases unioned;
+    /// `one_line` + `evidence_quote` keep the first occurrence's
+    /// values so the user-visible context survives. Order-stable
+    /// for kept entries. Complements the embedding-based pre-LLM
+    /// dedup at Stage C — different mechanism (exact string vs
+    /// cosine) catches different failure modes.
+    public static func dedupByCanonicalName(_ entities: [NormalisedEntity]) -> [NormalisedEntity] {
+        struct Key: Hashable {
+            let name: String
+            let kind: Kind
+        }
+        var seenOrder: [Key] = []
+        var bucket: [Key: NormalisedEntity] = [:]
+        for ent in entities {
+            let normName = ent.canonicalName.lowercased().trimmingCharacters(in: .whitespaces)
+            let key = Key(name: normName, kind: ent.kind)
+            if let existing = bucket[key] {
+                let mergedAliases = Array(Set(existing.aliases + ent.aliases))
+                bucket[key] = NormalisedEntity(
+                    kind: existing.kind,
+                    canonicalName: existing.canonicalName,
+                    aliases: mergedAliases,
+                    oneLine: existing.oneLine,
+                    evidenceQuote: existing.evidenceQuote
+                )
+            } else {
+                bucket[key] = ent
+                seenOrder.append(key)
+            }
+        }
+        return seenOrder.compactMap { bucket[$0] }
     }
 
     public static func parseNormalisedEntity(_ raw: String) throws -> NormalisedEntity {

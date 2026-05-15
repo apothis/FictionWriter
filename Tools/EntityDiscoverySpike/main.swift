@@ -178,7 +178,9 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
         if let sets = scene.starting_bible.settings {
             for s in sets { names.append(s.name); names.append(contentsOf: s.aliases) }
         }
-        return names
+        // Fix-4: expand with proper-noun tokens so "Vance" alone
+        // gets caught as alias of "Karim Vance".
+        return EntityDiscovery.expandKnownNamesWithTokens(names)
     }()
     let existingEntities: [EntityDedupEngine.ExistingEntity] = {
         var out: [EntityDedupEngine.ExistingEntity] = []
@@ -342,6 +344,15 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
         case .failure(let err):
             stageDErrors.append((c.surface, "transport: \(err)"))
         }
+    }
+
+    // Fix-5: post-Stage-D dedup on identical canonical names —
+    // catches the eds-06 "Marius Thorn" duplicate that Wegmann
+    // style-embedding didn't merge at Stage C.
+    let preMergeCount = normalised.count
+    normalised = EntityDiscovery.dedupByCanonicalName(normalised)
+    if normalised.count < preMergeCount {
+        logProgress("[\(scene.id)]   post-Stage-D dedup merged \(preMergeCount - normalised.count)")
     }
 
     // Convert normalised → ProposedSurface for scorer; convert
