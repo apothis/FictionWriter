@@ -99,6 +99,11 @@ let ollamaURLString = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_URL
 let ollamaModel = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_MODEL"]
     ?? "gemma4_2b:latest"
 
+// Detection step: "gliner" (the native NER tagger) or "llm" (the
+// historical generative Stage A2). Either way Stage D normalisation
+// stays on the LLM.
+let detectorMode = (ProcessInfo.processInfo.environment["LOOM_SPIKE_DETECTOR"] ?? "gliner").lowercased()
+
 /// Optional `--into <project-path>`: when present, every accepted
 /// proposal (precision-filtered through Stages B-D as usual) gets
 /// appended to that project's ProposedEntitiesStore so the Bible
@@ -166,6 +171,39 @@ func ollamaExtractSync(prompt: String, schema: [String: Any], temperature: Doubl
             result = .failure(error)
         }
     }.resume()
+    sem.wait()
+    return result
+}
+
+// MARK: - GLiNER detection (sync bridge)
+
+/// Lazily-loaded GLiNER candidate detector — built only in gliner mode.
+let glinerCandidateDetector: GLiNERCandidateDetector? = {
+    guard detectorMode == "gliner" else { return nil }
+    let sem = DispatchSemaphore(value: 0)
+    final class Box: @unchecked Sendable { var detector: GLiNERDetector? }
+    let box = Box()
+    Task.detached {
+        box.detector = try? await GLiNERDetector()
+        sem.signal()
+    }
+    sem.wait()
+    guard let detector = box.detector else {
+        logProgress("ERROR: GLiNER detector failed to load — run Tools/GLiNERProbe/export_gliner_onnx.py")
+        exit(3)
+    }
+    return GLiNERCandidateDetector(detector: detector)
+}()
+
+/// Run GLiNER detection on a scene, blocking until candidates land.
+func glinerDetectSync(prose: String) -> Result<[EntityDiscovery.Candidate], Error> {
+    guard let detector = glinerCandidateDetector else {
+        return .failure(NSError(domain: "Spike", code: -1,
+                                userInfo: [NSLocalizedDescriptionKey: "no GLiNER detector"]))
+    }
+    let sem = DispatchSemaphore(value: 0)
+    var result: Result<[EntityDiscovery.Candidate], Error> = .success([])
+    detector.detectCandidates(in: prose) { result = $0; sem.signal() }
     sem.wait()
     return result
 }
@@ -268,18 +306,35 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
         return out
     }()
 
-    logProgress("[\(scene.id)] Stage A2 — candidate gen ...")
-    let a2Prompt = EntityDiscovery.buildCandidateGenerationPrompt(
-        scenePose: scene.prose,
-        knownEntityNames: knownNames
-    )
-    let a2Schema = EntityDiscovery.candidateGenerationJSONSchema()
-    let (rawCands, stageARetried, stageAError) = runStageA2WithRetry(
-        prompt: a2Prompt,
-        schema: a2Schema,
-        knownNames: knownNames,
-        sceneId: scene.id
-    )
+    let rawCands: [EntityDiscovery.Candidate]
+    let stageARetried: Bool
+    let stageAError: String?
+    if detectorMode == "gliner" {
+        logProgress("[\(scene.id)] GLiNER detection ...")
+        switch glinerDetectSync(prose: scene.prose) {
+        case .success(let cands):
+            rawCands = cands
+            stageARetried = false
+            stageAError = nil
+        case .failure(let err):
+            rawCands = []
+            stageARetried = false
+            stageAError = "gliner: \(err)"
+        }
+    } else {
+        logProgress("[\(scene.id)] Stage A2 — candidate gen ...")
+        let a2Prompt = EntityDiscovery.buildCandidateGenerationPrompt(
+            scenePose: scene.prose,
+            knownEntityNames: knownNames
+        )
+        let a2Schema = EntityDiscovery.candidateGenerationJSONSchema()
+        (rawCands, stageARetried, stageAError) = runStageA2WithRetry(
+            prompt: a2Prompt,
+            schema: a2Schema,
+            knownNames: knownNames,
+            sceneId: scene.id
+        )
+    }
     var candidates = rawCands
     logProgress("[\(scene.id)]   got \(candidates.count) candidates\(stageARetried ? " (after retry)" : "")")
 
@@ -502,7 +557,8 @@ func renderReport(results: [PipelineSceneResult], aggregate: EntityDiscoveryScor
     var out = ""
     out += "# EntityDiscoverySpike — live eval report\n\n"
     out += "**Generated**: \(ISO8601DateFormatter().string(from: Date()))  \n"
-    out += "**Model**: \(ollamaModel) (at \(ollamaURLString))  \n"
+    out += "**Detector**: \(detectorMode == "gliner" ? "GLiNER (native NER)" : "LLM Stage A2")  \n"
+    out += "**Model** (Stage D normalisation): \(ollamaModel) (at \(ollamaURLString))  \n"
     out += "**Fixture**: \(fixtureRelativePath)  \n"
     out += "**Scenes**: \(results.count)\n\n"
 
