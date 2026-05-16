@@ -206,6 +206,7 @@ let suites: [TestSuite] = [
     phase10BibleWorkspaceIntentRelationshipTests(),
     phase9CandidateLineFormatTests(),
     phase10RelationshipLineFormatTests(),
+    glinerRuntimeTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
