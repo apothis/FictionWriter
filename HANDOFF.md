@@ -1243,3 +1243,61 @@ Final state: end-to-end working in Loom.app. User opens scene → ledger fires �
 5. **Writer-model A/B against Goetia** — user has Goetia downloaded; needs to load in koboldcpp at the writer URL and exercise to confirm prose quality vs the current Gemma-4 31B Deckard Heretic. Mistral-V7 template + per-family samplers should auto-apply.
 
 **Phase 9 entity discovery is shippable.** The full feature loop works in `Loom.app`. The plan-doc reads "PROCEED" at §6.4. 1448/1448 tests green. Next session's load-bearing question is no longer "build this?" — it's "does it surface useful entities on real prose?"
+
+### 15.18 Session ledger — 2026-05-16 (Phase 10 Character Relationships — Part B webview)
+
+Picked up Phase 10 with the entire relationship-discovery backend already
+shipped (commits `fb5baf8` → `e9fae52`): temporal `Relationship` model,
+`RelationshipDiscovery` prompt/schema/parser, the Ollama extractor,
+`RelationshipConflict` (exclusive-kind heuristic + `conflictingCurrent` +
+`applyAccepted` with never-delete temporal demotion), `ProposedRelationshipsStore`,
+`AppState.runRelationshipDiscovery`, and `BibleWorkspaceSnapshot.proposedRelationships`.
+Part B — the React webview — was the only thing left. Three commits, all on
+`main`. Tests 1524 → 1535 (+11).
+
+- `302fc97` **B/2 — accept/reject bridge intents.** New `BibleWorkspaceIntent`
+  cases `acceptRelationshipProposal(proposalId:, demoteConflicting:)` +
+  `rejectRelationshipProposal(proposalId:)`, the `BibleWorkspaceWindowController`
+  dispatcher cases, and `AppState.acceptRelationshipProposal` /
+  `rejectRelationshipProposal`. Accept resolves the proposal's from/to names to
+  bible Character UUIDs (new pure `RelationshipConflict.resolveCharacter` —
+  name/alias, case-insensitive), merges the edge via `applyAccepted`, updates the
+  from-character, removes the proposal. `SnapshotProposedRelationship` gained
+  `conflictsWithCurrent: [String]` — resolved Swift-side in
+  `buildProposedRelationshipSnapshots` via `RelationshipConflict.conflictingCurrent`
+  so the exclusive-kind classifier never gets duplicated into TS. TDD: intent
+  encode/round-trip suite + `resolveCharacter` cases + the `conflictsWithCurrent`
+  forward-load case.
+- `0394534` **B/3 — relationship-proposals review view.**
+  `RelationshipProposalsQueue.tsx` mirrors `EntityProposalsQueue` — flat
+  accept/reject list (`from → kind → to`, current/past pill, evidence). Accepting
+  a proposal with non-empty `conflictsWithCurrent` opens an **in-React**
+  demote-confirm modal (demote-to-past / keep-both / cancel) — an in-React modal
+  rather than `window.confirm` because the workspace `WKWebView` has no
+  `WKUIDelegate`. Sky-toned header badge in `EntityList`.
+- `afe85d0` **B/4 — N×N relationship matrix.** `RelationshipMatrix.tsx` — rows =
+  from-character, cols = to-character, cells the directed edges; current = accent
+  pill, past = struck-through muted pill; cell click opens the row character's
+  editor. Reached via a "Relationship matrix →" action on the Characters section
+  header (≥2 characters). Also brought the stale TS `Relationship` mirror up to
+  date with the Phase 10 Swift model (optional `status` + `sourceSceneId`).
+
+All three React views vite-dev smoke-verified with mock snapshots: queue render,
+demote-dialog 3-way resolution, intent wire shapes inspected via mock
+`postMessage`, matrix render across current/past/empty/diagonal cells, cell-click
+→ CharacterEditor. No console errors.
+
+#### Open follow-ups carried forward
+
+1. **Live smoke of Phase 10 in the user's actual project** — the unit tests +
+   vite mocks don't prove the discovery→queue→accept→matrix loop fires correctly
+   against real ledger events and a real on-disk bible. Highest-value next step.
+2. Phase 9 carryovers #5 / #6 / v2 items and the Phase 9 live-smoke item (§15.17)
+   still stand.
+3. **Writer-model A/B against Goetia** — still open from §15.17.
+
+**Phase 10 Character Relationships is feature-complete.** Backend (Part A) +
+webview (Part B) both shipped; 1535/1535 tests green. The loop — discover
+relationships in a scene → review queue → accept (with demote-on-conflict) →
+matrix grid — works end to end in code. Load-bearing next question: does it hold
+up on real prose in the user's project?
