@@ -123,6 +123,54 @@ public enum GLiNERInputs {
         return words
     }
 
+    /// Split `words` into windows of at most `maxWords`, broken at
+    /// sentence boundaries.
+    ///
+    /// GLiNER's `max_len` is 384 words; a scene longer than that must
+    /// be processed in chunks. Windowing at sentence boundaries means
+    /// no entity (always within a sentence) is split across a window
+    /// edge, so per-window detection results simply concatenate — no
+    /// boundary dedup needed. A single sentence longer than `maxWords`
+    /// is hard-split as a last resort.
+    public static func wordWindows(words: [Word], maxWords: Int) -> [[Word]] {
+        guard words.count > maxWords, maxWords > 0 else { return words.isEmpty ? [] : [words] }
+
+        // A terminator word (the splitter emits punctuation as its own
+        // word) ends a sentence.
+        let terminators: Set<String> = [".", "!", "?"]
+        var sentences: [[Word]] = []
+        var sentence: [Word] = []
+        for word in words {
+            sentence.append(word)
+            if terminators.contains(word.text) {
+                sentences.append(sentence)
+                sentence = []
+            }
+        }
+        if !sentence.isEmpty { sentences.append(sentence) }
+
+        var windows: [[Word]] = []
+        var window: [Word] = []
+        for sentence in sentences {
+            if !window.isEmpty, window.count + sentence.count > maxWords {
+                windows.append(window)
+                window = []
+            }
+            if sentence.count > maxWords {
+                if !window.isEmpty { windows.append(window); window = [] }
+                var i = 0
+                while i < sentence.count {
+                    windows.append(Array(sentence[i..<min(i + maxWords, sentence.count)]))
+                    i += maxWords
+                }
+            } else {
+                window.append(contentsOf: sentence)
+            }
+        }
+        if !window.isEmpty { windows.append(window) }
+        return windows
+    }
+
     /// `span_idx` — every candidate `(startWord, endWord)` pair. For
     /// each start word `s` in `0…wordCount-1` and width `w` in
     /// `0…maxSpanWidth-1`, the pair `[s, s + w]` (both inclusive).

@@ -19,6 +19,11 @@ public final class GLiNERDetector {
     /// probability exceeds this. Matches GLiNER's Python default.
     public static let defaultThreshold = 0.5
 
+    /// Max words per inference window. GLiNER's `max_len` is 384 words;
+    /// 300 leaves headroom for the label prompt and subword expansion.
+    /// Longer scenes are windowed at sentence boundaries.
+    public static let maxWindowWords = 300
+
     /// Load the detector from the exported GLiNER resource bundle.
     /// Throws `GLiNERRuntime.RuntimeError.modelBundleMissing` when the
     /// bundle hasn't been exported.
@@ -40,8 +45,32 @@ public final class GLiNERDetector {
         let words = GLiNERInputs.splitWords(text)
         guard !words.isEmpty, !labels.isEmpty else { return [] }
 
-        let numWords = words.count
-        let inputs = tokenizer.buildInputs(words: words.map(\.text), labels: labels)
+        // Long scenes exceed GLiNER's max_len — window at sentence
+        // boundaries and concatenate. Entities never cross a sentence
+        // edge, so per-window results need no boundary dedup; char
+        // offsets stay absolute because each Word keeps its source span.
+        var entities: [GLiNEREntity] = []
+        for window in GLiNERInputs.wordWindows(words: words, maxWords: Self.maxWindowWords) {
+            entities += try detectWindow(
+                windowWords: window,
+                labels: labels,
+                sourceText: text,
+                threshold: threshold
+            )
+        }
+        return entities
+    }
+
+    /// Run inference over one word-window and decode its entities.
+    private func detectWindow(
+        windowWords: [GLiNERInputs.Word],
+        labels: [String],
+        sourceText: String,
+        threshold: Double
+    ) throws -> [GLiNEREntity] {
+        let numWords = windowWords.count
+        guard numWords > 0 else { return [] }
+        let inputs = tokenizer.buildInputs(words: windowWords.map(\.text), labels: labels)
         let seqLen = inputs.inputIDs.count
         let spans = GLiNERInputs.spanIndices(wordCount: numWords)
         let spanMask = GLiNERInputs.spanMask(wordCount: numWords)
@@ -72,8 +101,8 @@ public final class GLiNERDetector {
             logits: logits,
             numWords: numWords,
             labels: labels,
-            words: words,
-            sourceText: text,
+            words: windowWords,
+            sourceText: sourceText,
             threshold: threshold
         )
     }

@@ -111,5 +111,42 @@ func glinerInputsTests() -> TestSuite {
         try expectEqual(GLiNERInputs.spanMask(wordCount: 8), expectedMask)
     }
 
+    s.test("wordWindows returns the whole text as one window when under the limit") {
+        let words = GLiNERInputs.splitWords("Marek drew the dagger.")
+        let windows = GLiNERInputs.wordWindows(words: words, maxWords: 300)
+        try expectEqual(windows.count, 1)
+        try expectEqual(windows[0].count, words.count)
+    }
+
+    s.test("wordWindows splits at sentence boundaries, each window under the limit") {
+        // 6 three-word sentences ("a b c." = 4 words each → 24 words).
+        let prose = Array(repeating: "a b c.", count: 6).joined(separator: " ")
+        let words = GLiNERInputs.splitWords(prose)
+        let windows = GLiNERInputs.wordWindows(words: words, maxWords: 9)
+        // 9-word cap → 2 sentences (8 words) per window → 3 windows.
+        try expectEqual(windows.count, 3)
+        for w in windows {
+            try expect(w.count <= 9, "window of \(w.count) exceeds cap")
+        }
+        // No word is dropped or duplicated.
+        try expectEqual(windows.reduce(0) { $0 + $1.count }, words.count)
+        // Every window ends on a sentence terminator.
+        for w in windows {
+            try expectEqual(w.last?.text, ".")
+        }
+    }
+
+    s.test("wordWindows hard-splits a single sentence longer than the limit") {
+        // One 20-word sentence, cap 8.
+        let prose = Array(repeating: "w", count: 19).joined(separator: " ") + " end."
+        let words = GLiNERInputs.splitWords(prose)  // 21 words incl. "."
+        let windows = GLiNERInputs.wordWindows(words: words, maxWords: 8)
+        try expect(windows.count >= 3, "expected hard-split into 3+ windows")
+        for w in windows {
+            try expect(w.count <= 8, "window of \(w.count) exceeds cap")
+        }
+        try expectEqual(windows.reduce(0) { $0 + $1.count }, words.count)
+    }
+
     return s
 }

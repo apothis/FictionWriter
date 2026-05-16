@@ -45,5 +45,42 @@ func glinerDetectorTests() -> TestSuite {
         }
     }
 
+    s.test("detects entities across windows in a scene longer than the word limit") {
+        let detector: GLiNERDetector
+        do {
+            detector = try awaitSync { try await GLiNERDetector() }
+        } catch GLiNERRuntime.RuntimeError.modelBundleMissing {
+            return  // bundle is gitignored + regenerated locally.
+        }
+
+        // 60 repetitions of the 8-word fixture sentence → 480 words,
+        // well past the 300-word window cap → multiple windows. The
+        // single-window path can't process this much text at all.
+        let sentence = "Marek drew the dagger in the cathedral. "
+        let repetitions = 60
+        let longText = String(repeating: sentence, count: repetitions)
+
+        let entities = try detector.detect(
+            text: longText,
+            labels: ["character", "place", "object"]
+        )
+
+        try expect(!entities.isEmpty, "no entities detected in the long scene")
+        // Entities surface from the tail of the text — proof a later
+        // window ran, not just the first 300 words.
+        let maxStart = entities.map(\.start).max() ?? 0
+        try expect(maxStart > GLiNERDetector.maxWindowWords * 5,
+                   "max entity start \(maxStart) — later windows produced nothing")
+        // Offsets stay absolute across windows — each entity's char
+        // span slices back to exactly its reported text.
+        let scalars = Array(longText.unicodeScalars)
+        for e in entities {
+            try expect(e.start >= 0 && e.end <= scalars.count && e.start < e.end,
+                       "out-of-range span \(e.start)..<\(e.end)")
+            let slice = String(String.UnicodeScalarView(scalars[e.start..<e.end]))
+            try expectEqual(slice, e.text)
+        }
+    }
+
     return s
 }
