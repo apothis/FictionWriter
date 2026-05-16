@@ -300,5 +300,40 @@ func phase9GrammarsAndPromptsTests() -> TestSuite {
         }
     }
 
+    s.test("sanitizeAliases keeps surface variants sharing a name token") {
+        let out = EntityDiscovery.sanitizeAliases(
+            ["Dr. Thorn", "Marius", "Thorn"], canonicalName: "Marius Thorn"
+        )
+        try expectEqual(out, ["Dr. Thorn", "Marius", "Thorn"])
+    }
+
+    s.test("sanitizeAliases drops aliases that conflate a different entity") {
+        // Observed on explicit prose: gemma listed every name in the
+        // scene as an alias of whichever entity it was normalising.
+        let out = EntityDiscovery.sanitizeAliases(
+            ["Megan", "Mistress", "Miss Abby"], canonicalName: "Megan"
+        )
+        // "Megan" repeats the canonical (dropped); "Mistress" is a bare
+        // title; "Miss Abby" shares no name token with "Megan".
+        try expectEqual(out, [])
+    }
+
+    s.test("sanitizeAliases keeps a title-prefixed variant of the same name") {
+        let out = EntityDiscovery.sanitizeAliases(
+            ["Abby", "Miss Abby", "Megan"], canonicalName: "Miss Abby"
+        )
+        // "Abby" shares the token; "Miss Abby" repeats canonical;
+        // "Megan" is a different person.
+        try expectEqual(out, ["Abby"])
+    }
+
+    s.test("Stage D parser: strips conflated aliases from a normalised entity") {
+        let raw = "{\"kind\":\"character\",\"canonical_name\":\"Judy\","
+            + "\"aliases\":[\"Judy\",\"Allie\"],\"one_line\":\"x\",\"evidence_quote\":\"x\"}"
+        let ent = try EntityDiscovery.parseNormalisedEntity(raw)
+        try expectEqual(ent.canonicalName, "Judy")
+        try expectEqual(ent.aliases, [])
+    }
+
     return s
 }

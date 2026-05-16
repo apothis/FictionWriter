@@ -589,6 +589,51 @@ public enum EntityDiscovery {
         return seenOrder.compactMap { bucket[$0] }
     }
 
+    /// Titles + determiners that carry no identity — excluded when
+    /// comparing a candidate alias against its canonical name, so
+    /// "Miss Abby" and "Miss Megan" aren't treated as the same person.
+    static let nameStopwords: Set<String> = [
+        "the", "a", "an", "of", "and",
+        "mr", "mrs", "ms", "miss", "dr", "doctor", "sir", "lady", "lord",
+        "madam", "madame", "master", "mistress", "captain", "professor",
+        "prof", "rev", "st", "saint",
+    ]
+
+    /// The significant (non-stopword) lowercased word tokens of a name.
+    static func significantNameTokens(_ name: String) -> Set<String> {
+        let tokens = name.lowercased().split { !$0.isLetter && !$0.isNumber }
+        return Set(tokens.map(String.init).filter { !nameStopwords.contains($0) })
+    }
+
+    /// Filter LLM-emitted aliases down to genuine surface variants of
+    /// `canonicalName`.
+    ///
+    /// An alias survives only if it shares a significant word token
+    /// with the canonical name (so "Dr. Thorn" is a valid alias of
+    /// "Marius Thorn", but "Miss Abby" is not an alias of "Megan").
+    /// This is structural enforcement against the LLM conflating
+    /// distinct characters into one entity's alias list — observed on
+    /// explicit prose, where gemma listed every name in the scene as
+    /// an alias of whichever entity it was normalising. The alias that
+    /// merely repeats the canonical name is dropped as redundant.
+    public static func sanitizeAliases(_ aliases: [String], canonicalName: String) -> [String] {
+        let canonTokens = significantNameTokens(canonicalName)
+        let canonLower = canonicalName
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var seen = Set<String>()
+        var out: [String] = []
+        for alias in aliases {
+            let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let lower = trimmed.lowercased()
+            if lower == canonLower || seen.contains(lower) { continue }
+            guard !significantNameTokens(trimmed).isDisjoint(with: canonTokens) else { continue }
+            seen.insert(lower)
+            out.append(trimmed)
+        }
+        return out
+    }
+
     public static func parseNormalisedEntity(_ raw: String) throws -> NormalisedEntity {
         guard let first = raw.firstIndex(of: "{") else {
             throw ParseError.noJSONObjectFound
@@ -623,7 +668,7 @@ public enum EntityDiscovery {
         return NormalisedEntity(
             kind: kind,
             canonicalName: name,
-            aliases: r.aliases ?? [],
+            aliases: sanitizeAliases(r.aliases ?? [], canonicalName: name),
             oneLine: oneLine,
             evidenceQuote: quote
         )
