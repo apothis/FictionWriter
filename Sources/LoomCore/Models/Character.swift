@@ -100,15 +100,52 @@ public enum CharacterRole: String, Codable, Equatable, CaseIterable {
     case protagonist, antagonist, supporting, minor, narrator
 }
 
+/// Phase 10 — whether a relationship is live in the story's present
+/// or has been superseded. A past relationship is retained, not
+/// deleted: when A's partner changes from B to C, B becomes `.past`.
+public enum RelationshipStatus: String, Codable, Equatable, CaseIterable {
+    case current
+    case past
+}
+
 public struct Relationship: Codable, Equatable {
     public var toCharacterId: UUID
     public var kind: String
+    /// Phase 10 — temporal status. Existing project files have no
+    /// `status`; forward-load defaults to `.current` (an edge on
+    /// disk is assumed live until prose demotes it).
+    public var status: RelationshipStatus
     public var notes: String
+    /// Phase 10 — scene the edge was last observed in. Lets
+    /// relationship discovery dedup against prior runs and anchor
+    /// status transitions to a point in the story.
+    public var sourceSceneId: UUID?
 
-    public init(toCharacterId: UUID, kind: String, notes: String = "") {
+    public init(
+        toCharacterId: UUID,
+        kind: String,
+        status: RelationshipStatus = .current,
+        notes: String = "",
+        sourceSceneId: UUID? = nil
+    ) {
         self.toCharacterId = toCharacterId
         self.kind = kind
+        self.status = status
         self.notes = notes
+        self.sourceSceneId = sourceSceneId
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case toCharacterId, kind, status, notes, sourceSceneId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        toCharacterId = try c.decode(UUID.self, forKey: .toCharacterId)
+        kind = try c.decode(String.self, forKey: .kind)
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        status = try c.decodeIfPresent(RelationshipStatus.self, forKey: .status) ?? .current
+        sourceSceneId = try c.decodeIfPresent(UUID.self, forKey: .sourceSceneId)
     }
 }
 
