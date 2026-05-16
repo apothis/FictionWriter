@@ -114,3 +114,26 @@ enum TestRunner {
         return (failures.isEmpty && threw.isEmpty) ? 0 : 1
     }
 }
+
+/// Run an async operation from a synchronous (TestKit) context. The
+/// work runs on a detached task off the MainActor, so blocking the
+/// caller on the semaphore cannot deadlock.
+func awaitSync<T>(_ body: @escaping @Sendable () async throws -> T) throws -> T {
+    let semaphore = DispatchSemaphore(value: 0)
+    let box = AwaitResultBox<T>()
+    Task.detached {
+        do { box.value = .success(try await body()) }
+        catch { box.value = .failure(error) }
+        semaphore.signal()
+    }
+    semaphore.wait()
+    switch box.value {
+    case .success(let v): return v
+    case .failure(let e): throw e
+    case .none: throw TestFailure(message: "awaitSync produced no result", file: #file, line: #line)
+    }
+}
+
+private final class AwaitResultBox<T>: @unchecked Sendable {
+    var value: Result<T, Error>?
+}
