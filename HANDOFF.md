@@ -1511,3 +1511,31 @@ eval on real scenes, and fixed the two issues it surfaced. 5 commits on
 **1596/1596 tests green.** GLiNER entity detection is production-quality —
 100% F1 on both the graded fixture and `test2`'s explicit scenes. The residual
 discovery cost is Stage D latency, not correctness.
+
+### 15.22 Session ledger — 2026-05-16 (Stage D latency)
+
+Continuation of §15.21. Attacked Stage D normalisation latency on the `test2`
+explicit scenes. 2 commits on `main`. Tests 1596 → 1599. F1 stayed 100%
+throughout.
+
+- **Batch Stage D — tried, reverted.** Folded all survivors into one LLM call
+  (scene sent once) with a delimited-line output. gemma ignored the line
+  format, emitted JSON, and normalised only the *first* candidate — it will
+  not complete a multi-entity normalisation in one call. Reverted; the
+  per-candidate path stands.
+- **Trim — committed.** The normalisation instruction now caps `one_line` at
+  20 words; gemma was emitting paragraph-long descriptions. ~20-30s/scene
+  saved, and the descriptions are genuinely better.
+- **Scene windowing — committed.** `EntityDiscovery.sceneWindow` clips the
+  Stage D prompt to ±150 words around the entity's first mention instead of
+  re-sending the whole scene per candidate. That per-candidate prompt-eval of
+  a long scene was the dominant cost.
+
+Cumulative: test2 Stage D latency **93.6s → 52.5s/scene** (Scene 1, 2
+survivors: 33.7s; Scene 2, 5 survivors: 71.3s). Still over the §1 ≤30s target
+on high-survivor scenes — discovery is a background, non-blocking operation so
+this is tolerable, but the next lever is dropping Stage D's `format` schema
+constraint (grammar-constrained sampling is slower; §15.19 already dropped it
+for Stage A2) or a faster Stage D model.
+
+**1599/1599 tests green.**
