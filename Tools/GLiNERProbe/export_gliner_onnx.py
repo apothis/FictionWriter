@@ -50,6 +50,50 @@ REQUIRED_ASSETS = [
 ]
 
 
+def retype_span_mask_to_int64(model_path: Path) -> None:
+    """Graph surgery: retype the `span_mask` input from bool to int64.
+
+    GLiNER's ONNX graph declares `span_mask` as `tensor(bool)`, but ONNX
+    Runtime's Objective-C API (the one Loom links) exposes no bool
+    element type — there is no way to build a bool `ORTValue`. Rather
+    than carry a runtime workaround, retype the input to int64 and splice
+    a `Cast`-to-bool node in front of its single consumer, so the Swift
+    side feeds an int64 0/1 tensor and the graph is otherwise untouched.
+
+    Idempotent: a second run on an already-patched model is a no-op.
+    """
+    import onnx
+    from onnx import TensorProto, helper
+
+    model = onnx.load(str(model_path))
+    graph = model.graph
+    span_mask_in = next((i for i in graph.input if i.name == "span_mask"), None)
+    if span_mask_in is None:
+        raise RuntimeError("export has no `span_mask` graph input")
+    if span_mask_in.type.tensor_type.elem_type == TensorProto.INT64:
+        print("  span_mask already int64 — skipping surgery")
+        return
+
+    span_mask_in.type.tensor_type.elem_type = TensorProto.INT64
+    casted = "span_mask_bool"
+    for node in graph.node:
+        for idx, name in enumerate(node.input):
+            if name == "span_mask":
+                node.input[idx] = casted
+    cast = helper.make_node(
+        "Cast", ["span_mask"], [casted], to=TensorProto.BOOL, name="CastSpanMaskToBool"
+    )
+    graph.node.insert(0, cast)
+    # No `onnx.checker.check_model` here: the quantized export already
+    # trips the strict topological-sort check inside an `If` subgraph
+    # (a pre-existing quirk unrelated to this surgery). The Cast node is
+    # inserted at index 0 and depends only on a graph input, so it is
+    # itself correctly ordered; verify_gliner_onnx.py + the Swift
+    # fixture test confirm the patched graph runs and decodes correctly.
+    onnx.save(model, str(model_path))
+    print("  span_mask retyped bool → int64 (+ Cast-to-bool node)")
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[2]
     out_dir = (
@@ -87,6 +131,11 @@ def main() -> int:
     fp32 = out_dir / "model.onnx"
     if fp32.exists():
         fp32.unlink()
+
+    # Retype the bool `span_mask` input so ONNX Runtime's Objective-C
+    # API (no bool element type) can feed it as int64.
+    print("patching span_mask input type …", flush=True)
+    retype_span_mask_to_int64(out_dir / "model_quantized.onnx")
 
     # swift-transformers' tokenizer factory selects the model class
     # from tokenizer_config.json's `tokenizer_class`; it has no
