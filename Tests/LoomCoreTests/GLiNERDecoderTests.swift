@@ -79,5 +79,36 @@ func glinerDecoderTests() -> TestSuite {
         }
     }
 
+    s.test("width cap discards spans wider than a plausible name") {
+        // 12 single-letter words; 1 class.
+        let numWords = 12, classes = 1
+        let words = (0..<numWords).map {
+            GLiNERInputs.Word(text: "w", start: $0 * 2, end: $0 * 2 + 1)
+        }
+        let sourceText = Array(repeating: "w", count: numWords).joined(separator: " ")
+
+        // Two high-logit spans: an 11-word span [0,10] and a 1-word
+        // span [11,11]. Flat idx = s*12 + k (numClasses == 1).
+        var logits = [Float](repeating: -10, count: numWords * 12 * classes)
+        logits[0 * 12 + 10] = 10   // span [0,10] — 11 words wide
+        logits[11 * 12 + 0] = 10   // span [11,11] — 1 word
+
+        // Default cap (8) drops the 11-word span.
+        let capped = GLiNERDecoder.decode(
+            logits: logits, numWords: numWords, labels: ["x"],
+            words: words, sourceText: sourceText, threshold: 0.5
+        )
+        try expectEqual(capped.count, 1)
+        try expectEqual(capped[0].start, words[11].start)
+
+        // Lifting the cap to the full head width lets it back through.
+        let uncapped = GLiNERDecoder.decode(
+            logits: logits, numWords: numWords, labels: ["x"],
+            words: words, sourceText: sourceText, threshold: 0.5,
+            maxEntityWords: 12
+        )
+        try expectEqual(uncapped.count, 2)
+    }
+
     return s
 }

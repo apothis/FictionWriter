@@ -25,6 +25,15 @@ public struct GLiNEREntity: Equatable {
 /// validity-filter → greedy non-overlapping selection → word-span →
 /// char-offset mapping.
 public enum GLiNERDecoder {
+    /// Upper bound on an entity's word span. GLiNER's head enumerates
+    /// spans up to 12 words wide, but a fiction character/place/object
+    /// *name* is short — even "Dr. Marius Thorn von Habsburg" is well
+    /// under this. On dense prose the quantized model occasionally
+    /// emits a high-confidence wide span ("Muriel rolled on her belly
+    /// and Chantal followed suit. Muriel"); capping the width discards
+    /// those without touching any plausible name.
+    public static let defaultMaxEntityWords = 8
+
     /// Decode flattened span logits into non-overlapping entities.
     ///
     /// - Parameters:
@@ -36,13 +45,16 @@ public enum GLiNERDecoder {
     ///   - sourceText: original prose, for slicing entity text.
     ///   - threshold: a span is kept iff `sigmoid(logit) > threshold`
     ///     (strict — matching GLiNER's `torch.where(probs > t)`).
+    ///   - maxEntityWords: spans wider than this are discarded as
+    ///     non-names (see `defaultMaxEntityWords`).
     public static func decode(
         logits: [Float],
         numWords: Int,
         labels: [String],
         words: [GLiNERInputs.Word],
         sourceText: String,
-        threshold: Double
+        threshold: Double,
+        maxEntityWords: Int = defaultMaxEntityWords
     ) -> [GLiNEREntity] {
         guard numWords > 0, !labels.isEmpty, words.count >= numWords else { return [] }
         let numClasses = labels.count
@@ -63,6 +75,9 @@ public enum GLiNERDecoder {
                 // logit on out-of-range span rows — keeping them would
                 // surface phantom entities.
                 guard s + k + 1 <= numWords else { continue }
+                // Width cap: a span wider than a plausible name is a
+                // model artefact, not an entity.
+                guard k + 1 <= maxEntityWords else { continue }
                 for c in 0..<numClasses {
                     let idx = ((s * maxWidth) + k) * numClasses + c
                     guard idx < logits.count else { continue }
