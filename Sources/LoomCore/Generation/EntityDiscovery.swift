@@ -253,6 +253,9 @@ public enum EntityDiscovery {
         case noJSONArrayFound
         case noJSONObjectFound
         case malformedJSON
+        /// Stage A2 line output had no parseable candidate lines even
+        /// after a retry — the model never produced the list format.
+        case noParseableCandidates
     }
 
     /// Collapse Stage A2 candidates sharing a surface form (case-
@@ -344,6 +347,68 @@ public enum EntityDiscovery {
 
         Emit the JSON array.
         """
+    }
+
+    /// Stage A2 prompt asking for a **line list** rather than a JSON
+    /// array. Small models reliably emit a delimited line list but
+    /// flake when juggling nested-JSON syntax — there are no braces,
+    /// quotes or commas to balance, and a truncated emit still yields
+    /// every complete line. Parsed by `parseCandidateLines`.
+    public static func buildCandidateListPrompt(
+        scenePose: String,
+        knownEntityNames: [String]
+    ) -> String {
+        let knownJSON: String = {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = (try? encoder.encode(knownEntityNames)) ?? Data()
+            return String(data: data, encoding: .utf8) ?? "[]"
+        }()
+        return """
+        You are an indexing tool that catalogues the named entities in a manuscript. You do not summarise, judge, or comment on the text — you only list the entities it contains.
+
+        \(Self.candidateGenerationPromptInstruction)
+
+        Do NOT list entities already in this known list:
+        \(knownJSON)
+
+        Output one entity per line, and nothing else — no preamble, no JSON, no commentary. Each line must have exactly three fields separated by " | ":
+        kind | surface | quote
+        where kind is character, place, or object; surface is the entity name exactly as written in the scene; and quote is a short verbatim phrase from the scene where the entity first appears.
+
+        Scene:
+        \(scenePose)
+
+        Begin the list now.
+        """
+    }
+
+    /// Parse the line-based Stage A2 output: one entity per line,
+    /// `kind | surface | quote`. Tolerant — skips blank lines, header
+    /// noise, lines without the three pipe-delimited fields, and
+    /// unrecognised kinds. Never throws: 0 results means the model
+    /// produced nothing parseable (the caller decides retry vs empty).
+    public static func parseCandidateLines(_ raw: String) -> [Candidate] {
+        var out: [Candidate] = []
+        for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: true) {
+            let line = rawLine.drop(while: { lineLeadingNoiseCharacters.contains($0) })
+            // maxSplits 2 so a pipe inside the quote stays intact.
+            let parts = line.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
+            guard parts.count == 3 else { continue }
+            let kindStr = String(parts[0]).trimmingCharacters(in: .whitespaces).lowercased()
+            let surface = String(parts[1]).trimmingCharacters(in: .whitespaces)
+            let quote = String(parts[2]).trimmingCharacters(in: .whitespaces)
+            // Substring match — the model sometimes elaborates the
+            // kind word ("significant object", "named place").
+            let kind: Kind
+            if kindStr.contains("character") { kind = .character }
+            else if kindStr.contains("place") { kind = .place }
+            else if kindStr.contains("object") { kind = .object }
+            else { continue }
+            guard !surface.isEmpty else { continue }
+            out.append(Candidate(surface: surface, kind: kind, firstSeenQuote: quote))
+        }
+        return out
     }
 
     /// Parser tolerant of preamble / postamble and mid-array
@@ -564,6 +629,15 @@ public enum EntityDiscovery {
         )
     }
 }
+
+/// Tokens that may lead a discovery output line as a bullet /
+/// numbering marker the model adds unprompted. Stripped before
+/// parsing — a real first field (a `kind` word or a character name)
+/// starts with a letter, so this never eats meaningful content.
+let lineLeadingNoiseCharacters: Set<Swift.Character> = [
+    "-", "*", "•", ".", ")", " ", "\t",
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+]
 
 /// A `CodingKey` that accepts any string — lets the discovery
 /// parsers probe several candidate field names for the same value

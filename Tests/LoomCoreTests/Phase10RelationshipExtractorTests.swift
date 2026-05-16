@@ -33,10 +33,9 @@ func phase10RelationshipExtractorTests() -> TestSuite {
     }
 
     func relResponse(_ rels: [(String, String, String, String)]) -> String {
-        let items = rels.map { r in
-            "{\"from\":\"\(r.0)\",\"to\":\"\(r.1)\",\"kind\":\"\(r.2)\",\"status\":\"\(r.3)\",\"evidence_quote\":\"q\"}"
-        }.joined(separator: ",")
-        return "[\(items)]"
+        // (from, to, kind, status) tuples → `from | to | kind | status | quote` lines.
+        rels.map { r in "\(r.0) | \(r.1) | \(r.2) | \(r.3) | q" }
+            .joined(separator: "\n")
     }
 
     let sceneId = UUID()

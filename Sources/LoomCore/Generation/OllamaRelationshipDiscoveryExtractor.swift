@@ -41,16 +41,15 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
             completion(.success([]))
             return
         }
-        let prompt = RelationshipDiscovery.buildDiscoveryPrompt(
+        // Line-list prompt, not a JSON array — a small model emits a
+        // delimited line list far more reliably than nested JSON
+        // (verified live 2026-05-16). Parsed by `parseRelationshipLines`.
+        let prompt = RelationshipDiscovery.buildDiscoveryListPrompt(
             scenePose: scenePose,
             characterNames: characterNames
         )
-        // Empty schema = unconstrained generation — Ollama's
-        // format-constrained mode flakes into empty-content failures
-        // (see OllamaEntityDiscoveryExtractor / live note 2026-05-16).
-        // The prompt pins the field names; the parser tolerates
-        // synonym keys. num_predict 4096 gives the edge array headroom
-        // to complete; truncation is recoverable per-object anyway.
+        // Empty schema = unconstrained generation. num_predict 4096
+        // gives the line list ample headroom.
         let schema: [String: Any] = [:]
         let options = OllamaChatOptions(numPredict: 4096)
         callWithRetry(
@@ -74,26 +73,16 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
             case .failure(let err):
                 completion(.failure(err))
             case .success(let raw):
-                do {
-                    let parsed = try RelationshipDiscovery.parseRelationships(raw)
-                    // Degenerate-empty: an open bracket + a partial
-                    // object that recovered nothing. Distinct from a
-                    // genuine no-relationship result (bare "[]" has no
-                    // "{") — re-roll.
-                    if parsed.isEmpty, raw.contains("{"), attemptsRemaining > 0 {
-                        DebugLog.shared.write("[relationships] 0 edges from non-empty output — retrying once")
-                        self.callWithRetry(
-                            prompt: prompt,
-                            schema: schema,
-                            options: options,
-                            attemptsRemaining: attemptsRemaining - 1,
-                            completion: completion
-                        )
-                        return
-                    }
-                    completion(.success(RelationshipDiscovery.dedupRelationships(parsed)))
-                } catch EntityDiscovery.ParseError.noJSONArrayFound where attemptsRemaining > 0 {
-                    DebugLog.shared.write("[relationships] parse failed (noJSONArrayFound) — retrying once")
+                let parsed = RelationshipDiscovery.parseRelationshipLines(raw)
+                // A response with real content but no parseable lines
+                // = the model derailed. Re-roll once. An empty result
+                // from a trivially-empty response is a legitimate
+                // no-relationship scene — reported as [].
+                let rawHasContent = raw.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                ).count > 2
+                if parsed.isEmpty, rawHasContent, attemptsRemaining > 0 {
+                    DebugLog.shared.write("[relationships] no parseable relationship lines — retrying once")
                     self.callWithRetry(
                         prompt: prompt,
                         schema: schema,
@@ -101,9 +90,9 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
                         attemptsRemaining: attemptsRemaining - 1,
                         completion: completion
                     )
-                } catch {
-                    completion(.failure(error))
+                    return
                 }
+                completion(.success(RelationshipDiscovery.dedupRelationships(parsed)))
             }
         }
     }

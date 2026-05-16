@@ -103,7 +103,15 @@ public final class OllamaClient {
         var body: [String: Any] = [
             "model": model,
             "messages": [["role": "user", "content": prompt]],
-            "stream": false,
+            // Streaming mode — load-bearing. Ollama's NON-streaming
+            // /api/chat with gemma4 intermittently returns an empty
+            // `message.content` despite a full token generation
+            // (`done: stop`, eval_count ~2000) — verified live
+            // 2026-05-16, ~2/3 on a dense scene. Streaming assembles
+            // the content per-chunk and does not hit that bug; the
+            // caller collects the whole newline-delimited body and
+            // concatenates (see parseChatResponseContent).
+            "stream": true,
             "options": options.asDictionary,
             // `keep_alive` overrides Ollama's default 5-minute unload
             // timer. With the default, a writer who pauses to think
@@ -126,19 +134,37 @@ public final class OllamaClient {
         return body
     }
 
-    /// Extract `message.content` from a non-streaming /api/chat
-    /// response. Throws `OllamaError.unexpectedShape` when the JSON
-    /// doesn't have the expected `{ message: { content: String } }`
-    /// shape (covers garbage payloads and `done`-only error frames).
+    /// Extract the assistant text from an /api/chat response body.
+    /// Handles both shapes: a single JSON object (non-streaming) and
+    /// a newline-delimited sequence of chunk objects (streaming) —
+    /// the latter is concatenated. Throws `OllamaError.unexpectedShape`
+    /// when no `message.content` is found anywhere (garbage payloads,
+    /// `done`-only error frames).
     public static func parseChatResponseContent(from data: Data) throws -> String {
-        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        // Non-streaming: the whole body is one JSON object.
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let msg = obj["message"] as? [String: Any],
+           let content = msg["content"] as? String {
+            return content
+        }
+        // Streaming: newline-delimited chunk objects; concatenate
+        // every chunk's `message.content`.
+        guard let text = String(data: data, encoding: .utf8) else {
             throw OllamaError.unexpectedShape
         }
-        guard let msg = obj["message"] as? [String: Any],
-              let content = msg["content"] as? String else {
-            throw OllamaError.unexpectedShape
+        var assembled = ""
+        var sawMessage = false
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let lineData = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  let msg = obj["message"] as? [String: Any],
+                  let content = msg["content"] as? String
+            else { continue }
+            assembled += content
+            sawMessage = true
         }
-        return content
+        guard sawMessage else { throw OllamaError.unexpectedShape }
+        return assembled
     }
 
     /// Fire a chat-extraction call. Completion runs on a background

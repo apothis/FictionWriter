@@ -15,7 +15,7 @@ import Foundation
 func phase4OllamaClientTests() -> TestSuite {
     let s = TestSuite("Phase4OllamaClient")
 
-    s.test("makeChatRequestBody emits model + messages + stream:false + format schema") {
+    s.test("makeChatRequestBody emits model + messages + stream:true + format schema") {
         let schema: [String: Any] = ["type": "array"]
         let body = OllamaClient.makeChatRequestBody(
             model: "gemma4_2b:latest",
@@ -25,7 +25,9 @@ func phase4OllamaClientTests() -> TestSuite {
         )
 
         try expectEqual(body["model"] as? String, "gemma4_2b:latest")
-        try expectEqual(body["stream"] as? Bool, false)
+        // Streaming — dodges Ollama's non-streaming empty-content bug
+        // with gemma4 (verified live 2026-05-16).
+        try expectEqual(body["stream"] as? Bool, true)
 
         let messages = try expectNotNil(body["messages"] as? [[String: String]])
         try expectEqual(messages.count, 1)
@@ -85,6 +87,17 @@ func phase4OllamaClientTests() -> TestSuite {
         """
         let content = try OllamaClient.parseChatResponseContent(from: Data(json.utf8))
         try expectEqual(content, "[{\"fact\":\"x\"}]")
+    }
+
+    s.test("parseChatResponseContent concatenates a streaming (newline-delimited) body") {
+        let body = """
+        {"model":"m","message":{"role":"assistant","content":"char"},"done":false}
+        {"model":"m","message":{"role":"assistant","content":"acter | "},"done":false}
+        {"model":"m","message":{"role":"assistant","content":"Mia | q"},"done":false}
+        {"model":"m","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}
+        """
+        let content = try OllamaClient.parseChatResponseContent(from: Data(body.utf8))
+        try expectEqual(content, "character | Mia | q")
     }
 
     s.test("parseChatResponseContent throws unexpectedShape when message field is missing") {

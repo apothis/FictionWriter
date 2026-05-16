@@ -45,7 +45,11 @@ public final class OllamaEntityDiscoveryExtractor: EntityDiscoveryExtractor {
         // names with proper-noun tokens (Fix 4) so the post-filter
         // catches surname-split candidates.
         let expandedKnown = EntityDiscovery.expandKnownNamesWithTokens(knownEntityNames)
-        let prompt = EntityDiscovery.buildCandidateGenerationPrompt(
+        // Line-list prompt, not a JSON array — a small model reliably
+        // emits `kind | surface | quote` lines but flakes on nested
+        // JSON syntax (verified live 2026-05-16). Parsed by
+        // `parseCandidateLines`.
+        let prompt = EntityDiscovery.buildCandidateListPrompt(
             scenePose: scenePose,
             knownEntityNames: expandedKnown
         )
@@ -91,15 +95,15 @@ public final class OllamaEntityDiscoveryExtractor: EntityDiscoveryExtractor {
             case .failure(let err):
                 completion(.failure(err))
             case .success(let raw):
-                let candidates: [EntityDiscovery.Candidate]
-                do {
-                    candidates = try EntityDiscovery.parseCandidates(raw)
-                } catch EntityDiscovery.ParseError.noJSONArrayFound where attemptsRemaining > 0 {
-                    // Mirror of OllamaBeatExtractor (commit 6b6e714):
-                    // Pass-A on NSFW shows ~30% transient parse fails
-                    // (preamble eats the open bracket). One retry
-                    // recovers most without costing a recall miss.
-                    DebugLog.shared.write("[proposals] Stage A2 parse failed (noJSONArrayFound) — retrying once")
+                let candidates = EntityDiscovery.parseCandidateLines(raw)
+                // Zero candidates from a scene of prose is almost
+                // always a derail (empty response, refusal, prose,
+                // wrong format) rather than a genuine entity-free
+                // scene — fiction always has at least one character.
+                // Re-roll once; a persistent zero is a failure so the
+                // caller can re-fire later rather than bank an empty.
+                if candidates.isEmpty, attemptsRemaining > 0 {
+                    DebugLog.shared.write("[proposals] Stage A2 produced no candidates — retrying once")
                     self.callStageA2WithRetry(
                         prompt: prompt,
                         schema: schema,
@@ -112,30 +116,11 @@ public final class OllamaEntityDiscoveryExtractor: EntityDiscoveryExtractor {
                         embedder: embedder,
                         completion: completion
                     )
-                    return
-                } catch {
-                    completion(.failure(error))
                     return
                 }
-                // Degenerate-empty: the model emitted an opening
-                // bracket and at least one partial object, then hit
-                // the cap with nothing recoverable. Distinct from a
-                // genuine null-discovery (a bare "[]" has no "{") —
-                // re-roll rather than report nothing.
-                if candidates.isEmpty, raw.contains("{"), attemptsRemaining > 0 {
-                    DebugLog.shared.write("[proposals] Stage A2 yielded 0 candidates from non-empty output — retrying once")
-                    self.callStageA2WithRetry(
-                        prompt: prompt,
-                        schema: schema,
-                        options: options,
-                        attemptsRemaining: attemptsRemaining - 1,
-                        scenePose: scenePose,
-                        sceneId: sceneId,
-                        expandedKnown: expandedKnown,
-                        existingEntities: existingEntities,
-                        embedder: embedder,
-                        completion: completion
-                    )
+                if candidates.isEmpty {
+                    DebugLog.shared.write("[proposals] Stage A2 produced no candidates after retries")
+                    completion(.failure(EntityDiscovery.ParseError.noParseableCandidates))
                     return
                 }
                 DebugLog.shared.write("[proposals] Stage A2 parsed \(candidates.count) candidates: \(candidates.map(\.surface))")

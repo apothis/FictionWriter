@@ -114,6 +114,36 @@ public enum RelationshipDiscovery {
         """
     }
 
+    /// Discovery prompt asking for a **line list** rather than a JSON
+    /// array. A small model emits a delimited line list far more
+    /// reliably than nested JSON; parsed by `parseRelationshipLines`.
+    public static func buildDiscoveryListPrompt(
+        scenePose: String,
+        characterNames: [String]
+    ) -> String {
+        let namesJSON: String = {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = (try? encoder.encode(characterNames)) ?? Data()
+            return String(data: data, encoding: .utf8) ?? "[]"
+        }()
+        return """
+        You are an indexing tool that catalogues the relationships between characters in a manuscript. You do not summarise or comment on the text — you only list relationships.
+
+        Identify the relationships between the characters listed below as they are shown in the scene. For each ordered pair of listed characters with a relationship evident in the scene, emit one line.
+
+        Output one relationship per line, and nothing else — no preamble, no JSON, no commentary. Each line must have exactly five fields separated by " | ":
+        from | to | kind | status | quote
+        where from and to are two of the characters named below; kind describes the relationship from "from"'s point of view (e.g. girlfriend, ex-boyfriend, father, rival, close friend); status is "current" if the relationship is live as of this scene or "past" if the scene shows it has ended; and quote is a short verbatim phrase from the scene that supports it. Only use characters from this list:
+        \(namesJSON)
+
+        Scene:
+        \(scenePose)
+
+        Begin the list now.
+        """
+    }
+
     public static func discoveryJSONSchema() -> [String: Any] {
         return [
             "type": "array",
@@ -146,6 +176,33 @@ public enum RelationshipDiscovery {
             }
         }
         return recoverPerObject(raw[first...])
+    }
+
+    /// Parse the line-based discovery output: one relationship per
+    /// line, `from | to | kind | status | quote`. Tolerant — skips
+    /// blank lines, header noise, lines without the five pipe-
+    /// delimited fields, and (per `parseRelationships`) defaults an
+    /// unrecognised status to `.current`. Never throws.
+    public static func parseRelationshipLines(_ raw: String) -> [ProposedRelationship] {
+        var out: [ProposedRelationship] = []
+        for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: true) {
+            let line = rawLine.drop(while: { lineLeadingNoiseCharacters.contains($0) })
+            // maxSplits 4 so a pipe inside the quote stays intact.
+            let parts = line.split(separator: "|", maxSplits: 4, omittingEmptySubsequences: false)
+            guard parts.count == 5 else { continue }
+            let from = String(parts[0]).trimmingCharacters(in: .whitespaces)
+            let to = String(parts[1]).trimmingCharacters(in: .whitespaces)
+            let kind = String(parts[2]).trimmingCharacters(in: .whitespaces)
+            let statusStr = String(parts[3]).trimmingCharacters(in: .whitespaces).lowercased()
+            let quote = String(parts[4]).trimmingCharacters(in: .whitespaces)
+            guard !from.isEmpty, !to.isEmpty, !kind.isEmpty else { continue }
+            let status = RelationshipStatus(rawValue: statusStr) ?? .current
+            out.append(ProposedRelationship(
+                fromName: from, toName: to, kind: kind,
+                status: status, evidenceQuote: quote
+            ))
+        }
+        return out
     }
 
     private struct RawRelationship: Decodable {

@@ -49,12 +49,10 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
     }
 
     func a2Response(_ candidates: [(String, String, String)]) -> String {
-        // Build a clean JSON array of A2 candidates from a list of
-        // (surface, kind, first_seen_quote) tuples.
-        let items = candidates.map { c in
-            "{\"surface\":\"\(c.0)\",\"kind\":\"\(c.1)\",\"first_seen_quote\":\"\(c.2)\"}"
-        }.joined(separator: ",")
-        return "[\(items)]"
+        // Build a Stage A2 line list from (surface, kind,
+        // first_seen_quote) tuples — `kind | surface | quote`.
+        candidates.map { c in "\(c.1) | \(c.0) | \(c.2)" }
+            .joined(separator: "\n")
     }
 
     func dResponse(kind: String, canonical: String, aliases: [String] = [], oneLine: String = "x", evidence: String = "x") -> String {
@@ -228,12 +226,10 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
         }
     }
 
-    s.test("Stage A2 retries on noJSONArrayFound and recovers if second attempt succeeds") {
-        // Mirrors the OllamaBeatExtractor fix (commit 6b6e714) —
-        // gemma4_2b's Pass-A on NSFW prose shows ~30% transient
-        // JSON-parse failures (preamble noise eating the open
-        // bracket). One retry recovers most of those without
-        // costing the user a recall miss.
+    s.test("Stage A2 retries when the first response has no parseable lines") {
+        // gemma4_2b sometimes derails into prose instead of the line
+        // list. One retry recovers most of those without costing the
+        // user a recall miss.
         let stub = StubProvider()
         let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
 
@@ -246,8 +242,8 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
             embedder: nil
         ) { result in captured = result }
 
-        // First attempt: preamble eats the open bracket.
-        stub.cannedResponses.append(.success("Sure, here you go: malformed without an open bracket"))
+        // First attempt: the model derails into a prose sentence.
+        stub.cannedResponses.append(.success("Sure, here are the entities I noticed in the scene."))
         stub.flushNext()
         // Retry fires automatically; provide a clean response.
         stub.cannedResponses.append(.success(a2Response([("Anders", "character", "Anders arrived.")])))
@@ -266,11 +262,9 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
     }
 
     s.test("Stage A2 retries when output is non-empty but yields zero candidates") {
-        // No-format mode (2026-05-16): gemma4_2b occasionally
-        // degenerates — emits an open bracket + a partial object,
-        // hits the token cap, leaving 0 recoverable candidates. That
-        // is distinct from a genuine null-discovery (a bare "[]");
-        // re-roll rather than silently report nothing.
+        // The model emitted something, but no line parsed into a
+        // candidate (wrong format / derailed). Re-roll rather than
+        // silently report nothing.
         let stub = StubProvider()
         let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
 
@@ -283,9 +277,8 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
             embedder: nil
         ) { result in captured = result }
 
-        // First attempt: opening bracket + half an object, nothing
-        // recoverable — but it is NOT a clean empty array.
-        stub.cannedResponses.append(.success("[{\"surface\": \"And"))
+        // First attempt: a malformed half-line, nothing parseable.
+        stub.cannedResponses.append(.success("character: Anders (no delimiters here)"))
         stub.flushNext()
         // Retry fires automatically; clean response this time.
         stub.cannedResponses.append(.success(a2Response([("Anders", "character", "Anders arrived.")])))
@@ -351,7 +344,11 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
         }
     }
 
-    s.test("zero A2 candidates → empty success (genuine null-discovery)") {
+    s.test("zero A2 candidates is retried, then surfaces as failure") {
+        // A scene of prose with no extractable entities is almost
+        // always a derail (empty/refused response). Re-roll once; a
+        // persistent zero is a failure, not a banked empty success —
+        // so the caller can re-fire on the next eligible edit.
         let stub = StubProvider()
         let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
 
@@ -364,16 +361,17 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
             embedder: nil
         ) { result in captured = result }
 
-        stub.cannedResponses.append(.success("[]"))
-        stub.flushNext()
+        stub.cannedResponses.append(.success(""))
+        stub.cannedResponses.append(.success(""))
+        stub.flushAll()
         // No Stage D calls fire.
         try expectEqual(stub.queued.count, 0)
 
         let result = try expectNotNil(captured)
-        if case .success(let proposals) = result {
-            try expectEqual(proposals.count, 0)
+        if case .failure = result {
+            // ok
         } else {
-            throw TestFailure(message: "expected success", file: #file, line: #line)
+            throw TestFailure(message: "expected failure after empty retries", file: #file, line: #line)
         }
     }
 
