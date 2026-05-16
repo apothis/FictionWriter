@@ -33,7 +33,12 @@ export interface Character {
 export interface Relationship {
   toCharacterId: string;
   kind: string;
+  // Phase 10 — temporal status. Optional for legacy-payload
+  // tolerance; the Swift forward-load defaults a missing status to
+  // "current", so readers should treat undefined the same way.
+  status?: "current" | "past";
   notes: string;
+  sourceSceneId?: string | null;
 }
 
 export interface CharacterCustomField {

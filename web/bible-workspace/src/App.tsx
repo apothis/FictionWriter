@@ -17,6 +17,7 @@ import { SceneExemplarEditor } from "./views/SceneExemplarEditor";
 import { SuggestionsQueue } from "./views/SuggestionsQueue";
 import { EntityProposalsQueue } from "./views/EntityProposalsQueue";
 import { RelationshipProposalsQueue } from "./views/RelationshipProposalsQueue";
+import { RelationshipMatrix } from "./views/RelationshipMatrix";
 
 // Top-level routing. Sessions 2-5 extended the Selection union as
 // each editor surface landed. Phase 5 production A2.2 added the
@@ -31,6 +32,7 @@ type Selection =
   | { kind: "suggestions" }
   | { kind: "entityProposals" }
   | { kind: "relationshipProposals" }
+  | { kind: "relationshipMatrix" }
   | null;
 
 export function App() {
@@ -222,6 +224,16 @@ export function App() {
     );
   }
 
+  if (selection?.kind === "relationshipMatrix") {
+    return (
+      <RelationshipMatrix
+        characters={snapshot.characters}
+        onEditCharacter={(id) => setSelection({ kind: "character", id })}
+        onBack={() => setSelection(null)}
+      />
+    );
+  }
+
   return renderList();
 
   function renderList() {
@@ -239,6 +251,9 @@ export function App() {
         onOpenEntityProposals={() => setSelection({ kind: "entityProposals" })}
         onOpenRelationshipProposals={() =>
           setSelection({ kind: "relationshipProposals" })
+        }
+        onOpenRelationshipMatrix={() =>
+          setSelection({ kind: "relationshipMatrix" })
         }
         onAddLorebookEntry={() => {
           const name = `Entry ${snapshot!.lorebook.length + 1}`;

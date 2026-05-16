@@ -27,6 +27,7 @@ interface Props {
   onOpenSuggestions: () => void;
   onOpenEntityProposals: () => void;
   onOpenRelationshipProposals: () => void;
+  onOpenRelationshipMatrix: () => void;
 }
 
 export function EntityList({
@@ -43,6 +44,7 @@ export function EntityList({
   onOpenSuggestions,
   onOpenEntityProposals,
   onOpenRelationshipProposals,
+  onOpenRelationshipMatrix,
 }: Props) {
   const sceneExemplars = snapshot.sceneExemplars ?? [];
   return (
@@ -54,7 +56,21 @@ export function EntityList({
         onOpenRelationshipProposals={onOpenRelationshipProposals}
       />
       <div className="flex-1 overflow-auto">
-        <Section title="Characters" count={snapshot.characters.length}>
+        <Section
+          title="Characters"
+          count={snapshot.characters.length}
+          headerAction={
+            snapshot.characters.length >= 2 ? (
+              <button
+                type="button"
+                onClick={onOpenRelationshipMatrix}
+                className="text-xs text-loom-accent hover:underline"
+              >
+                Relationship matrix →
+              </button>
+            ) : undefined
+          }
+        >
           {snapshot.characters.length === 0 ? (
             <EmptyRow text="No characters yet. Add some via the inspector." />
           ) : (
