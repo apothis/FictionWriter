@@ -533,7 +533,7 @@ public enum EntityDiscovery {
     }
 
     public static let normalisationPromptInstruction =
-        "Normalise the entity candidate below into a structured bible entry. For canonical_name, use the most complete/formal form of the name that appears in the scene (e.g. \"Marius Thorn\" not \"Marius\"). For aliases, list every other surface form of this entity that appears in the scene. For one_line, write a single sentence describing this entity based on the scene. For evidence_quote, cite a verbatim span from the scene that anchors the entity's identity."
+        "Normalise the entity candidate below into a structured bible entry. For canonical_name, use the most complete/formal form of the name that appears in the scene (e.g. \"Marius Thorn\" not \"Marius\"). For aliases, list every other surface form of this entity that appears in the scene. For one_line, write ONE short sentence — at most 20 words — describing this entity; do not recap the whole scene. For evidence_quote, cite a short verbatim span from the scene that anchors the entity's identity."
 
     public static func buildNormalisationPrompt(
         candidateSurface: String,

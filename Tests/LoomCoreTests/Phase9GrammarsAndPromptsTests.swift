@@ -264,6 +264,14 @@ func phase9GrammarsAndPromptsTests() -> TestSuite {
         try expectTrue(lower.contains("canonical") || lower.contains("most complete"))
     }
 
+    s.test("Stage D prompt: constrains one_line length to curb rambling") {
+        // gemma emits paragraph-long one_lines on dense prose, which
+        // is most of Stage D's generation latency — the instruction
+        // pins a hard word cap.
+        let instr = EntityDiscovery.normalisationPromptInstruction.lowercased()
+        try expectTrue(instr.contains("at most 20 words"))
+    }
+
     // MARK: - Stage D parser
 
     s.test("Stage D parser: clean JSON object decodes") {
