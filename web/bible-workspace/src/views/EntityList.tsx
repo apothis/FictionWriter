@@ -26,6 +26,7 @@ interface Props {
   onAddSceneExemplar: () => void;
   onOpenSuggestions: () => void;
   onOpenEntityProposals: () => void;
+  onOpenRelationshipProposals: () => void;
 }
 
 export function EntityList({
@@ -41,6 +42,7 @@ export function EntityList({
   onAddSceneExemplar,
   onOpenSuggestions,
   onOpenEntityProposals,
+  onOpenRelationshipProposals,
 }: Props) {
   const sceneExemplars = snapshot.sceneExemplars ?? [];
   return (
@@ -49,6 +51,7 @@ export function EntityList({
         snapshot={snapshot}
         onOpenSuggestions={onOpenSuggestions}
         onOpenEntityProposals={onOpenEntityProposals}
+        onOpenRelationshipProposals={onOpenRelationshipProposals}
       />
       <div className="flex-1 overflow-auto">
         <Section title="Characters" count={snapshot.characters.length}>
@@ -173,13 +176,17 @@ function Header({
   snapshot,
   onOpenSuggestions,
   onOpenEntityProposals,
+  onOpenRelationshipProposals,
 }: {
   snapshot: BibleWorkspaceSnapshot;
   onOpenSuggestions: () => void;
   onOpenEntityProposals: () => void;
+  onOpenRelationshipProposals: () => void;
 }) {
   const pendingCount = snapshot.suggestions.length;
   const proposalsCount = (snapshot.proposedEntities ?? []).length;
+  const relationshipProposalsCount = (snapshot.proposedRelationships ?? [])
+    .length;
   const discoveringCount = (snapshot.discoveringSceneIds ?? []).length;
   return (
     <div className="flex items-baseline justify-between border-b border-loom-border px-6 py-4">
@@ -210,6 +217,16 @@ function Header({
             className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 focus:outline-none focus:ring-1 focus:ring-emerald-400"
           >
             {proposalsCount} entity proposal{proposalsCount === 1 ? "" : "s"} →
+          </button>
+        )}
+        {relationshipProposalsCount > 0 && (
+          <button
+            type="button"
+            onClick={onOpenRelationshipProposals}
+            className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-400 hover:bg-sky-500/20 focus:outline-none focus:ring-1 focus:ring-sky-400"
+          >
+            {relationshipProposalsCount} relationship proposal
+            {relationshipProposalsCount === 1 ? "" : "s"} →
           </button>
         )}
         {pendingCount > 0 && (
