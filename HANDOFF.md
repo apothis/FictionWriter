@@ -1640,9 +1640,17 @@ commits. Tests 1603 → 1615.
 
 The mapper is feature-complete: a React Flow graph reachable from the
 character list, with draggable persisted nodes, full edge CRUD, and inline
-discovery review. It is a WKWebView feature — verified by clean tsc/vite/swift
-builds; not browser-previewable without the live Loom snapshot bridge, so
-in-app exercise is still pending.
+discovery review.
+
+A **dev-mode browser-preview harness** was then added (`web/bible-workspace/
+src/devMockSnapshot.ts` + a `bridge.ts` hook): under `vite dev` with no Swift
+host, the webview feeds itself a mock snapshot. `import.meta.env.DEV`-gated +
+dynamic-imported, so it is dead-code-eliminated from the production bundle.
+This made the mapper browser-verifiable — all four increments + the edge and
+proposal modals were confirmed via the preview, and a cramped auto-layout was
+caught and fixed. In-app exercise against a real Loom project (the Swift
+round-trip — persistence, `applyAccepted` demotion) is still the one
+un-verified slice.
 
 #### Open follow-ups carried forward
 
@@ -1739,14 +1747,25 @@ win. Residual: gemma still over-eagerly invents edges for ~3 genuinely
 unrelated pairs (the Megan/Judy, Megan/Allie, Megan/Lucas pairs) — bounded
 classification *reduces* but doesn't *eliminate* small-model hallucination.
 
-#### Open follow-ups
+#### Open follow-ups — consolidated next steps
 
-- **Relationship precision** — the residual per-pair hallucination. Research
-  options not yet tried: a stricter binary "is there ANY relationship?"
-  pre-filter, self-consistency voting (3× per pair, majority), or a better
-  Stage model.
-- GLiREL is dead (§15.25). Mapper increments are complete (§15.24). Stage D
-  latency, Phase 9/10 live-smoke, Goetia A/B still open.
+1. **Relationship-discovery precision.** The two-stage classifier now recalls
+   well but gemma still over-eagerly invents edges for unrelated pairs.
+   Untried levers: a stricter binary "is there ANY relationship?" pre-filter,
+   self-consistency voting (3× per pair, majority), or a stronger Stage model.
+2. **In-app exercise.** GLiNER entity discovery, two-stage relationship
+   discovery, and the relationship mapper are all unit-tested and (the mapper)
+   browser-verified — but none has been exercised in the *running* `Loom.app`
+   against a real on-disk project. That Swift-round-trip smoke is the
+   highest-value verification left.
+3. **Stage D latency** — ~52s on dense scenes (§15.22). Levers: drop Stage D's
+   `format` schema constraint, or a faster Stage D model.
+4. **Carried from §15.17–15.18:** Phase 9/10 live-smoke; the writer-model A/B
+   against Goetia (Mistral-V7 template + per-family samplers should auto-apply).
+
+Closed this arc: GLiREL is **dead** — do not re-spike (§15.25). The relationship
+mapper is **feature-complete** (§15.24). GLiNER long-scene chunking is **done**
+(§15.21).
 
 #### Investigation cleanup
 

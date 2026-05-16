@@ -8,6 +8,11 @@ DerivedData/
 .claude/
 Tools/LedgerSpike/last-run/
 
+# EntityDiscoverySpike — eval reports + the ad-hoc test2 fixture
+# (the latter holds a user project's prose) are not committed.
+Tools/EntityDiscoverySpike/last-run/
+Tools/EntityDiscoverySpike/test2-fixture.json
+
 # Phase 5 RAG spike — venv + generated vectors are not committed.
 Tools/RagSpike/vectors.json
 Tools/RagSpike/last-run/
