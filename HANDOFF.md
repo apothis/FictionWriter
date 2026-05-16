@@ -1703,3 +1703,56 @@ edges structurally impossible. Combined with the §15.23 name-list filter, this
 is the realistic relationship-discovery improvement. Not yet built.
 
 **1615/1615 tests green.**
+
+### 15.26 Session ledger — 2026-05-16/17 (two-stage relationship classifier)
+
+Built the two-stage pairwise relationship classifier (the §15.25 / research
+recommendation), live-probed it, and fixed two bugs the probe caught. 2 commits.
+Tests 1615 → 1601 (net — the dead single-call path + its tests removed).
+
+#### The classifier
+
+`OllamaRelationshipDiscoveryExtractor` no longer makes one open "list every
+relationship" call. Instead: stage 1 enumerates the character pairs that
+co-occur in the scene (`candidatePairs`); stage 2 fires one bounded "what is A
+to B?" call per pair (`buildPairClassificationPrompt` / `parsePairClassification`)
+— the model names the single relationship or answers "none". Per-pair calls
+fan out; a pair whose call derails contributes no edge rather than poisoning
+the scene; the parser restricts each answer to the asked pair, so invented
+endpoints are structurally impossible. The dead single-call prompt / JSON /
+line-list functions and their tests were removed.
+
+#### Live-probe findings (test2 Scene 2 — the dense explicit scene)
+
+Two bugs surfaced and were fixed:
+- **num_predict 256 too low** — gemma emits a reasoning preamble before the
+  answer and hit the length cap with *empty content* on every call. Raised to
+  2048.
+- **Prompt placeholder echo** — "from | to | kind | status" made gemma echo the
+  literal words instead of substituting names. Replaced with a worked example
+  using the real character names.
+
+With both fixed, the probe recovered **all four** of the scene's Abby
+relationships (mother/Judy, mother/Allie, lover/Megan, wife/Lucas) — the
+parent/spouse edges the old single-call approach missed *every run*. Real recall
+win. Residual: gemma still over-eagerly invents edges for ~3 genuinely
+unrelated pairs (the Megan/Judy, Megan/Allie, Megan/Lucas pairs) — bounded
+classification *reduces* but doesn't *eliminate* small-model hallucination.
+
+#### Open follow-ups
+
+- **Relationship precision** — the residual per-pair hallucination. Research
+  options not yet tried: a stricter binary "is there ANY relationship?"
+  pre-filter, self-consistency voting (3× per pair, majority), or a better
+  Stage model.
+- GLiREL is dead (§15.25). Mapper increments are complete (§15.24). Stage D
+  latency, Phase 9/10 live-smoke, Goetia A/B still open.
+
+#### Investigation cleanup
+
+Removed the GLiNER/GLiREL spike clutter: `/tmp/gliner_spike` (1.1 GB), the
+GLiNER HF cache entries (0.6 GB), the uv package cache (2.5 GB), the pip cache
+— ~4.7 GB off the system disk — plus the throwaway GLiREL venv on SSD1
+(4.2 GB). All regenerable.
+
+**1601/1601 tests green.**
