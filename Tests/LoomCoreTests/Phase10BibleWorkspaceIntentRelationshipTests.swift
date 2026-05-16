@@ -70,5 +70,42 @@ func phase10BibleWorkspaceIntentRelationshipTests() -> TestSuite {
         try expectEqual(back, intent)
     }
 
+    s.test("setRelationshipEdge encodes with kind discriminator + edge fields") {
+        let from = UUID(), to = UUID()
+        let intent = BibleWorkspaceIntent.setRelationshipEdge(
+            fromCharacterId: from, toCharacterId: to,
+            edgeKind: "girlfriend", status: "current", notes: "since the beach"
+        )
+        let data = try JSONEncoder().encode(intent)
+        let obj = try (JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        try expectEqual(obj["kind"] as? String, "setRelationshipEdge")
+        try expectEqual(obj["fromCharacterId"] as? String, from.uuidString)
+        try expectEqual(obj["toCharacterId"] as? String, to.uuidString)
+        // The relationship's own kind rides as `edgeKind` — `kind` is
+        // the intent discriminator.
+        try expectEqual(obj["edgeKind"] as? String, "girlfriend")
+        try expectEqual(obj["status"] as? String, "current")
+        try expectEqual(obj["notes"] as? String, "since the beach")
+    }
+
+    s.test("setRelationshipEdge round-trips through Codable") {
+        let intent = BibleWorkspaceIntent.setRelationshipEdge(
+            fromCharacterId: UUID(), toCharacterId: UUID(),
+            edgeKind: "rival", status: "past", notes: ""
+        )
+        let data = try JSONEncoder().encode(intent)
+        let back = try JSONDecoder().decode(BibleWorkspaceIntent.self, from: data)
+        try expectEqual(back, intent)
+    }
+
+    s.test("deleteRelationshipEdge round-trips through Codable") {
+        let intent = BibleWorkspaceIntent.deleteRelationshipEdge(
+            fromCharacterId: UUID(), toCharacterId: UUID(), edgeKind: "friend"
+        )
+        let data = try JSONEncoder().encode(intent)
+        let back = try JSONDecoder().decode(BibleWorkspaceIntent.self, from: data)
+        try expectEqual(back, intent)
+    }
+
     return s
 }

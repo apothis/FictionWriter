@@ -506,6 +506,37 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             } catch {
                 DebugLog.shared.write("[workspace] setRelationshipNodePosition failed: \(error)")
             }
+        case .setRelationshipEdge(let fromId, let toId, let edgeKind, let status, let notes):
+            guard var from = session.project.bible.characters.first(where: { $0.id == fromId }) else {
+                DebugLog.shared.write("[workspace] setRelationshipEdge ignored — stale from id=\(fromId)")
+                return
+            }
+            let edge = Relationship(
+                toCharacterId: toId,
+                kind: edgeKind,
+                status: RelationshipStatus(rawValue: status) ?? .current,
+                notes: notes,
+                sourceSceneId: nil
+            )
+            // Manual edge — demote a prior current romantic edge, same
+            // as accepting a relationship proposal (never deletes).
+            from.relationships = RelationshipConflict.applyAccepted(
+                to: from.relationships, newEdge: edge, demoteConflicting: true
+            )
+            session.updateCharacter(from)
+            DebugLog.shared.write("[workspace] setRelationshipEdge \(fromId)→\(toId) kind=\(edgeKind)")
+        case .deleteRelationshipEdge(let fromId, let toId, let edgeKind):
+            guard var from = session.project.bible.characters.first(where: { $0.id == fromId }) else {
+                DebugLog.shared.write("[workspace] deleteRelationshipEdge ignored — stale from id=\(fromId)")
+                return
+            }
+            let key = edgeKind.lowercased().trimmingCharacters(in: .whitespaces)
+            from.relationships.removeAll {
+                $0.toCharacterId == toId
+                    && $0.kind.lowercased().trimmingCharacters(in: .whitespaces) == key
+            }
+            session.updateCharacter(from)
+            DebugLog.shared.write("[workspace] deleteRelationshipEdge \(fromId)→\(toId) kind=\(edgeKind)")
         }
     }
 

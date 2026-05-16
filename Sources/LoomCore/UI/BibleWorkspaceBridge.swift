@@ -109,12 +109,24 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     // a new position. Persisted to the relationship-map-layout
     // sidecar; not echoed back in a snapshot (view-owned state).
     case setRelationshipNodePosition(characterId: UUID, x: Double, y: Double)
+    // Relationship-map mapper — create or update a directed edge by
+    // drawing/editing it on the map. Upserts on the from-character
+    // via `RelationshipConflict.applyAccepted` (so a manual romantic
+    // edge demotes a prior current one, same as accepting a proposal).
+    case setRelationshipEdge(
+        fromCharacterId: UUID, toCharacterId: UUID,
+        edgeKind: String, status: String, notes: String
+    )
+    // Relationship-map mapper — remove the directed edge identified
+    // by (from, to, kind).
+    case deleteRelationshipEdge(fromCharacterId: UUID, toCharacterId: UUID, edgeKind: String)
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
         case body, nsfw
         case proposalId, accepted, demoteConflicting
         case x, y
+        case fromCharacterId, toCharacterId, edgeKind, status, notes
     }
 
     private enum Kind: String {
@@ -142,6 +154,8 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case acceptRelationshipProposal
         case rejectRelationshipProposal
         case setRelationshipNodePosition
+        case setRelationshipEdge
+        case deleteRelationshipEdge
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -232,6 +246,18 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             try c.encode(characterId, forKey: .characterId)
             try c.encode(x, forKey: .x)
             try c.encode(y, forKey: .y)
+        case .setRelationshipEdge(let fromId, let toId, let edgeKind, let status, let notes):
+            try c.encode(Kind.setRelationshipEdge.rawValue, forKey: .kind)
+            try c.encode(fromId, forKey: .fromCharacterId)
+            try c.encode(toId, forKey: .toCharacterId)
+            try c.encode(edgeKind, forKey: .edgeKind)
+            try c.encode(status, forKey: .status)
+            try c.encode(notes, forKey: .notes)
+        case .deleteRelationshipEdge(let fromId, let toId, let edgeKind):
+            try c.encode(Kind.deleteRelationshipEdge.rawValue, forKey: .kind)
+            try c.encode(fromId, forKey: .fromCharacterId)
+            try c.encode(toId, forKey: .toCharacterId)
+            try c.encode(edgeKind, forKey: .edgeKind)
         }
     }
 
@@ -334,6 +360,23 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             let x = try c.decode(Double.self, forKey: .x)
             let y = try c.decode(Double.self, forKey: .y)
             self = .setRelationshipNodePosition(characterId: characterId, x: x, y: y)
+        case .setRelationshipEdge:
+            let fromId = try c.decode(UUID.self, forKey: .fromCharacterId)
+            let toId = try c.decode(UUID.self, forKey: .toCharacterId)
+            let edgeKind = try c.decode(String.self, forKey: .edgeKind)
+            let status = try c.decode(String.self, forKey: .status)
+            let notes = try c.decode(String.self, forKey: .notes)
+            self = .setRelationshipEdge(
+                fromCharacterId: fromId, toCharacterId: toId,
+                edgeKind: edgeKind, status: status, notes: notes
+            )
+        case .deleteRelationshipEdge:
+            let fromId = try c.decode(UUID.self, forKey: .fromCharacterId)
+            let toId = try c.decode(UUID.self, forKey: .toCharacterId)
+            let edgeKind = try c.decode(String.self, forKey: .edgeKind)
+            self = .deleteRelationshipEdge(
+                fromCharacterId: fromId, toCharacterId: toId, edgeKind: edgeKind
+            )
         }
     }
 }

@@ -245,6 +245,24 @@ export function App() {
         onMoveNode={(characterId, x, y) =>
           postIntent({ kind: "setRelationshipNodePosition", characterId, x, y })
         }
+        onSetEdge={(fromId, toId, kind, status, notes) =>
+          postIntent({
+            kind: "setRelationshipEdge",
+            fromCharacterId: fromId,
+            toCharacterId: toId,
+            edgeKind: kind,
+            status,
+            notes,
+          })
+        }
+        onDeleteEdge={(fromId, toId, kind) =>
+          postIntent({
+            kind: "deleteRelationshipEdge",
+            fromCharacterId: fromId,
+            toCharacterId: toId,
+            edgeKind: kind,
+          })
+        }
         onBack={() => setSelection(null)}
       />
     );
