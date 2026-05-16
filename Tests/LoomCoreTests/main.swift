@@ -213,6 +213,7 @@ let suites: [TestSuite] = [
     glinerDetectorTests(),
     glinerCandidateDetectorTests(),
     glinerEntityDiscoveryExtractorTests(),
+    relationshipMapLayoutStoreTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

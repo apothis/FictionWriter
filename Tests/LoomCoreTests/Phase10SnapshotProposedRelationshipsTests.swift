@@ -57,6 +57,25 @@ func phase10SnapshotProposedRelationshipsTests() -> TestSuite {
         try expectEqual(sample().conflictsWithCurrent, [])
     }
 
+    s.test("Snapshot encode/decode round-trips relationshipMapLayout") {
+        let pos = RelationshipMapPosition(characterId: UUID(), x: 42.0, y: -7.5)
+        let snap = BibleWorkspaceSnapshot(
+            projectTitle: "Test", characters: [], lorebook: [], scenes: [], suggestions: [],
+            relationshipMapLayout: [pos]
+        )
+        let data = try JSONEncoder().encode(snap)
+        let back = try JSONDecoder().decode(BibleWorkspaceSnapshot.self, from: data)
+        try expectEqual(back.relationshipMapLayout, [pos])
+    }
+
+    s.test("legacy snapshot without relationshipMapLayout → empty list") {
+        let legacy = """
+        {"projectTitle":"Legacy","characters":[],"lorebook":[],"scenes":[],"suggestions":[]}
+        """
+        let snap = try JSONDecoder().decode(BibleWorkspaceSnapshot.self, from: Data(legacy.utf8))
+        try expectEqual(snap.relationshipMapLayout, [])
+    }
+
     s.test("SnapshotProposedRelationship carries conflictsWithCurrent through Codable") {
         let p = SnapshotProposedRelationship(
             id: UUID(), fromName: "Chantal", toName: "Jacob", kind: "girlfriend",

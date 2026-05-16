@@ -105,11 +105,16 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     // demote-prior-partner confirm dialog.
     case acceptRelationshipProposal(proposalId: UUID, demoteConflicting: Bool)
     case rejectRelationshipProposal(proposalId: UUID)
+    // Relationship-map mapper — the user dragged a character node to
+    // a new position. Persisted to the relationship-map-layout
+    // sidecar; not echoed back in a snapshot (view-owned state).
+    case setRelationshipNodePosition(characterId: UUID, x: Double, y: Double)
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
         case body, nsfw
         case proposalId, accepted, demoteConflicting
+        case x, y
     }
 
     private enum Kind: String {
@@ -136,6 +141,7 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case rejectEntityProposal
         case acceptRelationshipProposal
         case rejectRelationshipProposal
+        case setRelationshipNodePosition
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -221,6 +227,11 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .rejectRelationshipProposal(let proposalId):
             try c.encode(Kind.rejectRelationshipProposal.rawValue, forKey: .kind)
             try c.encode(proposalId, forKey: .proposalId)
+        case .setRelationshipNodePosition(let characterId, let x, let y):
+            try c.encode(Kind.setRelationshipNodePosition.rawValue, forKey: .kind)
+            try c.encode(characterId, forKey: .characterId)
+            try c.encode(x, forKey: .x)
+            try c.encode(y, forKey: .y)
         }
     }
 
@@ -318,6 +329,11 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .rejectRelationshipProposal:
             let proposalId = try c.decode(UUID.self, forKey: .proposalId)
             self = .rejectRelationshipProposal(proposalId: proposalId)
+        case .setRelationshipNodePosition:
+            let characterId = try c.decode(UUID.self, forKey: .characterId)
+            let x = try c.decode(Double.self, forKey: .x)
+            let y = try c.decode(Double.self, forKey: .y)
+            self = .setRelationshipNodePosition(characterId: characterId, x: x, y: y)
         }
     }
 }

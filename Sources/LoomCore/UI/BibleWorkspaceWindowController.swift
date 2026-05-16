@@ -223,6 +223,9 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             discoveringSceneIds: Array(appState.discoveringSceneIds),
             proposedEntities: buildProposedEntitySnapshots(),
             proposedRelationships: buildProposedRelationshipSnapshots(),
+            relationshipMapLayout: session.url.flatMap {
+                RelationshipMapLayoutStore.load(in: $0)?.positions
+            } ?? [],
             suggestionsQueue: appState.ledgerSuggestionsQueue
         )
         do {
@@ -494,6 +497,15 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         case .rejectRelationshipProposal(let proposalId):
             appState.rejectRelationshipProposal(proposalId: proposalId)
             DebugLog.shared.write("[workspace] rejectRelationshipProposal proposalId=\(proposalId)")
+        case .setRelationshipNodePosition(let characterId, let x, let y):
+            guard let projectURL = session.url else { return }
+            do {
+                try RelationshipMapLayoutStore.setPosition(
+                    characterId: characterId, x: x, y: y, in: projectURL
+                )
+            } catch {
+                DebugLog.shared.write("[workspace] setRelationshipNodePosition failed: \(error)")
+            }
         }
     }
 

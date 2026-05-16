@@ -178,6 +178,18 @@ export interface BibleWorkspaceSnapshot {
   // renders this list; accept/reject route through the bridge to
   // AppState. Optional for legacy-payload tolerance — default to [].
   proposedRelationships?: SnapshotProposedRelationship[];
+  // Relationship-mapper — saved node positions for the relationship
+  // map view. View state (a sidecar), not bible data. Optional for
+  // legacy-payload tolerance — default to []; the map auto-lays-out
+  // any character without a saved position.
+  relationshipMapLayout?: RelationshipMapPosition[];
+}
+
+// A dragged node position in the relationship map.
+export interface RelationshipMapPosition {
+  characterId: string;
+  x: number;
+  y: number;
 }
 
 // Phase 9 entity-discovery — webview projection of a ProposedEntity.

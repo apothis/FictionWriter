@@ -48,5 +48,27 @@ func phase10BibleWorkspaceIntentRelationshipTests() -> TestSuite {
         try expectEqual(back, intent)
     }
 
+    s.test("setRelationshipNodePosition encodes with kind + characterId + x + y") {
+        let id = UUID()
+        let intent = BibleWorkspaceIntent.setRelationshipNodePosition(
+            characterId: id, x: 120.5, y: -8.0
+        )
+        let data = try JSONEncoder().encode(intent)
+        let obj = try (JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        try expectEqual(obj["kind"] as? String, "setRelationshipNodePosition")
+        try expectEqual(obj["characterId"] as? String, id.uuidString)
+        try expectEqual(obj["x"] as? Double, 120.5)
+        try expectEqual(obj["y"] as? Double, -8.0)
+    }
+
+    s.test("setRelationshipNodePosition round-trips through Codable") {
+        let intent = BibleWorkspaceIntent.setRelationshipNodePosition(
+            characterId: UUID(), x: 3.0, y: 4.0
+        )
+        let data = try JSONEncoder().encode(intent)
+        let back = try JSONDecoder().decode(BibleWorkspaceIntent.self, from: data)
+        try expectEqual(back, intent)
+    }
+
     return s
 }

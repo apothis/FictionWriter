@@ -10,23 +10,25 @@ import {
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { Character } from "../types";
+import type { Character, RelationshipMapPosition } from "../types";
 import { Button } from "../components/ui/Button";
 
 // Phase 10 follow-up — visual relationship mapper. Characters are
 // draggable nodes; each Character.relationships entry is a directed,
 // labelled edge. Current vs past edges are styled distinctly.
-// Increment 1: read-only render + drag/zoom/pan. Layout persistence
-// and in-graph edge editing land in later increments.
+// Increment 2: node positions persist — saved layout overrides the
+// auto circle layout; dragging a node saves its new position.
 
 interface Props {
   characters: Character[];
+  layout: RelationshipMapPosition[];
   onEditCharacter: (id: string) => void;
+  onMoveNode: (characterId: string, x: number, y: number) => void;
   onBack: () => void;
 }
 
-/// Initial node placement — an even circle. Persisted layout
-/// (a later increment) will override this.
+/// Initial node placement — an even circle. Used only for characters
+/// without a saved position.
 function circleLayout(count: number): { x: number; y: number }[] {
   const radius = Math.max(180, count * 38);
   const cx = radius + 80;
@@ -40,14 +42,21 @@ function circleLayout(count: number): { x: number; y: number }[] {
   });
 }
 
-function buildNodes(characters: Character[]): Node[] {
-  const positions = circleLayout(characters.length);
-  return characters.map((c, i) => ({
-    id: c.id,
-    position: positions[i],
-    data: { label: c.name || "(unnamed)" },
-    type: "default",
-  }));
+function buildNodes(
+  characters: Character[],
+  layout: RelationshipMapPosition[],
+): Node[] {
+  const saved = new Map(layout.map((p) => [p.characterId, p]));
+  const fallback = circleLayout(characters.length);
+  return characters.map((c, i) => {
+    const savedPos = saved.get(c.id);
+    return {
+      id: c.id,
+      position: savedPos ? { x: savedPos.x, y: savedPos.y } : fallback[i],
+      data: { label: c.name || "(unnamed)" },
+      type: "default",
+    };
+  });
 }
 
 function buildEdges(characters: Character[]): Edge[] {
@@ -77,10 +86,15 @@ function buildEdges(characters: Character[]): Edge[] {
 
 export function RelationshipGraph({
   characters,
+  layout,
   onEditCharacter,
+  onMoveNode,
   onBack,
 }: Props) {
-  const initialNodes = useMemo(() => buildNodes(characters), [characters]);
+  const initialNodes = useMemo(
+    () => buildNodes(characters, layout),
+    [characters, layout],
+  );
   const initialEdges = useMemo(() => buildEdges(characters), [characters]);
   const [nodes, , onNodesChange] = useNodesState(initialNodes);
   const [edges, , onEdgesChange] = useEdgesState(initialEdges);
@@ -108,6 +122,9 @@ export function RelationshipGraph({
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onNodeDragStop={(_, node) =>
+              onMoveNode(node.id, node.position.x, node.position.y)
+            }
             onNodeDoubleClick={(_, node) => onEditCharacter(node.id)}
             nodesConnectable={false}
             fitView

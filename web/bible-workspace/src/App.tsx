@@ -240,7 +240,11 @@ export function App() {
     return (
       <RelationshipGraph
         characters={snapshot.characters}
+        layout={snapshot.relationshipMapLayout ?? []}
         onEditCharacter={(id) => setSelection({ kind: "character", id })}
+        onMoveNode={(characterId, x, y) =>
+          postIntent({ kind: "setRelationshipNodePosition", characterId, x, y })
+        }
         onBack={() => setSelection(null)}
       />
     );

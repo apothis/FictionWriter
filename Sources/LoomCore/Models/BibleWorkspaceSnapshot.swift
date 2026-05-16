@@ -85,6 +85,10 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     /// accept/reject route through bridge intents. Additive —
     /// legacy snapshots decode with `[]`.
     public let proposedRelationships: [SnapshotProposedRelationship]
+    /// Saved node positions for the relationship-map view. View state
+    /// (the relationship-map-layout sidecar), not bible data. Additive
+    /// — legacy snapshots decode with `[]` and the map auto-lays-out.
+    public let relationshipMapLayout: [RelationshipMapPosition]
 
     public init(
         projectTitle: String,
@@ -100,7 +104,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         ingestingReferenceIds: [UUID] = [],
         discoveringSceneIds: [UUID] = [],
         proposedEntities: [SnapshotProposedEntity] = [],
-        proposedRelationships: [SnapshotProposedRelationship] = []
+        proposedRelationships: [SnapshotProposedRelationship] = [],
+        relationshipMapLayout: [RelationshipMapPosition] = []
     ) {
         self.projectTitle = projectTitle
         self.characters = characters
@@ -116,13 +121,14 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.discoveringSceneIds = discoveringSceneIds
         self.proposedEntities = proposedEntities
         self.proposedRelationships = proposedRelationships
+        self.relationshipMapLayout = relationshipMapLayout
     }
 
     private enum CodingKeys: String, CodingKey {
         case projectTitle, characters, lorebook, scenes, suggestions
         case references, templateScenes, sceneExemplars, isProjectOnDisk
         case extractingTemplateIds, ingestingReferenceIds, discoveringSceneIds, proposedEntities
-        case proposedRelationships
+        case proposedRelationships, relationshipMapLayout
     }
 
     public init(from decoder: Decoder) throws {
@@ -146,6 +152,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.discoveringSceneIds = discoveringStrings.compactMap(UUID.init(uuidString:))
         self.proposedEntities = try c.decodeIfPresent([SnapshotProposedEntity].self, forKey: .proposedEntities) ?? []
         self.proposedRelationships = try c.decodeIfPresent([SnapshotProposedRelationship].self, forKey: .proposedRelationships) ?? []
+        self.relationshipMapLayout = try c.decodeIfPresent([RelationshipMapPosition].self, forKey: .relationshipMapLayout) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -166,6 +173,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         try c.encode(discoveringSceneIds.map(\.uuidString), forKey: .discoveringSceneIds)
         try c.encode(proposedEntities, forKey: .proposedEntities)
         try c.encode(proposedRelationships, forKey: .proposedRelationships)
+        try c.encode(relationshipMapLayout, forKey: .relationshipMapLayout)
     }
 
     /// Builds a snapshot from the current `ProjectSession` state.
@@ -187,6 +195,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         discoveringSceneIds: [UUID] = [],
         proposedEntities: [SnapshotProposedEntity] = [],
         proposedRelationships: [SnapshotProposedRelationship] = [],
+        relationshipMapLayout: [RelationshipMapPosition] = [],
         suggestionsQueue: LedgerSuggestionsQueue
     ) -> BibleWorkspaceSnapshot {
         let sceneSummaries: [SceneSummary] = project.manuscript.flatSceneIds.compactMap { id in
@@ -220,7 +229,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             ingestingReferenceIds: ingestingReferenceIds,
             discoveringSceneIds: discoveringSceneIds,
             proposedEntities: proposedEntities,
-            proposedRelationships: proposedRelationships
+            proposedRelationships: proposedRelationships,
+            relationshipMapLayout: relationshipMapLayout
         )
     }
 }
