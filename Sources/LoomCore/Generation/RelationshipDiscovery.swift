@@ -40,6 +40,51 @@ public enum RelationshipDiscovery {
         }
     }
 
+    /// A relationship proposal persisted to the sidecar — a
+    /// `ProposedRelationship` with an identity and a scene anchor.
+    /// Still name-based: the accept flow resolves names to bible
+    /// character UUIDs at materialise time.
+    public struct Proposal: Codable, Equatable {
+        public let id: UUID
+        public let fromName: String
+        public let toName: String
+        public let kind: String
+        public let status: RelationshipStatus
+        public let evidenceQuote: String
+        public let sourceSceneId: UUID
+
+        public init(
+            id: UUID = UUID(),
+            fromName: String,
+            toName: String,
+            kind: String,
+            status: RelationshipStatus,
+            evidenceQuote: String,
+            sourceSceneId: UUID
+        ) {
+            self.id = id
+            self.fromName = fromName
+            self.toName = toName
+            self.kind = kind
+            self.status = status
+            self.evidenceQuote = evidenceQuote
+            self.sourceSceneId = sourceSceneId
+        }
+
+        /// Lift a name-based discovery result into a persistable
+        /// proposal by attaching a fresh id and the source scene.
+        public init(discovered: ProposedRelationship, sourceSceneId: UUID) {
+            self.init(
+                fromName: discovered.fromName,
+                toName: discovered.toName,
+                kind: discovered.kind,
+                status: discovered.status,
+                evidenceQuote: discovered.evidenceQuote,
+                sourceSceneId: sourceSceneId
+            )
+        }
+    }
+
     public static let promptInstruction =
         "Identify the relationships between the characters listed below as they are shown in the scene. For each ordered pair of listed characters with a relationship evident in the scene, emit one entry: \"from\" and \"to\" naming the two characters, \"kind\" describing the relationship from \"from\"'s perspective (e.g. \"girlfriend\", \"ex-boyfriend\", \"father\", \"rival\", \"close friend\", \"coworker\"), \"status\" being \"current\" if the relationship is live as of this scene or \"past\" if the scene shows it has ended (an ex-partner, a former mentor), and \"evidence_quote\" being a verbatim span from the scene that supports it. Only emit relationships where both characters appear in the list below."
 
