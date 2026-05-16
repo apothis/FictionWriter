@@ -312,6 +312,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         discoverEntities.target = self
         discoverEntities.toolTip = "Run the entity-discovery pipeline against the current scene. Proposed characters and places appear in the Bible Workspace under \"Entity proposals\". (Phase 9 — see LOOM_ENTITY_DISCOVERY_SPIKE.md)"
         bibleMenu.addItem(discoverEntities)
+        // Phase 10 — manual trigger for relationship discovery.
+        let discoverRelationships = NSMenuItem(
+            title: "Discover Relationships in Current Scene",
+            action: #selector(discoverRelationshipsClicked),
+            keyEquivalent: "")
+        discoverRelationships.target = self
+        discoverRelationships.toolTip = "Run relationship discovery against the current scene. Proposed character relationships are written to the project's proposed-relationships sidecar. (Phase 10)"
+        bibleMenu.addItem(discoverRelationships)
         bibleMenuItem.submenu = bibleMenu
 
         NSApp.mainMenu = main
@@ -411,6 +419,43 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         let started = NSAlert()
         started.messageText = "Entity discovery started"
         started.informativeText = "Open the Bible Workspace to see results when the pipeline completes (~30 seconds)."
+        started.alertStyle = .informational
+        started.addButton(withTitle: "OK")
+        started.runModal()
+    }
+
+    @objc private func discoverRelationshipsClicked() {
+        let session = AppState.shared.currentSession
+        guard let sceneId = session.currentSceneId else {
+            let alert = NSAlert()
+            alert.messageText = "No active scene"
+            alert.informativeText = "Open a scene in the editor before running relationship discovery."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        if session.project.bible.characters.count < 2 {
+            let alert = NSAlert()
+            alert.messageText = "Not enough characters"
+            alert.informativeText = "Relationship discovery needs at least two characters in the bible. Add characters (or run entity discovery first), then try again."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        let confirm = NSAlert()
+        confirm.messageText = "Run relationship discovery on this scene?"
+        confirm.informativeText = "The pipeline runs in the background and proposes relationships between the bible's characters as evidenced in this scene."
+        confirm.alertStyle = .informational
+        confirm.addButton(withTitle: "Run")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        AppState.shared.runRelationshipDiscovery(for: sceneId)
+        let started = NSAlert()
+        started.messageText = "Relationship discovery started"
+        started.informativeText = "Proposed relationships will be written to the project when the pipeline completes."
         started.alertStyle = .informational
         started.addButton(withTitle: "OK")
         started.runModal()

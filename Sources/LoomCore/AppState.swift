@@ -331,6 +331,11 @@ public final class AppState {
 
     public static let proposedEntitiesDidChangeNotification = Notification.Name("LoomProposedEntitiesDidChange")
 
+    /// Phase 10 — posted when the relationship-proposal sidecar
+    /// changes (discovery completed, accept/reject). The Bible
+    /// Workspace rebuilds its snapshot in response.
+    public static let proposedRelationshipsDidChangeNotification = Notification.Name("LoomProposedRelationshipsDidChange")
+
     /// Fire the full entity-discovery pipeline against `sceneId` and
     /// append the results to the project's `ProposedEntitiesStore`.
     /// Async — returns immediately; the pipeline takes ~30s and
@@ -448,6 +453,80 @@ public final class AppState {
                 )
             } catch {
                 DebugLog.shared.write("[proposals] failed to persist proposals: \(error)")
+            }
+        }
+    }
+
+    /// Phase 10 — fire relationship discovery against `sceneId` and
+    /// persist the proposals to the project's `ProposedRelationshipsStore`.
+    /// Async; notifies via `proposedRelationshipsDidChangeNotification`
+    /// on completion. No-op on in-memory session, missing extractor
+    /// profile, unknown scene, or fewer than two bible characters
+    /// (a relationship needs two endpoints).
+    public func runRelationshipDiscovery(for sceneId: UUID) {
+        guard let projectURL = currentSession.url else {
+            DebugLog.shared.write("[relationships] runRelationshipDiscovery dropped — in-memory session")
+            return
+        }
+        guard let profile = settings.extractorServer() else {
+            DebugLog.shared.write("[relationships] runRelationshipDiscovery dropped — no extractor profile configured")
+            return
+        }
+        guard let scene = currentSession.scenes[sceneId] else {
+            DebugLog.shared.write("[relationships] runRelationshipDiscovery dropped — unknown scene id=\(sceneId)")
+            return
+        }
+        let characterNames = currentSession.project.bible.characters.map(\.name)
+        guard characterNames.count >= 2 else {
+            DebugLog.shared.write("[relationships] runRelationshipDiscovery dropped — fewer than two bible characters")
+            return
+        }
+        let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
+        let extractor = OllamaRelationshipDiscoveryExtractor(
+            client: OllamaClient(baseURL: profile.baseURL, model: model)
+        )
+        DebugLog.shared.write("[relationships] firing relationship-discovery: scene=\(sceneId) characters=\(characterNames.count)")
+        extractor.extract(
+            scenePose: scene.prose,
+            sceneId: sceneId,
+            characterNames: characterNames
+        ) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.handleRelationshipDiscoveryComplete(
+                    projectURL: projectURL, sceneId: sceneId, result: result
+                )
+            }
+        }
+    }
+
+    func handleRelationshipDiscoveryComplete(
+        projectURL: URL,
+        sceneId: UUID,
+        result: Result<[RelationshipDiscovery.ProposedRelationship], Error>
+    ) {
+        // Post on every exit so the Bible Workspace rebuilds — same
+        // posture as entity discovery's null-discovery handling.
+        defer {
+            NotificationCenter.default.post(
+                name: Self.proposedRelationshipsDidChangeNotification,
+                object: self
+            )
+        }
+        switch result {
+        case .failure(let err):
+            DebugLog.shared.write("[relationships] relationship-discovery failed: \(err)")
+        case .success(let discovered):
+            DebugLog.shared.write("[relationships] relationship-discovery produced \(discovered.count) proposals")
+            let proposals = discovered.map {
+                RelationshipDiscovery.Proposal(discovered: $0, sourceSceneId: sceneId)
+            }
+            do {
+                try ProposedRelationshipsStore.replaceProposals(
+                    forSceneId: sceneId, proposals: proposals, in: projectURL
+                )
+            } catch {
+                DebugLog.shared.write("[relationships] failed to persist proposals: \(error)")
             }
         }
     }
