@@ -45,4 +45,47 @@ public enum RelationshipConflict {
             $0.status == .current && isExclusiveKind($0.kind)
         }
     }
+
+    /// Merge an accepted relationship into a character's existing
+    /// edges. Pure-data; the AppState accept flow calls this after
+    /// the user has answered the demote prompt.
+    ///
+    /// - `demoteConflicting`: when true, every existing current
+    ///   romantic edge (other than the one being accepted) flips to
+    ///   `.past` — the "A's partner changed" transition. When false,
+    ///   prior edges are left untouched (the user declined, or there
+    ///   was no conflict).
+    /// - The new edge upserts by `(toCharacterId, kind)`: re-accepting
+    ///   the same relationship refreshes it rather than duplicating.
+    ///   A different `kind` to the same character is a distinct edge.
+    public static func applyAccepted(
+        to existing: [Relationship],
+        newEdge: Relationship,
+        demoteConflicting: Bool
+    ) -> [Relationship] {
+        func norm(_ s: String) -> String {
+            s.lowercased().trimmingCharacters(in: .whitespaces)
+        }
+        let sameSlot: (Relationship) -> Bool = {
+            $0.toCharacterId == newEdge.toCharacterId && norm($0.kind) == norm(newEdge.kind)
+        }
+        var result = existing
+        // Demotion only applies when the accepted edge is itself a
+        // romantic one — a new friendship never displaces a partner,
+        // whatever the flag says.
+        if demoteConflicting && isExclusiveKind(newEdge.kind) {
+            for i in result.indices {
+                guard result[i].status == .current,
+                      isExclusiveKind(result[i].kind),
+                      !sameSlot(result[i]) else { continue }
+                result[i].status = .past
+            }
+        }
+        if let idx = result.firstIndex(where: sameSlot) {
+            result[idx] = newEdge
+        } else {
+            result.append(newEdge)
+        }
+        return result
+    }
 }
