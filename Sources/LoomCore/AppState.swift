@@ -405,24 +405,26 @@ public final class AppState {
                 guard let self = self else { return }
                 self.discoveringSceneIds.remove(sceneId)
                 self.handleEntityDiscoveryComplete(projectURL: projectURL, sceneId: sceneId, result: result)
-                // handleEntityDiscoveryComplete posts on success; the
-                // failure branch needs its own post so the UI clears
-                // the indicator either way.
-                if case .failure = result {
-                    NotificationCenter.default.post(
-                        name: Self.proposedEntitiesDidChangeNotification,
-                        object: self
-                    )
-                }
             }
         }
     }
 
-    private func handleEntityDiscoveryComplete(
+    func handleEntityDiscoveryComplete(
         projectURL: URL,
         sceneId: UUID,
         result: Result<[EntityDiscovery.ProposedEntity], Error>
     ) {
+        // Post on EVERY exit path — failure, null-discovery, and
+        // successful append all need the Bible Workspace to rebuild
+        // its snapshot so the in-flight "Discovering…" indicator
+        // clears. Skipping the post on the empty-success path leaves
+        // the amber pulse-dot stuck forever (live-smoke bug).
+        defer {
+            NotificationCenter.default.post(
+                name: Self.proposedEntitiesDidChangeNotification,
+                object: self
+            )
+        }
         switch result {
         case .failure(let err):
             DebugLog.shared.write("[proposals] entity-discovery failed: \(err)")
@@ -441,12 +443,7 @@ public final class AppState {
                 try ProposedEntitiesStore.append(entities: proposals, facts: [], in: projectURL)
             } catch {
                 DebugLog.shared.write("[proposals] failed to persist proposals: \(error)")
-                return
             }
-            NotificationCenter.default.post(
-                name: Self.proposedEntitiesDidChangeNotification,
-                object: self
-            )
         }
     }
 

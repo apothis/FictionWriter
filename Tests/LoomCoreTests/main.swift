@@ -193,6 +193,7 @@ let suites: [TestSuite] = [
     phase9ObjectKindTests(),
     phase8cReferenceFingerprintStaleTests(),
     phase9DiscoveringSceneIdsTests(),
+    phase9DiscoveryIndicatorClearTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
