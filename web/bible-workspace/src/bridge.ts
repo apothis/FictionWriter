@@ -77,3 +77,15 @@ export function postIntent(intent: BibleWorkspaceIntent): void {
   }
   handler.postMessage(intent);
 }
+
+// Dev-only browser-preview harness. In `vite dev` there is no Swift
+// host to push a snapshot, so the webview would hang on "Awaiting
+// first snapshot…". When DEV is set and no Swift handler is present,
+// feed a mock snapshot. The dynamic import + `import.meta.env.DEV`
+// guard means none of this — nor devMockSnapshot — reaches the
+// production bundle (`vite build` sets DEV false, dead-code-eliminated).
+if (import.meta.env.DEV && !window.webkit?.messageHandlers?.loom) {
+  void import("./devMockSnapshot").then(({ devMockSnapshot }) => {
+    window.loom.applySnapshot(devMockSnapshot);
+  });
+}
