@@ -27,6 +27,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
     private var didReplaceObserver: NSObjectProtocol?
     private var suggestionsObserver: NSObjectProtocol?
     private var proposalsObserver: NSObjectProtocol?
+    private var relationshipProposalsObserver: NSObjectProtocol?
 
     public init(session: ProjectSession, appState: AppState) {
         self.session = session
@@ -117,6 +118,15 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         ) { [weak self] _ in
             self?.pushSnapshot()
         }
+        // Phase 10 — relationship-proposal changes also bypass
+        // ProjectSession.didChange.
+        relationshipProposalsObserver = NotificationCenter.default.addObserver(
+            forName: AppState.proposedRelationshipsDidChangeNotification,
+            object: appState,
+            queue: .main
+        ) { [weak self] _ in
+            self?.pushSnapshot()
+        }
     }
 
     @available(*, unavailable) public required init?(coder: NSCoder) { nil }
@@ -126,6 +136,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         if let o = didReplaceObserver { NotificationCenter.default.removeObserver(o) }
         if let o = suggestionsObserver { NotificationCenter.default.removeObserver(o) }
         if let o = proposalsObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = relationshipProposalsObserver { NotificationCenter.default.removeObserver(o) }
     }
 
     // MARK: - Content loading
@@ -211,6 +222,7 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             ingestingReferenceIds: Array(appState.ingestingReferenceIds),
             discoveringSceneIds: Array(appState.discoveringSceneIds),
             proposedEntities: buildProposedEntitySnapshots(),
+            proposedRelationships: buildProposedRelationshipSnapshots(),
             suggestionsQueue: appState.ledgerSuggestionsQueue
         )
         do {
@@ -259,6 +271,31 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
                 sourceSceneTitle: sceneTitleById[p.sourceSceneId] ?? "(unknown scene)",
                 confidence: p.confidence,
                 attachedFacts: facts
+            )
+        }
+    }
+
+    /// Phase 10 — read the proposed-relationships sidecar and project
+    /// into the webview shape, resolving scene titles. [] on
+    /// in-memory session / missing store.
+    private func buildProposedRelationshipSnapshots() -> [SnapshotProposedRelationship] {
+        guard let projectURL = session.url,
+              let payload = ProposedRelationshipsStore.load(in: projectURL) else {
+            return []
+        }
+        let sceneTitleById: [UUID: String] = Dictionary(
+            uniqueKeysWithValues: session.scenes.values.map { ($0.id, $0.title) }
+        )
+        return payload.proposals.map { p in
+            SnapshotProposedRelationship(
+                id: p.id,
+                fromName: p.fromName,
+                toName: p.toName,
+                kind: p.kind,
+                status: p.status.rawValue,
+                evidenceQuote: p.evidenceQuote,
+                sourceSceneId: p.sourceSceneId,
+                sourceSceneTitle: sceneTitleById[p.sourceSceneId] ?? "(unknown scene)"
             )
         }
     }

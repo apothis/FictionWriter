@@ -1,0 +1,68 @@
+import Foundation
+@testable import LoomCore
+
+/// Phase 10 Part B — Bible Workspace snapshot projection of proposed
+/// relationships. Additive field; legacy snapshots decode with [].
+func phase10SnapshotProposedRelationshipsTests() -> TestSuite {
+    let s = TestSuite("Phase10SnapshotProposedRelationships")
+
+    func sample() -> SnapshotProposedRelationship {
+        SnapshotProposedRelationship(
+            id: UUID(),
+            fromName: "Chantal",
+            toName: "Jacob",
+            kind: "ex-boyfriend",
+            status: "past",
+            evidenceQuote: "He wasn't really my type.",
+            sourceSceneId: UUID(),
+            sourceSceneTitle: "The Beach"
+        )
+    }
+
+    s.test("SnapshotProposedRelationship round-trips through Codable") {
+        let p = sample()
+        let data = try JSONEncoder().encode(p)
+        let back = try JSONDecoder().decode(SnapshotProposedRelationship.self, from: data)
+        try expectEqual(back, p)
+    }
+
+    s.test("BibleWorkspaceSnapshot defaults proposedRelationships to []") {
+        let snap = BibleWorkspaceSnapshot(
+            projectTitle: "Test", characters: [], lorebook: [], scenes: [], suggestions: []
+        )
+        try expectEqual(snap.proposedRelationships, [])
+    }
+
+    s.test("Snapshot encode/decode round-trips proposedRelationships") {
+        let p = sample()
+        let snap = BibleWorkspaceSnapshot(
+            projectTitle: "Test", characters: [], lorebook: [], scenes: [], suggestions: [],
+            proposedRelationships: [p]
+        )
+        let data = try JSONEncoder().encode(snap)
+        let back = try JSONDecoder().decode(BibleWorkspaceSnapshot.self, from: data)
+        try expectEqual(back.proposedRelationships.count, 1)
+        try expectEqual(back.proposedRelationships[0], p)
+    }
+
+    s.test("legacy snapshot without proposedRelationships → empty list") {
+        let legacy = """
+        {"projectTitle":"Legacy","characters":[],"lorebook":[],"scenes":[],"suggestions":[]}
+        """
+        let snap = try JSONDecoder().decode(BibleWorkspaceSnapshot.self, from: Data(legacy.utf8))
+        try expectEqual(snap.proposedRelationships, [])
+    }
+
+    s.test("build() with proposedRelationships parameter populates the snapshot") {
+        let snap = BibleWorkspaceSnapshot.build(
+            project: Project(title: "T"),
+            scenes: [:],
+            proposedRelationships: [sample()],
+            suggestionsQueue: LedgerSuggestionsQueue()
+        )
+        try expectEqual(snap.proposedRelationships.count, 1)
+        try expectEqual(snap.proposedRelationships[0].fromName, "Chantal")
+    }
+
+    return s
+}

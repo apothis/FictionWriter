@@ -80,6 +80,11 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     /// `acceptEntityProposal` / `rejectEntityProposal`. Additive —
     /// legacy snapshots decode with `[]`.
     public let proposedEntities: [SnapshotProposedEntity]
+    /// Phase 10 — pending relationship proposals. The Bible
+    /// Workspace's relationship-proposals view reads from this;
+    /// accept/reject route through bridge intents. Additive —
+    /// legacy snapshots decode with `[]`.
+    public let proposedRelationships: [SnapshotProposedRelationship]
 
     public init(
         projectTitle: String,
@@ -94,7 +99,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         extractingTemplateIds: [UUID] = [],
         ingestingReferenceIds: [UUID] = [],
         discoveringSceneIds: [UUID] = [],
-        proposedEntities: [SnapshotProposedEntity] = []
+        proposedEntities: [SnapshotProposedEntity] = [],
+        proposedRelationships: [SnapshotProposedRelationship] = []
     ) {
         self.projectTitle = projectTitle
         self.characters = characters
@@ -109,12 +115,14 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.ingestingReferenceIds = ingestingReferenceIds
         self.discoveringSceneIds = discoveringSceneIds
         self.proposedEntities = proposedEntities
+        self.proposedRelationships = proposedRelationships
     }
 
     private enum CodingKeys: String, CodingKey {
         case projectTitle, characters, lorebook, scenes, suggestions
         case references, templateScenes, sceneExemplars, isProjectOnDisk
         case extractingTemplateIds, ingestingReferenceIds, discoveringSceneIds, proposedEntities
+        case proposedRelationships
     }
 
     public init(from decoder: Decoder) throws {
@@ -137,6 +145,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         let discoveringStrings = try c.decodeIfPresent([String].self, forKey: .discoveringSceneIds) ?? []
         self.discoveringSceneIds = discoveringStrings.compactMap(UUID.init(uuidString:))
         self.proposedEntities = try c.decodeIfPresent([SnapshotProposedEntity].self, forKey: .proposedEntities) ?? []
+        self.proposedRelationships = try c.decodeIfPresent([SnapshotProposedRelationship].self, forKey: .proposedRelationships) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -156,6 +165,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         try c.encode(ingestingReferenceIds.map(\.uuidString), forKey: .ingestingReferenceIds)
         try c.encode(discoveringSceneIds.map(\.uuidString), forKey: .discoveringSceneIds)
         try c.encode(proposedEntities, forKey: .proposedEntities)
+        try c.encode(proposedRelationships, forKey: .proposedRelationships)
     }
 
     /// Builds a snapshot from the current `ProjectSession` state.
@@ -176,6 +186,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         ingestingReferenceIds: [UUID] = [],
         discoveringSceneIds: [UUID] = [],
         proposedEntities: [SnapshotProposedEntity] = [],
+        proposedRelationships: [SnapshotProposedRelationship] = [],
         suggestionsQueue: LedgerSuggestionsQueue
     ) -> BibleWorkspaceSnapshot {
         let sceneSummaries: [SceneSummary] = project.manuscript.flatSceneIds.compactMap { id in
@@ -208,7 +219,8 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             extractingTemplateIds: extractingTemplateIds,
             ingestingReferenceIds: ingestingReferenceIds,
             discoveringSceneIds: discoveringSceneIds,
-            proposedEntities: proposedEntities
+            proposedEntities: proposedEntities,
+            proposedRelationships: proposedRelationships
         )
     }
 }
@@ -265,6 +277,40 @@ public struct SnapshotProposedFact: Codable, Equatable {
         self.fact = fact
         self.certainty = certainty
         self.evidenceQuote = evidenceQuote
+    }
+}
+
+/// Phase 10 — webview projection of a `RelationshipDiscovery.Proposal`.
+/// `status` is a string ("current"/"past") for direct JS compat;
+/// `sourceSceneTitle` is pre-resolved at build time.
+public struct SnapshotProposedRelationship: Codable, Equatable {
+    public let id: UUID
+    public let fromName: String
+    public let toName: String
+    public let kind: String
+    public let status: String
+    public let evidenceQuote: String
+    public let sourceSceneId: UUID
+    public let sourceSceneTitle: String
+
+    public init(
+        id: UUID,
+        fromName: String,
+        toName: String,
+        kind: String,
+        status: String,
+        evidenceQuote: String,
+        sourceSceneId: UUID,
+        sourceSceneTitle: String
+    ) {
+        self.id = id
+        self.fromName = fromName
+        self.toName = toName
+        self.kind = kind
+        self.status = status
+        self.evidenceQuote = evidenceQuote
+        self.sourceSceneId = sourceSceneId
+        self.sourceSceneTitle = sourceSceneTitle
     }
 }
 
