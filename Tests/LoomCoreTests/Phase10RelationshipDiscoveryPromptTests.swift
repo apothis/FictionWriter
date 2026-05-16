@@ -104,5 +104,39 @@ func phase10RelationshipDiscoveryPromptTests() -> TestSuite {
         try expectEqual(rels.count, 1)
     }
 
+    // MARK: - dedup
+
+    func rel(_ from: String, _ to: String, _ kind: String, _ status: RelationshipStatus = .current) -> RelationshipDiscovery.ProposedRelationship {
+        RelationshipDiscovery.ProposedRelationship(
+            fromName: from, toName: to, kind: kind, status: status, evidenceQuote: "q"
+        )
+    }
+
+    s.test("dedup collapses same direction + kind, case-insensitively") {
+        let out = RelationshipDiscovery.dedupRelationships([
+            rel("Chantal", "Muriel", "girlfriend"),
+            rel("chantal", "  MURIEL ", "Girlfriend"),
+        ])
+        try expectEqual(out.count, 1)
+    }
+
+    s.test("dedup ignores status — first contradictory edge wins") {
+        let out = RelationshipDiscovery.dedupRelationships([
+            rel("A", "B", "partner", .current),
+            rel("A", "B", "partner", .past),
+        ])
+        try expectEqual(out.count, 1)
+        try expectEqual(out[0].status, .current)
+    }
+
+    s.test("dedup keeps distinct directions and distinct kinds") {
+        let out = RelationshipDiscovery.dedupRelationships([
+            rel("A", "B", "mentor"),   // A -> B
+            rel("B", "A", "student"),  // reverse direction
+            rel("A", "B", "friend"),   // same direction, different kind
+        ])
+        try expectEqual(out.count, 3)
+    }
+
     return s
 }

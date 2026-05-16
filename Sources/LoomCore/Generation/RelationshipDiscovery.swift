@@ -127,6 +127,34 @@ public enum RelationshipDiscovery {
         )
     }
 
+    /// Collapse duplicate edges sharing a direction + kind (case-
+    /// insensitive, trimmed) down to their first occurrence. Like
+    /// Phase 9's candidate dedup: gemma4_2b emits one edge per
+    /// mention, so a scene where two characters interact repeatedly
+    /// yields the same relationship many times. Status is part of
+    /// the identity check is deliberately *not* — a contradictory
+    /// current/past pair for the same edge keeps the first.
+    public static func dedupRelationships(_ relationships: [ProposedRelationship]) -> [ProposedRelationship] {
+        struct Key: Hashable {
+            let from: String
+            let to: String
+            let kind: String
+        }
+        var seen: Set<Key> = []
+        var out: [ProposedRelationship] = []
+        for r in relationships {
+            let key = Key(
+                from: r.fromName.lowercased().trimmingCharacters(in: .whitespaces),
+                to: r.toName.lowercased().trimmingCharacters(in: .whitespaces),
+                kind: r.kind.lowercased().trimmingCharacters(in: .whitespaces)
+            )
+            if seen.insert(key).inserted {
+                out.append(r)
+            }
+        }
+        return out
+    }
+
     private static func recoverPerObject(_ slice: Substring) -> [ProposedRelationship] {
         var out: [ProposedRelationship] = []
         var depth = 0
