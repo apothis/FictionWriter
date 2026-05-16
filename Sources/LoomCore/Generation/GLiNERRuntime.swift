@@ -45,6 +45,18 @@ public enum GLiNERRuntime {
         return url
     }
 
+    /// Resolve the exported GLiNER bundle *directory* — the folder
+    /// holding the ONNX model and the tokenizer assets.
+    public static func bundleDirectoryURL() throws -> URL {
+        guard let url = Bundle.module.url(
+            forResource: bundleSubdirectory,
+            withExtension: nil
+        ) else {
+            throw RuntimeError.modelBundleMissing
+        }
+        return url
+    }
+
     /// Open an ONNX Runtime inference session against the exported
     /// GLiNER model. Phases 3+ add tokenisation + span decode on top.
     public static func makeSession(env: ORTEnv) throws -> ORTSession {

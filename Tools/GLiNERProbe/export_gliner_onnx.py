@@ -26,6 +26,7 @@ Usage:
 the repo root). The directory is gitignored — like the Wegmann CoreML
 bundle, the weights are regenerated locally before a build, not committed.
 """
+import json
 import sys
 import shutil
 import time
@@ -86,6 +87,20 @@ def main() -> int:
     fp32 = out_dir / "model.onnx"
     if fp32.exists():
         fp32.unlink()
+
+    # swift-transformers' tokenizer factory selects the model class
+    # from tokenizer_config.json's `tokenizer_class`; it has no
+    # DebertaV2 entry. GLiNER's tokenizer is a plain SentencePiece
+    # Unigram (tokenizer.json: model.type == "Unigram"), so rewrite the
+    # class to XLMRobertaTokenizer — swift-transformers maps that to
+    # its generic UnigramTokenizer, and every normalizer / pre-tokenizer
+    # / decoder behaviour is read from tokenizer.json regardless. This
+    # lets the Swift side load the bundle with the stock AutoTokenizer,
+    # no per-model workaround.
+    cfg_path = out_dir / "tokenizer_config.json"
+    cfg = json.loads(cfg_path.read_text())
+    cfg["tokenizer_class"] = "XLMRobertaTokenizer"
+    cfg_path.write_text(json.dumps(cfg, indent=2))
 
     print("\nbundle contents:")
     missing = []

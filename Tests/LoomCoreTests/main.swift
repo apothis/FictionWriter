@@ -207,6 +207,7 @@ let suites: [TestSuite] = [
     phase9CandidateLineFormatTests(),
     phase10RelationshipLineFormatTests(),
     glinerRuntimeTests(),
+    glinerTokenizerTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
