@@ -80,9 +80,10 @@ function resolveCharacterId(
 }
 
 function circleLayout(count: number): { x: number; y: number }[] {
-  const radius = Math.max(180, count * 38);
-  const cx = radius + 80;
-  const cy = radius + 80;
+  // Wide enough that ~180px-wide nodes don't crowd their edges/labels.
+  const radius = Math.max(280, count * 64);
+  const cx = radius + 100;
+  const cy = radius + 100;
   return Array.from({ length: count }, (_, i) => {
     const angle = (2 * Math.PI * i) / Math.max(1, count) - Math.PI / 2;
     return {
