@@ -106,6 +106,31 @@ func phase9GrammarsAndPromptsTests() -> TestSuite {
         try expectTrue(prompt.contains("Scene prose."))
     }
 
+    s.test("Stage A2 instruction: no 'new' qualifier (live-smoke recall bug)") {
+        // Live-smoke: with an empty known-list, "Identify new
+        // characters…" made gemma4_2b emit only the narratively-
+        // newest character (one spoken-about in dialogue) and skip
+        // the two acting protagonists. Dedup against the bible is
+        // the known-list line's job, not a word in the instruction.
+        let instr = EntityDiscovery.candidateGenerationPromptInstruction.lowercased()
+        try expectFalse(instr.contains("new character"),
+                        "'new' makes the model scope to narrative recency")
+        try expectFalse(instr.contains("identify new"),
+                        "'new' makes the model scope to narrative recency")
+        // Positive framing: ask for the full cast.
+        try expectTrue(instr.contains("every character"),
+                       "instruction should ask for every character")
+    }
+
+    s.test("Stage A2 instruction: explicitly includes spoken-about characters") {
+        // The recall miss was asymmetric — the model kept the
+        // spoken-about character and dropped the present ones. Be
+        // explicit that both count so neither side is privileged.
+        let instr = EntityDiscovery.candidateGenerationPromptInstruction.lowercased()
+        try expectTrue(instr.contains("spoken about"),
+                       "instruction must name the spoken-about case")
+    }
+
     // MARK: - Stage A2 parser
 
     s.test("Stage A2 parser: clean JSON array decodes") {

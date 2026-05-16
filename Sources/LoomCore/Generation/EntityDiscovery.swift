@@ -255,6 +255,33 @@ public enum EntityDiscovery {
         case malformedJSON
     }
 
+    /// Collapse Stage A2 candidates sharing a surface form (case-
+    /// insensitive, trimmed) AND kind down to their first occurrence.
+    /// Live-smoke: the reworded A2 prompt made gemma4_2b emit one
+    /// candidate per *mention* — a 1263-word scene yielded 30
+    /// candidates for 3 distinct entities. Each duplicate would fire
+    /// its own Stage D normalisation call, serialised through Ollama,
+    /// turning a ~30s discovery into minutes. Runs before Stage D so
+    /// the fan-out matches the entity count, not the mention count.
+    public static func dedupCandidatesBySurface(_ candidates: [Candidate]) -> [Candidate] {
+        struct Key: Hashable {
+            let surface: String
+            let kind: Kind
+        }
+        var seen: Set<Key> = []
+        var out: [Candidate] = []
+        for c in candidates {
+            let key = Key(
+                surface: c.surface.lowercased().trimmingCharacters(in: .whitespaces),
+                kind: c.kind
+            )
+            if seen.insert(key).inserted {
+                out.append(c)
+            }
+        }
+        return out
+    }
+
     /// GBNF grammar for Stage A2 (kobold-side). Empirical guards
     /// from LedgerExtraction §164 baked in: single-optional-space
     /// `ws`, rules on one line, simple string-escape handling.
@@ -282,8 +309,13 @@ public enum EntityDiscovery {
         ]
     }
 
+    // "new" deliberately absent: with an empty known-list every
+    // entity is new to the bible, but the word made gemma4_2b scope
+    // to narrative recency and emit only the most-recently-discussed
+    // character. Dedup against the bible is the known-list line's
+    // job (see buildCandidateGenerationPrompt), not the instruction.
     public static let candidateGenerationPromptInstruction =
-        "Identify new characters, named places, and named significant objects (e.g. named weapons, named artefacts, named vehicles) mentioned in the scene below. Only emit entities introduced with a clear proper noun — do not emit entries for generic references like \"the man\", \"the bedroom\", \"the cafe\", \"the cup\". For each entity, emit one entry with the surface form as it appears, the kind (character, place, or object), and a verbatim quote where the entity first appears."
+        "Identify every character, named place, and named significant object (e.g. named weapons, named artefacts, named vehicles) that appears in the scene below. List every character — those who act or speak in the scene as well as those who are only spoken about by others. Only emit entities that have a clear proper noun — do not emit entries for generic references like \"the man\", \"the bedroom\", \"the cafe\", \"the cup\". For each entity, emit one entry with the surface form as it appears, the kind (character, place, or object), and a verbatim quote where the entity first appears."
 
     public static func buildCandidateGenerationPrompt(
         scenePose: String,

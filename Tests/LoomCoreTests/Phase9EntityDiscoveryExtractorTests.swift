@@ -18,10 +18,12 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
     final class StubProvider: OllamaCallProvider {
         struct Call {
             let prompt: String
+            let options: OllamaChatOptions
             let completion: (Result<String, OllamaError>) -> Void
         }
         var queued: [Call] = []
         var cannedResponses: [Result<String, OllamaError>] = []
+        var optionsLog: [OllamaChatOptions] = []
 
         func call(
             prompt: String,
@@ -29,7 +31,8 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
             options: OllamaChatOptions,
             completion: @escaping (Result<String, OllamaError>) -> Void
         ) {
-            queued.append(Call(prompt: prompt, completion: completion))
+            optionsLog.append(options)
+            queued.append(Call(prompt: prompt, options: options, completion: completion))
         }
 
         func flushNext() {
@@ -368,6 +371,75 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
         } else {
             throw TestFailure(message: "expected success despite partial Stage D failure", file: #file, line: #line)
         }
+    }
+
+    s.test("duplicate A2 candidates collapse to one Stage D call per entity") {
+        // Live-smoke: gemma4_2b emitted 30 candidates for 3 entities
+        // (one per mention). Without pre-Stage-D dedup that fires 30
+        // serialised normalisation calls. Feed 6 candidates spanning
+        // 2 entities → exactly 2 Stage D calls.
+        let stub = StubProvider()
+        let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
+
+        var captured: Result<[EntityDiscovery.ProposedEntity], Error>?
+        extractor.extract(
+            scenePose: "Chantal and Muriel.",
+            sceneId: sceneId,
+            knownEntityNames: [],
+            existingEntities: [],
+            embedder: nil
+        ) { result in captured = result }
+
+        stub.cannedResponses.append(.success(a2Response([
+            ("Chantal", "character", "q1"),
+            ("Muriel", "character", "q2"),
+            ("Chantal", "character", "q3"),
+            ("Chantal", "character", "q4"),
+            ("Muriel", "character", "q5"),
+            ("Chantal", "character", "q6"),
+        ])))
+        stub.flushNext()
+        // Only 2 Stage D calls — one per distinct surface.
+        try expectEqual(stub.queued.count, 2)
+        stub.cannedResponses.append(.success(dResponse(kind: "character", canonical: "Chantal")))
+        stub.cannedResponses.append(.success(dResponse(kind: "character", canonical: "Muriel")))
+        stub.flushAll()
+
+        let result = try expectNotNil(captured)
+        if case .success(let proposals) = result {
+            try expectEqual(proposals.count, 2)
+        } else {
+            throw TestFailure(message: "expected success", file: #file, line: #line)
+        }
+    }
+
+    s.test("Stage A2 and Stage D both call with num_predict 2048 (JSON-schema length-cap floor)") {
+        // Live-smoke bug: Stage D used num_predict 512, Stage A2 used
+        // 1024 — both below the load-bearing 2048. Under Ollama's
+        // JSON-Schema `format` mode, capping num_predict before the
+        // schema accepts yields EMPTY content (done_reason: length),
+        // not a truncation. Stage D returned 0-char bodies → every
+        // survivor failed to normalise. Both stages must use 2048.
+        let stub = StubProvider()
+        let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
+
+        extractor.extract(
+            scenePose: "Anders arrived.",
+            sceneId: sceneId,
+            knownEntityNames: [],
+            existingEntities: [],
+            embedder: nil
+        ) { _ in }
+
+        stub.cannedResponses.append(.success(a2Response([("Anders", "character", "Anders arrived.")])))
+        stub.flushNext()
+        stub.cannedResponses.append(.success(dResponse(kind: "character", canonical: "Anders")))
+        stub.flushNext()
+
+        // optionsLog[0] = Stage A2, optionsLog[1] = Stage D for Anders.
+        try expectEqual(stub.optionsLog.count, 2)
+        try expectEqual(stub.optionsLog[0].numPredict, 2048, "Stage A2 num_predict")
+        try expectEqual(stub.optionsLog[1].numPredict, 2048, "Stage D num_predict")
     }
 
     return s
