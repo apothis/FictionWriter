@@ -93,7 +93,8 @@ struct GoldFact: Codable {
 
 // MARK: - Configuration
 
-let fixtureRelativePath = "Tests/LoomCoreTests/Fixtures/EntityDiscoverySpike/fixture.json"
+let fixtureRelativePath = ProcessInfo.processInfo.environment["LOOM_SPIKE_FIXTURE"]
+    ?? "Tests/LoomCoreTests/Fixtures/EntityDiscoverySpike/fixture.json"
 let ollamaURLString = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_URL"]
     ?? "http://localhost:11434/"
 let ollamaModel = ProcessInfo.processInfo.environment["LOOM_SPIKE_OLLAMA_MODEL"]
@@ -215,6 +216,7 @@ struct PipelineSceneResult {
     let sceneTitle: String
     let tag: String
     let elapsedSec: TimeInterval
+    let rawPreDedupCount: Int
     let rawCandidates: [EntityDiscovery.Candidate]
     let droppedAsKnown: [EntityDiscovery.Candidate]
     let droppedByPlaceRecurrence: [EntityDiscovery.Candidate]
@@ -335,10 +337,19 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
             sceneId: scene.id
         )
     }
-    var candidates = rawCands
-    logProgress("[\(scene.id)]   got \(candidates.count) candidates\(stageARetried ? " (after retry)" : "")")
+    logProgress("[\(scene.id)]   got \(rawCands.count) candidates\(stageARetried ? " (after retry)" : "")")
 
-    // Snapshot raw output for the report before any filtering.
+    // Collapse duplicate mentions of the same entity before any
+    // downstream work — matches EntityDiscoveryPipeline.applyFilters'
+    // first step. Load-bearing for GLiNER detection, which emits one
+    // candidate per *mention* ("Chantal" ×40 in a scene); each survivor
+    // otherwise costs a serialised Stage D LLM call.
+    let rawPreDedupCount = rawCands.count
+    var candidates = EntityDiscovery.dedupCandidatesBySurface(rawCands)
+    if candidates.count < rawCands.count {
+        logProgress("[\(scene.id)]   dedupBySurface: \(rawCands.count) → \(candidates.count)")
+    }
+    // Snapshot the deduped output for the report's funnel.
     let rawCandidatesSnapshot = candidates
 
     // Fix-1: pre-gate known-entity filter (structural enforcement
@@ -537,6 +548,7 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
         sceneTitle: scene.title,
         tag: scene.tag,
         elapsedSec: elapsed,
+        rawPreDedupCount: rawPreDedupCount,
         rawCandidates: rawCandidatesSnapshot,
         droppedAsKnown: droppedAsKnown,
         droppedByPlaceRecurrence: droppedByPlaceRecurrence,
@@ -576,7 +588,7 @@ func renderReport(results: [PipelineSceneResult], aggregate: EntityDiscoveryScor
 
     // Per-scene
     out += "## Per-scene breakdown\n\n"
-    out += "| Scene | Tag | Raw → -Known → +Gate → +Place → +Dedup → Norm | TP | FP | FN | Latency |\n"
+    out += "| Scene | Tag | Raw → Dedup → -Known → +Gate → +Place → +CosineDedup → Norm | TP | FP | FN | Latency |\n"
     out += "|---|---|---|---|---|---|---|\n"
     for r in results {
         let tally = aggregate.perScene[r.sceneId]
@@ -587,7 +599,7 @@ func renderReport(results: [PipelineSceneResult], aggregate: EntityDiscoveryScor
         let afterGate = afterKnown - r.gateRejects.count
         let afterPlace = afterGate - r.droppedByPlaceRecurrence.count
         let afterDedup = r.postGate.count
-        out += "| \(r.sceneId) **\(r.sceneTitle)** | \(r.tag) | \(r.rawCandidates.count) → \(afterKnown) → \(afterGate) → \(afterPlace) → \(afterDedup) → \(r.normalised.count) | \(tp) | \(fp) | \(fn) | \(String(format: "%.1fs", r.elapsedSec)) |\n"
+        out += "| \(r.sceneId) **\(r.sceneTitle)** | \(r.tag) | \(r.rawPreDedupCount) → \(r.rawCandidates.count) → \(afterKnown) → \(afterGate) → \(afterPlace) → \(afterDedup) → \(r.normalised.count) | \(tp) | \(fp) | \(fn) | \(String(format: "%.1fs", r.elapsedSec)) |\n"
     }
     out += "\n"
 
