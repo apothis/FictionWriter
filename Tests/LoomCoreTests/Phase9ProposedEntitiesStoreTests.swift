@@ -149,5 +149,91 @@ func phase9ProposedEntitiesStoreTests() -> TestSuite {
         try expectNil(ProposedEntitiesStore.load(in: project))
     }
 
+    func sceneProposal(_ name: String, scene: UUID, kind: EntityDiscovery.Kind = .character) -> EntityDiscovery.ProposedEntity {
+        EntityDiscovery.ProposedEntity(
+            id: UUID(),
+            kind: kind,
+            canonicalName: name,
+            aliases: [],
+            oneLine: "test",
+            evidenceQuote: "x",
+            sourceSceneId: scene,
+            confidence: 0.8
+        )
+    }
+
+    s.test("replaceProposals supersedes prior proposals for the same scene") {
+        // Live-smoke: re-running discovery on a scene used to APPEND,
+        // so each run stacked duplicate Chantal/Muriel/Jacob entries
+        // (plus stale leftovers from earlier scene drafts). Re-running
+        // must give a fresh set for that scene, not an accumulation.
+        let project = tempProjectURL()
+        defer { try? FileManager.default.removeItem(at: project) }
+        let sceneA = UUID()
+        let sceneB = UUID()
+        try ProposedEntitiesStore.save(
+            ProposedEntitiesPayload(
+                entities: [
+                    sceneProposal("StaleJacob", scene: sceneA),
+                    sceneProposal("StaleKey", scene: sceneA, kind: .object),
+                    sceneProposal("OtherSceneEntity", scene: sceneB),
+                ],
+                facts: [],
+                updatedAt: Date()
+            ),
+            in: project
+        )
+        try ProposedEntitiesStore.replaceProposals(
+            forSceneId: sceneA,
+            entities: [sceneProposal("Chantal", scene: sceneA), sceneProposal("Muriel", scene: sceneA)],
+            facts: [],
+            in: project
+        )
+        let back = try expectNotNil(ProposedEntitiesStore.load(in: project))
+        let names = Set(back.entities.map(\.canonicalName))
+        // sceneA's old proposals gone, fresh ones present.
+        try expectEqual(names, Set(["Chantal", "Muriel", "OtherSceneEntity"]))
+    }
+
+    s.test("replaceProposals drops facts attached to superseded proposals") {
+        let project = tempProjectURL()
+        defer { try? FileManager.default.removeItem(at: project) }
+        let sceneA = UUID()
+        let stale = sceneProposal("StaleJacob", scene: sceneA)
+        let staleFact = EntityDiscovery.ProposedEntityFacts(
+            proposedEntityId: stale.id,
+            facts: [LedgerExtraction.ExtractedFact(
+                characterId: stale.id.uuidString, fact: "stale", certainty: .asserted, evidenceQuote: "x"
+            )]
+        )
+        try ProposedEntitiesStore.save(
+            ProposedEntitiesPayload(entities: [stale], facts: [staleFact], updatedAt: Date()),
+            in: project
+        )
+        try ProposedEntitiesStore.replaceProposals(
+            forSceneId: sceneA,
+            entities: [sceneProposal("Chantal", scene: sceneA)],
+            facts: [],
+            in: project
+        )
+        let back = try expectNotNil(ProposedEntitiesStore.load(in: project))
+        try expectEqual(back.facts.count, 0, "stale fact should be dropped with its proposal")
+        try expectEqual(back.entities.count, 1)
+    }
+
+    s.test("replaceProposals on absent project starts fresh (no error)") {
+        let project = tempProjectURL()
+        defer { try? FileManager.default.removeItem(at: project) }
+        let sceneA = UUID()
+        try ProposedEntitiesStore.replaceProposals(
+            forSceneId: sceneA,
+            entities: [sceneProposal("Chantal", scene: sceneA)],
+            facts: [],
+            in: project
+        )
+        let back = try expectNotNil(ProposedEntitiesStore.load(in: project))
+        try expectEqual(back.entities.count, 1)
+    }
+
     return s
 }

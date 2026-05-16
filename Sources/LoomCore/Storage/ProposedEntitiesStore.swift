@@ -78,6 +78,31 @@ public enum ProposedEntitiesStore {
         try save(merged, in: projectURL)
     }
 
+    /// Supersede every pending proposal anchored to `sceneId` with a
+    /// fresh set. Re-running entity discovery on a scene should give
+    /// the latest result, not stack duplicates on top of the prior
+    /// run (and earlier scene drafts that occupied the same slot).
+    /// Proposals for other scenes are untouched; facts attached to
+    /// the superseded proposals are dropped with them.
+    public static func replaceProposals(
+        forSceneId sceneId: UUID,
+        entities: [EntityDiscovery.ProposedEntity],
+        facts: [EntityDiscovery.ProposedEntityFacts],
+        in projectURL: URL
+    ) throws {
+        let existing = load(in: projectURL)
+            ?? ProposedEntitiesPayload(entities: [], facts: [], updatedAt: Date())
+        let keptEntities = existing.entities.filter { $0.sourceSceneId != sceneId }
+        let keptIds = Set(keptEntities.map(\.id))
+        let keptFacts = existing.facts.filter { keptIds.contains($0.proposedEntityId) }
+        let merged = ProposedEntitiesPayload(
+            entities: keptEntities + entities,
+            facts: keptFacts + facts,
+            updatedAt: Date()
+        )
+        try save(merged, in: projectURL)
+    }
+
     /// Drop the proposal with the given id, plus any facts attached
     /// to it. No-op on missing project / unknown id.
     public static func remove(proposalId: UUID, in projectURL: URL) throws {

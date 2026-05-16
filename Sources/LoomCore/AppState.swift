@@ -438,9 +438,14 @@ public final class AppState {
             if let scene = currentSession.scenes[sceneId] {
                 entityDiscoveryBaselines[sceneId] = WordCount.count(scene.prose)
             }
-            guard !proposals.isEmpty else { return }
+            // Supersede this scene's prior proposals — re-running
+            // discovery gives the latest read, not an accumulation.
+            // Runs the empty case too, so a re-discovery that finds
+            // nothing clears stale proposals from an earlier draft.
             do {
-                try ProposedEntitiesStore.append(entities: proposals, facts: [], in: projectURL)
+                try ProposedEntitiesStore.replaceProposals(
+                    forSceneId: sceneId, entities: proposals, facts: [], in: projectURL
+                )
             } catch {
                 DebugLog.shared.write("[proposals] failed to persist proposals: \(error)")
             }

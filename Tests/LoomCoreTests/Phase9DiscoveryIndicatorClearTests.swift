@@ -28,8 +28,17 @@ func phase9DiscoveryIndicatorClearTests() -> TestSuite {
 
     struct StubError: Error {}
 
+    func tempProjectURL() -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("loom-indicator-test-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
     s.test("0-proposal discovery posts proposedEntitiesDidChange (clears indicator)") {
         let appState = freshAppState()
+        let project = tempProjectURL()
+        defer { try? FileManager.default.removeItem(at: project) }
         var fired = false
         let token = NotificationCenter.default.addObserver(
             forName: AppState.proposedEntitiesDidChangeNotification,
@@ -38,7 +47,7 @@ func phase9DiscoveryIndicatorClearTests() -> TestSuite {
         defer { NotificationCenter.default.removeObserver(token) }
 
         appState.handleEntityDiscoveryComplete(
-            projectURL: URL(fileURLWithPath: "/tmp/loom-nonexistent-\(UUID().uuidString)"),
+            projectURL: project,
             sceneId: UUID(),
             result: .success([])
         )
@@ -47,6 +56,8 @@ func phase9DiscoveryIndicatorClearTests() -> TestSuite {
 
     s.test("failed discovery posts proposedEntitiesDidChange (clears indicator)") {
         let appState = freshAppState()
+        let project = tempProjectURL()
+        defer { try? FileManager.default.removeItem(at: project) }
         var fired = false
         let token = NotificationCenter.default.addObserver(
             forName: AppState.proposedEntitiesDidChangeNotification,
@@ -55,7 +66,7 @@ func phase9DiscoveryIndicatorClearTests() -> TestSuite {
         defer { NotificationCenter.default.removeObserver(token) }
 
         appState.handleEntityDiscoveryComplete(
-            projectURL: URL(fileURLWithPath: "/tmp/loom-nonexistent-\(UUID().uuidString)"),
+            projectURL: project,
             sceneId: UUID(),
             result: .failure(StubError())
         )
