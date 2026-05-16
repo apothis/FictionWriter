@@ -1407,3 +1407,58 @@ phase-4a commit + the fixture; the GLiNER source is in the spike venv at
 **1574/1574 tests green.** Phase 10 is feature-complete; discovery reliability
 is much improved but gemma-limited on explicit prose; GLiNER phases 1–4a are
 committed and verified, with 4b/4c/5 well-specified for the next session.
+
+### 15.20 Session ledger — 2026-05-16 (GLiNER entity detector — phases 4b/4c/5)
+
+Continuation of §15.19. Completed the GLiNER native entity detector and wired
+it into entity discovery. 5 commits, all on `main`. Tests 1574 → 1587.
+
+#### GLiNER detector — phases 4b/4c (3 commits)
+
+- **Phase 4b** — per-word tokenization + `words_mask`. `GLiNERTokenizer`
+  `encodeWord` encodes one word to subwords with no `[CLS]`/`[SEP]`;
+  `GLiNERInputs.assembleSequence` lays out
+  `[CLS] (<<ENT>> label)* <<SEP>> word* [SEP]` with the matching `words_mask`.
+  The Metaspace `▁`-prefix concern was a non-issue — `prepend_scheme: always`
+  means per-word encoding reproduces HF's joined `is_split_into_words` path.
+  A real-tokenizer test reproduces the inference fixture's `input_ids` exactly.
+- **Phase 4c graph surgery** — `export_gliner_onnx.py` now retypes the
+  `span_mask` input bool → int64 and splices a `Cast`-to-bool node (ONNX
+  Runtime's ObjC API has no bool element type). Applied in-place to the
+  current bundle; verified lossless — the patched graph reproduces the
+  fixture's logits with **zero** difference. The strict `onnx.checker` is
+  skipped: the quantized export already trips it inside an `If` subgraph
+  (pre-existing, unrelated).
+- **Phase 4c decode** — `GLiNERDecoder` (sigmoid → strict threshold →
+  validity-filter `s+k+1≤numWords` → greedy flat-NER selection → word-span →
+  char offsets) and `GLiNERDetector` (tokenizer + input construction + ONNX
+  session + decode). End-to-end test through the real ONNX session reproduces
+  the fixture's decoded entities exactly (Marek/dagger/cathedral).
+
+#### Phase 5 — GLiNER wired into discovery (2 commits)
+
+- The shared filter + Stage D tail moved to `EntityDiscoveryPipeline`
+  (`applyFilters` + `runStageD`); `OllamaEntityDiscoveryExtractor` now calls it
+  (behaviour unchanged, existing tests green). `GLiNEREntityDiscoveryExtractor`
+  composes GLiNER detection with that tail — the LLM keeps only Stage D
+  normalisation. `GLiNERCandidateDetector` maps detected spans to discovery
+  candidates, each carrying its enclosing sentence as evidence.
+  `EntityCandidateDetecting` protocol abstracts detection for stub-testing.
+- `AppState.runEntityDiscovery` resolves a lazily-loaded, cached `GLiNERDetector`
+  off-main and runs discovery through the GLiNER extractor; a missing model
+  bundle falls back once to the all-LLM extractor.
+
+#### Open follow-ups carried forward
+
+- **Long-scene chunking** — still deferred; the map-reduce over `RagChunker`.
+  The user added a 1658-word scene to `test2` for testing. GLiNER's speed makes
+  per-chunk extraction cheap. Worth doing next — `GLiNERDetector` truncates
+  nothing yet (GLiNER's `max_len` is 384 words; long scenes need chunking
+  before the detector, or the tail is silently dropped).
+- Live-smoke GLiNER discovery against `test2`'s explicit scene — not yet run.
+- Phase 9 / Phase 10 live-smoke, the writer-model A/B against Goetia — still
+  open from §15.17–15.18.
+
+**1587/1587 tests green.** GLiNER entity detector is complete and wired into
+discovery; the generative Stage A2 is replaced. Long-scene chunking is the
+clear next step (the detector currently has no length guard).
