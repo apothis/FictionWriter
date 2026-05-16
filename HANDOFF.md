@@ -1539,3 +1539,77 @@ constraint (grammar-constrained sampling is slower; §15.19 already dropped it
 for Stage A2) or a faster Stage D model.
 
 **1599/1599 tests green.**
+
+### 15.23 Session ledger — 2026-05-16 (relationship reliability + visual mapper)
+
+Continuation of §15.22. Verified the GLiNER discovery wiring is complete in the
+shipped app, measured relationship-discovery reliability, researched the SOTA,
+and began a visual relationship mapper. 3 commits + this ledger. Tests
+1599 → 1603.
+
+#### GLiNER discovery wiring — confirmed shipped
+
+`AppState.runEntityDiscovery` uses `GLiNEREntityDiscoveryExtractor` + a cached
+`GLiNERDetector` (LLM fallback if the bundle is absent); the ONNX bundle ships
+inside `Loom.app/Contents/Resources/Loom_LoomCore.bundle/GLiNER/`; discovery
+auto-fires when a scene grows ≥500 words. Nothing half-wired.
+
+#### Relationship-discovery reliability — measured + a cheap fix
+
+Ran relationship discovery live on `test2`'s two scenes (3 runs each). Verdict:
+reliable on the simple 2-character scene, **noisy on the dense 5-character
+explicit scene** — it hallucinates edges between unrelated characters, misses
+the central relationship (the mother–daughter premise, every run), invents
+character names not in the input list ("Narrator"), and is unstable run-to-run.
+Same gemma floor GLiNER fixed for entities — but GLiNER can't help (it's NER,
+not relation extraction).
+
+- `RelationshipDiscovery.filterToKnownCharacters` drops edges whose endpoints
+  aren't both in the known-character list (kills the invented "Narrator"); the
+  extractor applies it before the empty-check so an all-invented response
+  re-rolls. The parser never filtered to known names, so invented endpoints
+  would otherwise have leaked into the app.
+
+#### Relationship extraction — research outcome (the roadmap)
+
+A far-reaching research pass (see the agent report) found **GLiREL** — GLiNER's
+relation-extraction sibling: same DeBERTa-v3 encoder family, zero-shot, scores
+entity-pairs against relation labels with a sigmoid (so "no relation" is a
+threshold), refusal-proof, takes entity spans as input (Loom already has them).
+But unlike GLiNER it is **not turnkey**: weights are **CC BY-NC-SA
+(non-commercial — a hard license gate to resolve first)**, no official ONNX
+export, and it's trained on news/Wikipedia so fiction transfer is unproven.
+
+Recommended plan: **spike GLiREL** (license gate → Python accuracy spike on the
+test scenes → ONNX export only if accuracy holds), but **ship a two-stage
+pairwise LLM classifier as the baseline** — enumerate character pairs, classify
+each pair independently ("A→B: lover / sister / none?"). 2025 RE literature
+converged on this to fix LLM relation hallucination; it needs no new
+dependencies and makes invented/hallucinated edges structurally far less
+likely. GLiNER2 / GLiClass are alternative encoders if GLiREL's license blocks.
+
+#### Visual relationship mapper — increment 1
+
+A drag-and-drop relationship mapper was confirmed as wanted regardless of the
+discovery work. Increment 1: `RelationshipGraph.tsx` — a React Flow
+(`@xyflow/react`) graph view, characters as draggable nodes, each
+`Character.relationships` entry a directed labelled edge (current vs past
+styled), zoom/pan/minimap, double-click a node to edit. Reachable from the
+character list alongside the matrix. Read-only so far.
+
+Remaining mapper increments: (2) node-layout persistence — a
+`relationship-map-layout.json` sidecar + Swift store + bridge intent;
+(3) in-graph edge editing — create by drag / edit kind+status+notes / delete,
+routed through a new intent that runs `RelationshipConflict.applyAccepted` (the
+existing `patchCharacter` path bypasses romantic-exclusive demotion);
+(4) discovery integration — proposed relationships as dashed ghost edges
+accepted/rejected on the map.
+
+#### Open follow-ups carried forward
+
+- **Relationship-discovery reliability** — the GLiREL spike + two-stage pairwise
+  LLM classifier, per the research outcome above.
+- **Mapper increments 2–4** as listed.
+- Stage D latency (~52s on dense scenes), Phase 9/10 live-smoke, Goetia A/B.
+
+**1603/1603 tests green.**
