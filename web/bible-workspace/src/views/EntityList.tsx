@@ -28,6 +28,7 @@ interface Props {
   onOpenEntityProposals: () => void;
   onOpenRelationshipProposals: () => void;
   onOpenRelationshipMatrix: () => void;
+  onOpenRelationshipGraph: () => void;
 }
 
 export function EntityList({
@@ -45,6 +46,7 @@ export function EntityList({
   onOpenEntityProposals,
   onOpenRelationshipProposals,
   onOpenRelationshipMatrix,
+  onOpenRelationshipGraph,
 }: Props) {
   const sceneExemplars = snapshot.sceneExemplars ?? [];
   return (
@@ -61,13 +63,22 @@ export function EntityList({
           count={snapshot.characters.length}
           headerAction={
             snapshot.characters.length >= 2 ? (
-              <button
-                type="button"
-                onClick={onOpenRelationshipMatrix}
-                className="text-xs text-loom-accent hover:underline"
-              >
-                Relationship matrix →
-              </button>
+              <span className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={onOpenRelationshipGraph}
+                  className="text-xs text-loom-accent hover:underline"
+                >
+                  Relationship map →
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenRelationshipMatrix}
+                  className="text-xs text-loom-accent hover:underline"
+                >
+                  Matrix →
+                </button>
+              </span>
             ) : undefined
           }
         >
