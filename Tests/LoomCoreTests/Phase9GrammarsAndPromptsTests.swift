@@ -272,6 +272,30 @@ func phase9GrammarsAndPromptsTests() -> TestSuite {
         try expectTrue(instr.contains("at most 20 words"))
     }
 
+    s.test("sceneWindow returns the whole scene when it already fits") {
+        let scene = "Zara crossed the room and sat down by the window."
+        let candidate = EntityDiscovery.Candidate(
+            surface: "Zara", kind: .character, firstSeenQuote: "Zara crossed"
+        )
+        let window = EntityDiscovery.sceneWindow(around: candidate, in: scene, wordRadius: 50)
+        try expectEqual(window, scene)
+    }
+
+    s.test("sceneWindow clips a long scene to a window around the entity") {
+        // "Zara" near the start; a unique marker far away.
+        let before = Array(repeating: "lorem", count: 3).joined(separator: " ")
+        let after = Array(repeating: "ipsum", count: 40).joined(separator: " ")
+        let scene = "\(before) Zara \(after) DISTANTMARKER tail"
+        let candidate = EntityDiscovery.Candidate(
+            surface: "Zara", kind: .character, firstSeenQuote: "Zara"
+        )
+        let window = EntityDiscovery.sceneWindow(around: candidate, in: scene, wordRadius: 5)
+        try expectTrue(window.contains("Zara"), "window must contain the entity")
+        try expectFalse(window.contains("DISTANTMARKER"), "far-away text must be clipped")
+        try expectTrue(window.split(whereSeparator: { $0.isWhitespace }).count <= 10,
+                       "window should be ~2×radius words")
+    }
+
     // MARK: - Stage D parser
 
     s.test("Stage D parser: clean JSON object decodes") {

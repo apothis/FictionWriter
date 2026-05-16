@@ -84,11 +84,13 @@ public enum EntityDiscoveryPipeline {
         let lock = NSLock()
 
         for (i, c) in survivors.enumerated() {
+            // Window the scene around this entity — re-sending the
+            // whole scene once per candidate is the dominant latency.
             let prompt = EntityDiscovery.buildNormalisationPrompt(
                 candidateSurface: c.surface,
                 candidateKind: c.kind,
                 firstSeenQuote: c.firstSeenQuote,
-                scenePose: scenePose
+                scenePose: EntityDiscovery.sceneWindow(around: c, in: scenePose)
             )
             provider.call(prompt: prompt, schema: schema, options: options) { result in
                 var normalised: EntityDiscovery.NormalisedEntity?

@@ -475,7 +475,7 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
                 candidateSurface: c.surface,
                 candidateKind: c.kind,
                 firstSeenQuote: c.firstSeenQuote,
-                scenePose: scene.prose
+                scenePose: EntityDiscovery.sceneWindow(around: c, in: scene.prose)
             )
             let outcome: StageDOutcome
             switch ollamaExtractSync(prompt: dPrompt, schema: dSchema) {

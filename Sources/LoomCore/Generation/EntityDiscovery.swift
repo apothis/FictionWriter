@@ -535,6 +535,47 @@ public enum EntityDiscovery {
     public static let normalisationPromptInstruction =
         "Normalise the entity candidate below into a structured bible entry. For canonical_name, use the most complete/formal form of the name that appears in the scene (e.g. \"Marius Thorn\" not \"Marius\"). For aliases, list every other surface form of this entity that appears in the scene. For one_line, write ONE short sentence — at most 20 words — describing this entity; do not recap the whole scene. For evidence_quote, cite a short verbatim span from the scene that anchors the entity's identity."
 
+    /// Word radius for the Stage D context window. Each per-candidate
+    /// normalisation prompt carries only `±this` words around the
+    /// entity's first mention, not the whole scene — re-sending a long
+    /// scene once per candidate is the dominant Stage D latency.
+    public static let stageDContextWordRadius = 150
+
+    /// A window of `scenePose` around the candidate's first mention,
+    /// `±stageDContextWordRadius` words. Returns the whole scene when
+    /// it already fits the window. An entity's salient context (its
+    /// aliases, its role) clusters near first mention, so this trims
+    /// prompt size on a long scene with little normalisation-quality
+    /// cost.
+    public static func sceneWindow(
+        around candidate: Candidate,
+        in scenePose: String,
+        wordRadius: Int = stageDContextWordRadius
+    ) -> String {
+        let words = scenePose.split(whereSeparator: { $0.isWhitespace })
+        guard words.count > 2 * wordRadius else { return scenePose }
+        let anchor = surfaceWordIndex(candidate.surface, in: words) ?? (words.count / 2)
+        let lo = max(0, anchor - wordRadius)
+        let hi = min(words.count, anchor + wordRadius)
+        return words[lo..<hi].joined(separator: " ")
+    }
+
+    /// First word index whose alphanumeric core equals the surface's
+    /// first token (case-insensitive). `nil` when the surface isn't
+    /// found — the caller then centres the window.
+    private static func surfaceWordIndex(_ surface: String, in words: [Substring]) -> Int? {
+        guard let firstToken = surface.lowercased()
+            .split(whereSeparator: { $0.isWhitespace }).first.map(String.init)
+        else { return nil }
+        for (i, w) in words.enumerated() {
+            let core = w.lowercased().trimmingCharacters(
+                in: CharacterSet.alphanumerics.inverted
+            )
+            if core == firstToken { return i }
+        }
+        return nil
+    }
+
     public static func buildNormalisationPrompt(
         candidateSurface: String,
         candidateKind: Kind,
