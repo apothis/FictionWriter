@@ -333,6 +333,12 @@ public enum EntityDiscovery {
         Do NOT emit entries for entities already in this known list:
         \(knownJSON)
 
+        Respond with ONLY a JSON array. Each element is an object with exactly these three keys:
+          "surface" — the entity's name exactly as written in the scene
+          "kind" — one of "character", "place", "object"
+          "first_seen_quote" — a verbatim sentence from the scene where the entity first appears
+        Example: [{"surface": "Jane Doe", "kind": "character", "first_seen_quote": "Jane Doe opened the door."}]
+
         Scene:
         \(scenePose)
 
@@ -363,6 +369,25 @@ public enum EntityDiscovery {
         let surface: String?
         let kind: String?
         let first_seen_quote: String?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: DynamicCodingKey.self)
+            // Unconstrained generation (no `format` schema) means the
+            // model picks its own key names — accept the common
+            // synonyms so candidates aren't silently dropped.
+            func str(_ keys: [String]) -> String? {
+                for k in keys {
+                    if let key = DynamicCodingKey(stringValue: k),
+                       let v = try? c.decodeIfPresent(String.self, forKey: key) {
+                        return v
+                    }
+                }
+                return nil
+            }
+            surface = str(["surface", "surface_form", "name"])
+            kind = str(["kind", "type"])
+            first_seen_quote = str(["first_seen_quote", "quote", "evidence_quote", "evidence"])
+        }
     }
 
     private static func candidateFromRaw(_ r: RawCandidate) -> Candidate? {
@@ -538,4 +563,14 @@ public enum EntityDiscovery {
             evidenceQuote: quote
         )
     }
+}
+
+/// A `CodingKey` that accepts any string — lets the discovery
+/// parsers probe several candidate field names for the same value
+/// when the model emitted the JSON without a schema constraint.
+struct DynamicCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int? { nil }
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
 }

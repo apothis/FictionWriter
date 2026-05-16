@@ -93,6 +93,26 @@ func phase10RelationshipDiscoveryPromptTests() -> TestSuite {
         try expectEqual(rels[0].toName, "B")
     }
 
+    s.test("parser tolerates from_character / to_character / evidence field-name synonyms") {
+        // No-format mode (2026-05-16): unconstrained gemma4_2b free-
+        // styles key names. The parser accepts the common synonyms.
+        let raw = "[{\"from_character\":\"Chantal\",\"to_character\":\"Muriel\",\"kind\":\"girlfriend\",\"status\":\"current\",\"evidence\":\"q\"}]"
+        let rels = try RelationshipDiscovery.parseRelationships(raw)
+        try expectEqual(rels.count, 1)
+        try expectEqual(rels[0].fromName, "Chantal")
+        try expectEqual(rels[0].toName, "Muriel")
+        try expectEqual(rels[0].kind, "girlfriend")
+    }
+
+    s.test("prompt names the exact JSON field keys (no-format mode)") {
+        let prompt = RelationshipDiscovery.buildDiscoveryPrompt(
+            scenePose: "x", characterNames: ["A", "B"]
+        )
+        try expectTrue(prompt.contains("\"from\""))
+        try expectTrue(prompt.contains("\"to\""))
+        try expectTrue(prompt.contains("\"evidence_quote\""))
+    }
+
     s.test("entries missing required fields are dropped") {
         let raw = """
         [

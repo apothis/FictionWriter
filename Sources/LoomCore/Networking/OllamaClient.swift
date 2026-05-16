@@ -100,12 +100,11 @@ public final class OllamaClient {
         schema: [String: Any],
         options: OllamaChatOptions
     ) -> [String: Any] {
-        return [
+        var body: [String: Any] = [
             "model": model,
             "messages": [["role": "user", "content": prompt]],
             "stream": false,
             "options": options.asDictionary,
-            "format": schema,
             // `keep_alive` overrides Ollama's default 5-minute unload
             // timer. With the default, a writer who pauses to think
             // for 6+ minutes finds the model cold on their next save,
@@ -115,6 +114,16 @@ public final class OllamaClient {
             // gaps while still letting the model unload eventually.
             "keep_alive": "30m",
         ]
+        // An empty schema means unconstrained generation — omit the
+        // `format` key entirely. Ollama's format-constrained pipeline
+        // intermittently degenerates into a non-terminating buffer
+        // that hits num_predict and returns empty content (verified
+        // live 2026-05-16, ~50% on gemma4_2b); discovery callers opt
+        // out by passing [:] and pinning the field names in-prompt.
+        if !schema.isEmpty {
+            body["format"] = schema
+        }
+        return body
     }
 
     /// Extract `message.content` from a non-streaming /api/chat

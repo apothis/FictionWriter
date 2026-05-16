@@ -68,14 +68,60 @@ func phase10RelationshipExtractorTests() -> TestSuite {
         try expectEqual(rels[1].status, .past)
     }
 
-    s.test("calls Ollama with num_predict 2048 (JSON-schema length-cap floor)") {
+    s.test("calls Ollama with num_predict 4096 (no-format headroom)") {
         let stub = StubProvider()
         let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
         extractor.extract(
             scenePose: "x", sceneId: sceneId, characterNames: ["A", "B"]
         ) { _ in }
         try expectEqual(stub.queued.count, 1)
-        try expectEqual(stub.queued[0].options.numPredict, 2048)
+        try expectEqual(stub.queued[0].options.numPredict, 4096)
+    }
+
+    s.test("retries when output is non-empty but yields zero edges") {
+        // No-format mode: a truncated/degenerate emit (open bracket +
+        // partial object, nothing recoverable) is distinct from a
+        // genuine no-relationship result (a bare "[]") — re-roll.
+        let stub = StubProvider()
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+
+        var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
+        extractor.extract(
+            scenePose: "x", sceneId: sceneId, characterNames: ["A", "B"]
+        ) { captured = $0 }
+
+        stub.cannedResponses.append(.success("[{\"from\": \"A"))
+        stub.flushNext()
+        stub.cannedResponses.append(.success(relResponse([("A", "B", "friend", "current")])))
+        stub.flushNext()
+
+        let result = try expectNotNil(captured)
+        guard case .success(let rels) = result else {
+            throw TestFailure(message: "expected success after degenerate-empty retry", file: #file, line: #line)
+        }
+        try expectEqual(rels.count, 1)
+    }
+
+    s.test("a clean empty array is reported as-is, not retried") {
+        // The guard for the degenerate-empty retry: a bare "[]" is a
+        // legitimate no-relationship result and must not re-roll.
+        let stub = StubProvider()
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+
+        var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
+        extractor.extract(
+            scenePose: "x", sceneId: sceneId, characterNames: ["A", "B"]
+        ) { captured = $0 }
+
+        stub.cannedResponses.append(.success("[]"))
+        stub.flushNext()
+
+        try expectEqual(stub.queued.count, 0, "must not fire a retry call")
+        let result = try expectNotNil(captured)
+        guard case .success(let rels) = result else {
+            throw TestFailure(message: "expected success", file: #file, line: #line)
+        }
+        try expectEqual(rels.count, 0)
     }
 
     s.test("duplicate edges collapse to one proposal") {

@@ -104,6 +104,9 @@ public enum RelationshipDiscovery {
         Characters:
         \(namesJSON)
 
+        Respond with ONLY a JSON array. Example:
+        [{"from": "Jane", "to": "Mark", "kind": "sister", "status": "current", "evidence_quote": "Jane hugged her brother Mark."}]
+
         Scene:
         \(scenePose)
 
@@ -151,6 +154,27 @@ public enum RelationshipDiscovery {
         let kind: String?
         let status: String?
         let evidence_quote: String?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: DynamicCodingKey.self)
+            // Unconstrained generation (no `format` schema) means the
+            // model picks its own key names — accept the common
+            // synonyms so edges aren't silently dropped.
+            func str(_ keys: [String]) -> String? {
+                for k in keys {
+                    if let key = DynamicCodingKey(stringValue: k),
+                       let v = try? c.decodeIfPresent(String.self, forKey: key) {
+                        return v
+                    }
+                }
+                return nil
+            }
+            from = str(["from", "from_character", "from_name", "fromName"])
+            to = str(["to", "to_character", "to_name", "toName"])
+            kind = str(["kind", "relationship", "type"])
+            status = str(["status"])
+            evidence_quote = str(["evidence_quote", "evidence", "quote"])
+        }
     }
 
     private static func relationshipFromRaw(_ r: RawRelationship) -> ProposedRelationship? {

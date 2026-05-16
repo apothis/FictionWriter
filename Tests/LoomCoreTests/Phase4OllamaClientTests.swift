@@ -36,6 +36,17 @@ func phase4OllamaClientTests() -> TestSuite {
         try expectEqual(format["type"] as? String, "array")
     }
 
+    s.test("makeChatRequestBody omits format when the schema is empty") {
+        // Empty schema = unconstrained generation. Ollama's
+        // format-constrained mode flakes into an empty-content
+        // degenerate loop (verified live 2026-05-16) — entity- and
+        // relationship-discovery opt out by passing [:].
+        let body = OllamaClient.makeChatRequestBody(
+            model: "m", prompt: "p", schema: [:], options: OllamaChatOptions()
+        )
+        try expectTrue(body["format"] == nil, "empty schema must not emit a format key")
+    }
+
     s.test("makeChatRequestBody includes options dict with extraction-tuned defaults") {
         let body = OllamaClient.makeChatRequestBody(
             model: "gemma4_2b:latest",

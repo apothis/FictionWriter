@@ -177,6 +177,31 @@ func phase9GrammarsAndPromptsTests() -> TestSuite {
         try expectTrue(cands.contains(where: { $0.surface == "Anders" }))
     }
 
+    s.test("Stage A2 parser: tolerates surface_form / quote field-name synonyms") {
+        // Without the JSON-Schema format constraint, gemma4_2b free-
+        // styles the key names — surface_form for surface, quote for
+        // first_seen_quote (verified live 2026-05-16). The parser
+        // accepts the common synonyms so candidates aren't silently
+        // dropped.
+        let raw = "[{\"surface_form\": \"Anders\", \"kind\": \"character\", \"quote\": \"Anders waved.\"}]"
+        let cands = try EntityDiscovery.parseCandidates(raw)
+        try expectEqual(cands.count, 1)
+        try expectEqual(cands[0].surface, "Anders")
+        try expectEqual(cands[0].kind, .character)
+        try expectTrue(cands[0].firstSeenQuote.contains("Anders waved"))
+    }
+
+    s.test("Stage A2 prompt: names the exact JSON field keys (no-format mode)") {
+        // With the format schema removed, the prompt itself must pin
+        // the field names or the model invents its own.
+        let prompt = EntityDiscovery.buildCandidateGenerationPrompt(
+            scenePose: "x", knownEntityNames: []
+        )
+        try expectTrue(prompt.contains("\"surface\""))
+        try expectTrue(prompt.contains("\"kind\""))
+        try expectTrue(prompt.contains("\"first_seen_quote\""))
+    }
+
     // MARK: - Stage D grammar
 
     s.test("Stage D GBNF: emits root → single normalised entity object") {

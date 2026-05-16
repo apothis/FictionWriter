@@ -45,8 +45,14 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
             scenePose: scenePose,
             characterNames: characterNames
         )
-        let schema = RelationshipDiscovery.discoveryJSONSchema()
-        let options = OllamaChatOptions(numPredict: 2048)
+        // Empty schema = unconstrained generation — Ollama's
+        // format-constrained mode flakes into empty-content failures
+        // (see OllamaEntityDiscoveryExtractor / live note 2026-05-16).
+        // The prompt pins the field names; the parser tolerates
+        // synonym keys. num_predict 4096 gives the edge array headroom
+        // to complete; truncation is recoverable per-object anyway.
+        let schema: [String: Any] = [:]
+        let options = OllamaChatOptions(numPredict: 4096)
         callWithRetry(
             prompt: prompt,
             schema: schema,
@@ -70,6 +76,21 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
             case .success(let raw):
                 do {
                     let parsed = try RelationshipDiscovery.parseRelationships(raw)
+                    // Degenerate-empty: an open bracket + a partial
+                    // object that recovered nothing. Distinct from a
+                    // genuine no-relationship result (bare "[]" has no
+                    // "{") — re-roll.
+                    if parsed.isEmpty, raw.contains("{"), attemptsRemaining > 0 {
+                        DebugLog.shared.write("[relationships] 0 edges from non-empty output — retrying once")
+                        self.callWithRetry(
+                            prompt: prompt,
+                            schema: schema,
+                            options: options,
+                            attemptsRemaining: attemptsRemaining - 1,
+                            completion: completion
+                        )
+                        return
+                    }
                     completion(.success(RelationshipDiscovery.dedupRelationships(parsed)))
                 } catch EntityDiscovery.ParseError.noJSONArrayFound where attemptsRemaining > 0 {
                     DebugLog.shared.write("[relationships] parse failed (noJSONArrayFound) — retrying once")

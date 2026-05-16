@@ -49,11 +49,17 @@ public final class OllamaEntityDiscoveryExtractor: EntityDiscoveryExtractor {
             scenePose: scenePose,
             knownEntityNames: expandedKnown
         )
-        let schema = EntityDiscovery.candidateGenerationJSONSchema()
-        // num_predict 2048 — load-bearing. Under Ollama JSON-Schema
-        // mode a cap reached before the schema accepts yields EMPTY
-        // content, not truncation (see OllamaChatOptions docs).
-        let options = OllamaChatOptions(numPredict: 2048)
+        // Empty schema = unconstrained generation. Ollama's
+        // format-constrained mode flakes ~50% into a non-terminating
+        // buffer that hits num_predict and returns empty content
+        // (verified live 2026-05-16). The prompt pins the field names
+        // instead; `parseCandidates` tolerates synonym keys.
+        let schema: [String: Any] = [:]
+        // num_predict 4096 — the unconstrained candidate array reaches
+        // ~2000 tokens on a dense scene; 4096 gives headroom so it
+        // completes rather than truncating. Truncation is recoverable
+        // (per-object parse), but a clean full array is better.
+        let options = OllamaChatOptions(numPredict: 4096)
         callStageA2WithRetry(
             prompt: prompt,
             schema: schema,
@@ -109,6 +115,27 @@ public final class OllamaEntityDiscoveryExtractor: EntityDiscoveryExtractor {
                     return
                 } catch {
                     completion(.failure(error))
+                    return
+                }
+                // Degenerate-empty: the model emitted an opening
+                // bracket and at least one partial object, then hit
+                // the cap with nothing recoverable. Distinct from a
+                // genuine null-discovery (a bare "[]" has no "{") —
+                // re-roll rather than report nothing.
+                if candidates.isEmpty, raw.contains("{"), attemptsRemaining > 0 {
+                    DebugLog.shared.write("[proposals] Stage A2 yielded 0 candidates from non-empty output — retrying once")
+                    self.callStageA2WithRetry(
+                        prompt: prompt,
+                        schema: schema,
+                        options: options,
+                        attemptsRemaining: attemptsRemaining - 1,
+                        scenePose: scenePose,
+                        sceneId: sceneId,
+                        expandedKnown: expandedKnown,
+                        existingEntities: existingEntities,
+                        embedder: embedder,
+                        completion: completion
+                    )
                     return
                 }
                 DebugLog.shared.write("[proposals] Stage A2 parsed \(candidates.count) candidates: \(candidates.map(\.surface))")

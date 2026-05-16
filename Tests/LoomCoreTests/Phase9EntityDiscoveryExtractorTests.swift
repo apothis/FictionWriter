@@ -265,6 +265,43 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
         }
     }
 
+    s.test("Stage A2 retries when output is non-empty but yields zero candidates") {
+        // No-format mode (2026-05-16): gemma4_2b occasionally
+        // degenerates — emits an open bracket + a partial object,
+        // hits the token cap, leaving 0 recoverable candidates. That
+        // is distinct from a genuine null-discovery (a bare "[]");
+        // re-roll rather than silently report nothing.
+        let stub = StubProvider()
+        let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
+
+        var captured: Result<[EntityDiscovery.ProposedEntity], Error>?
+        extractor.extract(
+            scenePose: "Anders arrived.",
+            sceneId: sceneId,
+            knownEntityNames: [],
+            existingEntities: [],
+            embedder: nil
+        ) { result in captured = result }
+
+        // First attempt: opening bracket + half an object, nothing
+        // recoverable — but it is NOT a clean empty array.
+        stub.cannedResponses.append(.success("[{\"surface\": \"And"))
+        stub.flushNext()
+        // Retry fires automatically; clean response this time.
+        stub.cannedResponses.append(.success(a2Response([("Anders", "character", "Anders arrived.")])))
+        stub.flushNext()
+        stub.cannedResponses.append(.success(dResponse(kind: "character", canonical: "Anders")))
+        stub.flushNext()
+
+        let result = try expectNotNil(captured)
+        if case .success(let proposals) = result {
+            try expectEqual(proposals.count, 1)
+            try expectEqual(proposals[0].canonicalName, "Anders")
+        } else {
+            throw TestFailure(message: "expected success after degenerate-empty retry, got \(result)", file: #file, line: #line)
+        }
+    }
+
     s.test("Stage A2 surfaces parse failure after retry exhausts (both attempts malformed)") {
         let stub = StubProvider()
         let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
@@ -413,13 +450,12 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
         }
     }
 
-    s.test("Stage A2 and Stage D both call with num_predict 2048 (JSON-schema length-cap floor)") {
-        // Live-smoke bug: Stage D used num_predict 512, Stage A2 used
-        // 1024 — both below the load-bearing 2048. Under Ollama's
-        // JSON-Schema `format` mode, capping num_predict before the
-        // schema accepts yields EMPTY content (done_reason: length),
-        // not a truncation. Stage D returned 0-char bodies → every
-        // survivor failed to normalise. Both stages must use 2048.
+    s.test("Stage A2 uses num_predict 4096, Stage D 2048 (no-format headroom)") {
+        // Stage A2 runs unconstrained (no `format` schema) and the
+        // candidate array routinely reaches ~2000 tokens on a dense
+        // scene — 4096 gives headroom so the array completes rather
+        // than truncating. Stage D emits a single small object and
+        // keeps the 2048 floor.
         let stub = StubProvider()
         let extractor = OllamaEntityDiscoveryExtractor(provider: stub)
 
@@ -438,7 +474,7 @@ func phase9EntityDiscoveryExtractorTests() -> TestSuite {
 
         // optionsLog[0] = Stage A2, optionsLog[1] = Stage D for Anders.
         try expectEqual(stub.optionsLog.count, 2)
-        try expectEqual(stub.optionsLog[0].numPredict, 2048, "Stage A2 num_predict")
+        try expectEqual(stub.optionsLog[0].numPredict, 4096, "Stage A2 num_predict")
         try expectEqual(stub.optionsLog[1].numPredict, 2048, "Stage D num_predict")
     }
 
