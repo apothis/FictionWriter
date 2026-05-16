@@ -1301,3 +1301,109 @@ webview (Part B) both shipped; 1535/1535 tests green. The loop — discover
 relationships in a scene → review queue → accept (with demote-on-conflict) →
 matrix grid — works end to end in code. Load-bearing next question: does it hold
 up on real prose in the user's project?
+
+### 15.19 Session ledger — 2026-05-16 (discovery-reliability fixes + GLiNER entity-detector, phases 1–4a)
+
+Continuation of the §15.18 session. Started from live-testing Phase 10 in the
+`test2` project, which surfaced that entity discovery produced **zero**
+proposals on a real scene. That kicked off a long reliability arc and the start
+of a GLiNER-based replacement for the generative-LLM entity detector. 10
+commits, all on `main`. Tests 1524 → 1574.
+
+#### Entity/relationship discovery reliability (2 commits)
+
+Diagnosed live against `test2`'s explicit beach scene:
+
+- `b6c7a97` **Drop the Ollama `format` schema constraint.** Live repro proved
+  Ollama's `format`-constrained generation flakes ~50% into a non-terminating
+  buffer that hits `num_predict` and returns empty content (`done_reason:
+  length`). Stage A2 + relationship discovery now run unconstrained; prompts pin
+  the JSON field names; parsers tolerate synonym keys; `num_predict` raised to
+  4096; both extractors re-roll on a degenerate zero-result.
+- `d4df07e` **Stream Ollama responses + line-based discovery output.** The
+  deeper finding: Ollama's *non-streaming* `/api/chat` with gemma4
+  intermittently returns empty `message.content` despite a full generation —
+  `stream: true` + concatenating the chunk bodies dodges it (helps every
+  extractor). And Stage A2 / relationship discovery now ask for a delimited
+  **line list** (`kind | surface | quote`) instead of a JSON array — a small
+  model emits lines far more reliably than nested JSON. New tolerant line
+  parsers; entity discovery retries on any zero-candidate result.
+
+Honest outcome: mild scenes (e.g. `test1`) are now consistently clean; the
+dense explicit scene stays noisy (~20–80% per call across many measurements) —
+that floor is gemma4_2b itself derailing on explicit prose, not a format/prompt
+problem. Confirmed the real fix is a non-generative detector → GLiNER.
+
+#### GLiNER research (3 parallel research agents + 1 verification spike)
+
+- **Models** — A/B'd two user-downloaded GGUFs against gemma4_2b: `Qwen3.5_4B`
+  (aggressive-heretic) is 4–6× slower and runs away even with `/no_think`;
+  `NuExtract_4B` (a Qwen2.5-VL model textified to GGUF) is effectively broken
+  via Ollama. Neither beats gemma. Model-swap avenue closed.
+- **Techniques** — strongest evidence for task decomposition + line output +
+  streaming (all since shipped). Confirmed the Ollama empty-content bug class
+  against upstream issues (#15428, #15502, …).
+- **Chunking** — map-reduce over `RagChunker` (already exists) for long scenes;
+  deferred until the detector is solid.
+- **GLiNER→native spike** — verdict GO via **ONNX Runtime, not CoreML**: GLiNER's
+  DeBERTa-v3 backbone will not trace through `coremltools` (two attempts failed).
+  ONNX export + ONNX Runtime inference verified locally (~40 ms).
+
+#### GLiNER entity detector — phases 1–4a (4 commits)
+
+GLiNER is a ~50M-param bidirectional NER encoder — deterministic, refusal-proof,
+~40 ms/call. Replacing the generative Stage A2 with it is the structural fix for
+the explicit-scene floor. ONNX Runtime is a new SPM binary dependency; zero
+runtime Python (the model is exported offline).
+
+- `2f24107` **Phase 1** — `Tools/GLiNERProbe/`: build-time export of
+  `urchade/gliner_small-v2.1` to a quantized ONNX bundle (~184 MB, gitignored,
+  regenerated locally like the Wegmann CoreML bundle) + a verifier.
+- `ef17cc6` **Phase 2** — ONNX Runtime (`microsoft/onnxruntime-swift-package-
+  manager` 1.24.2) linked into LoomCore; `GLiNERRuntime` opens an inference
+  session. Linkage proven by tests; full app builds.
+- `844cad2` **Phase 3** — `GLiNERTokenizer`: GLiNER's DeBERTa-v3 SentencePiece
+  tokenizer in Swift. The export script rewrites `tokenizer_class` →
+  `XLMRobertaTokenizer` so swift-transformers loads it as a generic Unigram
+  tokenizer. Byte-for-byte parity with the Python tokenizer pinned by a fixture
+  (10 probe strings incl. accented + explicit content) — all identical.
+- `9cd5a63` **Phase 4a** — `GLiNERInputs`: the word splitter + `span_idx` /
+  `span_mask` builders, verified against a ground-truth fixture dumped from the
+  real Python GLiNER ONNX pipeline (`Tests/LoomCoreTests/Fixtures/gliner_inference_fixture.json`).
+
+#### GLiNER — remaining phases (next session)
+
+The full algorithm spec + a verified ground-truth fixture are in hand.
+
+1. **Phase 4b — per-word tokenization + `words_mask`.** GLiNER tokenizes each
+   word separately (`is_split_into_words`); `words_mask` marks the first subword
+   of each content word with its 1-based index. Needs a per-word tokenization
+   path verified to reproduce the fixture's exact `input_ids` — watch the
+   Metaspace `▁`-prefix handling.
+2. **Phase 4c — ONNX session run + decode.** Obstacle: the `span_mask` ONNX
+   input is `tensor(bool)` and the ORT Objective-C API exposes **no bool element
+   type**. Fix: graph surgery in `export_gliner_onnx.py` — retype that input to
+   int64 + insert a `Cast`-to-bool (~15 lines + re-export + re-verify). Then
+   build the 6 input tensors, run, sigmoid the `logits[1,words,12,classes]`,
+   threshold (0.5, strict), validity-filter (`start+width+1 ≤ numWords` — load-
+   bearing, the quantized model emits garbage probs on invalid spans), greedy
+   non-overlapping span selection, map word spans → char offsets.
+3. **Phase 5 — wire GLiNER into discovery** as the entity-*detection* step; the
+   LLM keeps only normalisation (Stage D) + relationships.
+
+Algorithm spec details, config constants (max_width 12, max_len 384,
+`<<ENT>>`=128002, `<<SEP>>`=128003), and the decode are all captured in the
+phase-4a commit + the fixture; the GLiNER source is in the spike venv at
+`/tmp/gliner_spike/venv/lib/python3.9/site-packages/gliner/`.
+
+#### Other open follow-ups carried forward
+
+- **Long-scene chunking** — the deferred map-reduce over `RagChunker`; becomes
+  relevant once GLiNER lands (the user added a longer 1658-word scene to `test2`
+  for testing). GLiNER's speed makes per-chunk extraction cheap.
+- Phase 9 / Phase 10 live-smoke, the writer-model A/B against Goetia — all still
+  open from §15.17–15.18.
+
+**1574/1574 tests green.** Phase 10 is feature-complete; discovery reliability
+is much improved but gemma-limited on explicit prose; GLiNER phases 1–4a are
+committed and verified, with 4b/4c/5 well-specified for the next session.
