@@ -263,6 +263,17 @@ export function App() {
             edgeKind: kind,
           })
         }
+        proposals={snapshot.proposedRelationships ?? []}
+        onAcceptProposal={(proposalId, demoteConflicting) =>
+          postIntent({
+            kind: "acceptRelationshipProposal",
+            proposalId,
+            demoteConflicting,
+          })
+        }
+        onRejectProposal={(proposalId) =>
+          postIntent({ kind: "rejectRelationshipProposal", proposalId })
+        }
         onBack={() => setSelection(null)}
       />
     );

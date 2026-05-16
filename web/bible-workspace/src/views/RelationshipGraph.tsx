@@ -11,20 +11,24 @@ import {
   type Connection,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { Character, RelationshipMapPosition } from "../types";
+import type {
+  Character,
+  RelationshipMapPosition,
+  SnapshotProposedRelationship,
+} from "../types";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 import { Textarea } from "../components/ui/Textarea";
 
-// Phase 10 follow-up — visual relationship mapper. Characters are
-// draggable nodes; each Character.relationships entry is a directed,
-// labelled edge. Increment 3: in-graph edge editing — drag node→node
-// to create an edge, click an edge to edit kind/status/notes or
-// delete it.
+// Phase 10 follow-up — visual relationship mapper.
+// Increment 4: pending relationship-discovery proposals render as
+// dashed ghost edges; clicking one reviews + accepts/rejects it on
+// the map, without a trip to the proposals queue.
 
 interface Props {
   characters: Character[];
   layout: RelationshipMapPosition[];
+  proposals: SnapshotProposedRelationship[];
   onEditCharacter: (id: string) => void;
   onMoveNode: (characterId: string, x: number, y: number) => void;
   onSetEdge: (
@@ -35,12 +39,11 @@ interface Props {
     notes: string,
   ) => void;
   onDeleteEdge: (fromId: string, toId: string, kind: string) => void;
+  onAcceptProposal: (proposalId: string, demoteConflicting: boolean) => void;
+  onRejectProposal: (proposalId: string) => void;
   onBack: () => void;
 }
 
-/// A draft passed to the edge editor. `originalKind === null` means a
-/// brand-new edge being drawn; otherwise it's the kind the existing
-/// edge had on open (used to remove the old slot if the kind changes).
 interface EdgeDraft {
   fromId: string;
   toId: string;
@@ -51,15 +54,31 @@ interface EdgeDraft {
 }
 
 interface EdgeData extends Record<string, unknown> {
-  fromId: string;
-  toId: string;
-  kind: string;
-  status: "current" | "past";
-  notes: string;
+  fromId?: string;
+  toId?: string;
+  kind?: string;
+  status?: "current" | "past";
+  notes?: string;
+  // Present only on ghost (proposed) edges.
+  proposal?: SnapshotProposedRelationship;
 }
 
-/// Initial node placement — an even circle. Used only for characters
-/// without a saved position.
+/// Match a discovery-proposal name (proposals are name-based) to a
+/// bible character — canonical name or any alias, case-insensitive.
+function resolveCharacterId(
+  name: string,
+  characters: Character[],
+): string | null {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return null;
+  const hit = characters.find(
+    (c) =>
+      c.name.trim().toLowerCase() === needle ||
+      c.aliases.some((a) => a.trim().toLowerCase() === needle),
+  );
+  return hit?.id ?? null;
+}
+
 function circleLayout(count: number): { x: number; y: number }[] {
   const radius = Math.max(180, count * 38);
   const cx = radius + 80;
@@ -91,9 +110,13 @@ function buildNodes(
   });
 }
 
-function buildEdges(characters: Character[]): Edge[] {
+function buildEdges(
+  characters: Character[],
+  proposals: SnapshotProposedRelationship[],
+): Edge[] {
   const ids = new Set(characters.map((c) => c.id));
   const edges: Edge[] = [];
+  // Real (accepted) edges.
   for (const c of characters) {
     c.relationships.forEach((rel, idx) => {
       if (rel.toCharacterId === c.id || !ids.has(rel.toCharacterId)) return;
@@ -122,38 +145,62 @@ function buildEdges(characters: Character[]): Edge[] {
       });
     });
   }
+  // Ghost edges — pending discovery proposals, resolvable to two
+  // distinct bible characters.
+  for (const p of proposals) {
+    const from = resolveCharacterId(p.fromName, characters);
+    const to = resolveCharacterId(p.toName, characters);
+    if (!from || !to || from === to) continue;
+    edges.push({
+      id: `proposal:${p.id}`,
+      source: from,
+      target: to,
+      label: `${p.kind} (proposed)`,
+      labelShowBg: true,
+      deletable: false,
+      animated: true,
+      data: { proposal: p } as EdgeData,
+      style: { stroke: "#d9a441", strokeDasharray: "6 4" },
+      markerEnd: { type: "arrowclosed" as const },
+    });
+  }
   return edges;
 }
 
 export function RelationshipGraph({
   characters,
   layout,
+  proposals,
   onEditCharacter,
   onMoveNode,
   onSetEdge,
   onDeleteEdge,
+  onAcceptProposal,
+  onRejectProposal,
   onBack,
 }: Props) {
   const initialNodes = useMemo(
     () => buildNodes(characters, layout),
     [characters, layout],
   );
-  const initialEdges = useMemo(() => buildEdges(characters), [characters]);
+  const initialEdges = useMemo(
+    () => buildEdges(characters, proposals),
+    [characters, proposals],
+  );
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [editing, setEditing] = useState<EdgeDraft | null>(null);
+  const [reviewing, setReviewing] =
+    useState<SnapshotProposedRelationship | null>(null);
 
-  // Re-sync from the snapshot when the bible changes — `useNodesState`
-  // / `useEdgesState` only seed from their initial value, so an edge
-  // edit (which re-pushes a snapshot) would otherwise not show until
-  // remount. Node positions survive because `buildNodes` reads the
-  // persisted layout.
+  // Re-sync from the snapshot when the bible or the proposal set
+  // changes — the React Flow state hooks only seed once.
   useEffect(() => {
     setNodes(buildNodes(characters, layout));
   }, [characters, layout, setNodes]);
   useEffect(() => {
-    setEdges(buildEdges(characters));
-  }, [characters, setEdges]);
+    setEdges(buildEdges(characters, proposals));
+  }, [characters, proposals, setEdges]);
 
   function onConnect(conn: Connection) {
     if (!conn.source || !conn.target) return;
@@ -170,8 +217,6 @@ export function RelationshipGraph({
   function saveDraft(draft: EdgeDraft) {
     const kind = draft.kind.trim();
     if (!kind) return;
-    // Editing with a changed kind: the (to, kind) slot moved, so drop
-    // the old slot before writing the new one.
     if (draft.originalKind && draft.originalKind !== kind) {
       onDeleteEdge(draft.fromId, draft.toId, draft.originalKind);
     }
@@ -217,14 +262,18 @@ export function RelationshipGraph({
             onEdgeClick={(_, edge) => {
               const d = edge.data as EdgeData | undefined;
               if (!d) return;
-              setEditing({
-                fromId: d.fromId,
-                toId: d.toId,
-                kind: d.kind,
-                status: d.status,
-                notes: d.notes,
-                originalKind: d.kind,
-              });
+              if (d.proposal) {
+                setReviewing(d.proposal);
+              } else if (d.fromId && d.toId && d.kind !== undefined) {
+                setEditing({
+                  fromId: d.fromId,
+                  toId: d.toId,
+                  kind: d.kind,
+                  status: d.status ?? "current",
+                  notes: d.notes ?? "",
+                  originalKind: d.kind,
+                });
+              }
             }}
             deleteKeyCode={null}
             fitView
@@ -243,6 +292,20 @@ export function RelationshipGraph({
           onSave={saveDraft}
           onDelete={deleteDraft}
           onCancel={() => setEditing(null)}
+        />
+      )}
+      {reviewing && (
+        <ProposalReview
+          proposal={reviewing}
+          onAccept={(demote) => {
+            onAcceptProposal(reviewing.id, demote);
+            setReviewing(null);
+          }}
+          onReject={() => {
+            onRejectProposal(reviewing.id);
+            setReviewing(null);
+          }}
+          onCancel={() => setReviewing(null)}
         />
       )}
     </div>
@@ -310,10 +373,7 @@ function EdgeEditor({
         <div className="mt-4 flex items-center justify-between">
           <div>
             {!isNew && (
-              <Button
-                variant="ghost"
-                onClick={() => onDelete(draft)}
-              >
+              <Button variant="ghost" onClick={() => onDelete(draft)}>
                 Delete
               </Button>
             )}
@@ -322,12 +382,67 @@ function EdgeEditor({
             <Button variant="ghost" onClick={onCancel}>
               Cancel
             </Button>
-            <Button
-              onClick={() =>
-                onSave({ ...draft, kind, status, notes })
-              }
-            >
+            <Button onClick={() => onSave({ ...draft, kind, status, notes })}>
               Save
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProposalReview({
+  proposal,
+  onAccept,
+  onReject,
+  onCancel,
+}: {
+  proposal: SnapshotProposedRelationship;
+  onAccept: (demoteConflicting: boolean) => void;
+  onReject: () => void;
+  onCancel: () => void;
+}) {
+  const conflicts = proposal.conflictsWithCurrent ?? [];
+  return (
+    <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40">
+      <div className="w-[24rem] rounded-lg border border-loom-border bg-loom-bg p-4 shadow-xl">
+        <p className="mb-1 text-sm font-medium text-loom-fg">
+          Proposed relationship
+        </p>
+        <p className="mb-3 text-xs text-loom-fg-tertiary">
+          Discovered in “{proposal.sourceSceneTitle}”
+        </p>
+        <p className="text-sm text-loom-fg">
+          {proposal.fromName} →{" "}
+          <span className="font-medium text-loom-accent">{proposal.kind}</span>{" "}
+          → {proposal.toName}
+          <span className="ml-2 text-[11px] text-loom-fg-tertiary">
+            ({proposal.status})
+          </span>
+        </p>
+        {proposal.evidenceQuote && (
+          <p className="mt-2 border-l-2 border-loom-border pl-2 text-xs italic text-loom-fg-secondary">
+            “{proposal.evidenceQuote}”
+          </p>
+        )}
+        {conflicts.length > 0 && (
+          <p className="mt-3 rounded bg-loom-bg-input p-2 text-[11px] text-loom-fg-secondary">
+            Accepting marks {proposal.fromName}’s current relationship
+            {conflicts.length === 1 ? "" : "s"} with {conflicts.join(", ")} as
+            past.
+          </p>
+        )}
+        <div className="mt-4 flex items-center justify-between">
+          <Button variant="ghost" onClick={onReject}>
+            Reject
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button onClick={() => onAccept(conflicts.length > 0)}>
+              Accept
             </Button>
           </div>
         </div>
