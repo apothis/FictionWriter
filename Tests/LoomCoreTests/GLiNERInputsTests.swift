@@ -62,6 +62,35 @@ func glinerInputsTests() -> TestSuite {
         try expectEqual(mask[85], false)
     }
 
+    s.test("assembleSequence lays out [CLS] <<ENT>> labels <<SEP>> words [SEP] like the fixture") {
+        // Subword ids taken from the fixture (each label/word is one
+        // subword for this sentence): character→1470, place→470,
+        // object→2713; Marek→66879 drew→6576 the→262 dagger→37276
+        // in→267 the→262 cathedral→18410 .→323.
+        let labels = [[1470], [470], [2713]]
+        let words = [[66879], [6576], [262], [37276], [267], [262], [18410], [323]]
+        let inputs = GLiNERInputs.assembleSequence(labelSubwords: labels, wordSubwords: words)
+        try expectEqual(inputs.inputIDs,
+                        [1, 128002, 1470, 128002, 470, 128002, 2713, 128003,
+                         66879, 6576, 262, 37276, 267, 262, 18410, 323, 2])
+        try expectEqual(inputs.attentionMask, Array(repeating: 1, count: 17))
+        try expectEqual(inputs.wordsMask,
+                        [0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0])
+        try expectEqual(inputs.textLength, 8)
+    }
+
+    s.test("assembleSequence marks only the first subword of a multi-subword word") {
+        // Word 0 has two subwords, word 1 has one.
+        let inputs = GLiNERInputs.assembleSequence(
+            labelSubwords: [[100]],
+            wordSubwords: [[200, 201], [202]]
+        )
+        try expectEqual(inputs.inputIDs, [1, 128002, 100, 128003, 200, 201, 202, 2])
+        // [CLS] <<ENT>> label <<SEP>> → 0; word0 first→1, cont→0; word1→2; [SEP]→0.
+        try expectEqual(inputs.wordsMask, [0, 0, 0, 0, 1, 0, 2, 0])
+        try expectEqual(inputs.textLength, 2)
+    }
+
     s.test("input builders match the fixture's span tensors exactly") {
         let fixtureURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

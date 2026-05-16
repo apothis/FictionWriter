@@ -10,6 +10,75 @@ public enum GLiNERInputs {
     /// width 0…11 (12 offsets). From `gliner_config.json`.
     public static let maxSpanWidth = 12
 
+    /// DeBERTa-v3 / GLiNER special token ids. `[CLS]`/`[SEP]` wrap the
+    /// whole sequence; `<<ENT>>`/`<<SEP>>` delimit the label prompt
+    /// region. From the exported tokenizer config + `added_tokens.json`.
+    public static let clsToken = 1
+    public static let sepToken = 2
+    public static let entToken = 128002
+    public static let promptSepToken = 128003
+
+    /// The six per-call tensors GLiNER's ONNX graph reads, minus the
+    /// span tensors (`spanIndices` / `spanMask`, built separately).
+    /// `textLength` is the word count GLiNER feeds as `text_lengths`.
+    public struct ModelInputs: Equatable {
+        public let inputIDs: [Int]
+        public let attentionMask: [Int]
+        public let wordsMask: [Int]
+        public let textLength: Int
+
+        public init(inputIDs: [Int], attentionMask: [Int], wordsMask: [Int], textLength: Int) {
+            self.inputIDs = inputIDs
+            self.attentionMask = attentionMask
+            self.wordsMask = wordsMask
+            self.textLength = textLength
+        }
+    }
+
+    /// Assemble GLiNER's input sequence from per-word subword ids.
+    ///
+    /// Layout (`gliner/data_processing/processor.py`):
+    /// `[CLS] (<<ENT>> label)* <<SEP>> word* [SEP]`. Each label and each
+    /// text word is tokenised independently (`is_split_into_words`); the
+    /// caller passes the resulting subword-id arrays.
+    ///
+    /// `words_mask` carries the first subword of text word *i* its
+    /// 1-based index; `[CLS]`/`[SEP]`, the whole label-prompt region,
+    /// and continuation subwords are 0 — the mask the model uses to
+    /// gather per-word representations.
+    public static func assembleSequence(
+        labelSubwords: [[Int]],
+        wordSubwords: [[Int]]
+    ) -> ModelInputs {
+        var inputIDs: [Int] = [clsToken]
+        var wordsMask: [Int] = [0]
+
+        for label in labelSubwords {
+            inputIDs.append(entToken)
+            wordsMask.append(0)
+            inputIDs.append(contentsOf: label)
+            wordsMask.append(contentsOf: Array(repeating: 0, count: label.count))
+        }
+        inputIDs.append(promptSepToken)
+        wordsMask.append(0)
+
+        for (index, word) in wordSubwords.enumerated() {
+            inputIDs.append(contentsOf: word)
+            wordsMask.append(index + 1)
+            wordsMask.append(contentsOf: Array(repeating: 0, count: max(0, word.count - 1)))
+        }
+
+        inputIDs.append(sepToken)
+        wordsMask.append(0)
+
+        return ModelInputs(
+            inputIDs: inputIDs,
+            attentionMask: Array(repeating: 1, count: inputIDs.count),
+            wordsMask: wordsMask,
+            textLength: wordSubwords.count
+        )
+    }
+
     /// A whitespace-split word with its character span in the source
     /// text. Offsets are Unicode-scalar indices, matching the Python
     /// `re.finditer` offsets GLiNER's decode reports.

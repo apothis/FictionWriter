@@ -30,4 +30,24 @@ public final class GLiNERTokenizer {
     public func encode(_ text: String) -> [Int] {
         tokenizer.encode(text: text)
     }
+
+    /// Encode a single word to its subword ids, with no [CLS]/[SEP]
+    /// wrapping. GLiNER tokenises every label and every text word
+    /// independently (`is_split_into_words`); the Metaspace
+    /// pre-tokenizer (`prepend_scheme: always`) gives each word its
+    /// own `▁` prefix, so per-word encoding reproduces the joined
+    /// `is_split_into_words` path.
+    public func encodeWord(_ word: String) -> [Int] {
+        tokenizer.encode(text: word, addSpecialTokens: false)
+    }
+
+    /// Build GLiNER's per-call input sequence for `words` scored
+    /// against `labels` — tokenises each independently, then composes
+    /// via `GLiNERInputs.assembleSequence`.
+    public func buildInputs(words: [String], labels: [String]) -> GLiNERInputs.ModelInputs {
+        GLiNERInputs.assembleSequence(
+            labelSubwords: labels.map(encodeWord),
+            wordSubwords: words.map(encodeWord)
+        )
+    }
 }

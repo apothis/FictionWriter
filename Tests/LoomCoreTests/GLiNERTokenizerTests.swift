@@ -45,6 +45,39 @@ func glinerTokenizerTests() -> TestSuite {
         }
     }
 
+    s.test("buildInputs reproduces the inference fixture's input tensors exactly") {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/gliner_inference_fixture.json")
+        guard let data = try? Data(contentsOf: fixtureURL),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let text = root["input_text"] as? String,
+              let labels = root["labels"] as? [String],
+              let tensors = root["input_tensors"] as? [String: Any]
+        else {
+            throw TestFailure(message: "inference fixture missing/unreadable", file: #file, line: #line)
+        }
+
+        let tokenizer: GLiNERTokenizer
+        do {
+            tokenizer = try awaitSync { try await GLiNERTokenizer() }
+        } catch GLiNERRuntime.RuntimeError.modelBundleMissing {
+            return  // bundle is gitignored + regenerated locally.
+        }
+
+        let words = GLiNERInputs.splitWords(text).map(\.text)
+        let inputs = tokenizer.buildInputs(words: words, labels: labels)
+
+        func expectedRow(_ key: String) throws -> [Int] {
+            let raw = (tensors[key] as? [String: Any])?["values"] as? [[Int]]
+            return try expectNotNil(raw, file: #file, line: #line).first!
+        }
+        try expectEqual(inputs.inputIDs, try expectedRow("input_ids"))
+        try expectEqual(inputs.attentionMask, try expectedRow("attention_mask"))
+        try expectEqual(inputs.wordsMask, try expectedRow("words_mask"))
+        try expectEqual(inputs.textLength, try expectedRow("text_lengths").first!)
+    }
+
     return s
 }
 
