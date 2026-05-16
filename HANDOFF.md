@@ -1775,3 +1775,53 @@ GLiNER HF cache entries (0.6 GB), the uv package cache (2.5 GB), the pip cache
 (4.2 GB). All regenerable.
 
 **1601/1601 tests green.**
+
+### 15.27 Session ledger — 2026-05-17 (relationship-discovery precision — self-consistency voting)
+
+Picked up §15.26 next-step #1 (relationship-discovery precision). The in-app
+smoke (#2) was deferred by the user — it needs the AppKit GUI + a live local
+LLM, which can't be driven autonomously. 1 commit. Tests 1601 → 1610.
+
+#### Self-consistency voting
+
+The two-stage classifier recalls well but gemma still over-eagerly invents
+edges for genuinely unrelated pairs (§15.26: ~3 per dense scene). Of the three
+untried levers, **self-consistency voting** was chosen: it is structural (not
+prompt-tuning — `feedback_prompt_blacklist_evasion` warns against the latter),
+reuses the already-probed prompt unchanged, and is fully deterministically
+unit-testable.
+
+- `RelationshipDiscovery.voteOnPair` — pure function: given K independent
+  per-pair classification results, returns the edge only if a *strict
+  majority* of runs found any relationship. Among the edge-finding runs the
+  modal `(from, to, kind, status)` wins; ties break toward the earliest run.
+  K=1 degrades to "keep any edge" (the pre-voting behaviour).
+- `OllamaRelationshipDiscoveryExtractor` gained a `votingRounds` init param
+  (default **3**, production via the `init(client:)` convenience init). Each
+  pair now fans out `votingRounds` calls; results collect per `(pair, round)`;
+  `voteOnPair` reduces each pair. Total calls = `pairs × rounds`. Existing
+  orchestration tests pinned to `votingRounds: 1` (they test fan-out
+  mechanics, not voting).
+
+Rationale: gemma's residual edge invention is *unstable run-to-run* (§15.23),
+so a minority vote is almost always a hallucination. A majority vote drops it
+without touching recall for edges the model reliably finds.
+
+#### Not yet done — live validation
+
+Voting is unit-verified but **not live-probed** — empirically confirming it
+cuts the residual hallucination needs Ollama + gemma running (the §15.26 probe
+path). The voting logic strictly cannot make precision worse for unstable
+hallucinations, but the *magnitude* of the precision win is unmeasured. A live
+probe on `test2` Scene 2 is the next verification step. Latency cost: a dense
+5-character scene (~10 pairs) now fires ~30 calls instead of 10 — concurrent
+fan-out, background/non-blocking, acknowledged tolerable.
+
+#### Open follow-ups carried forward
+
+- Live-probe the voting precision win (Ollama required).
+- In-app smoke — GLiNER discovery, relationship discovery, the mapper — the
+  Swift round-trip against a real on-disk project (§15.26 #2).
+- Stage D latency (~52s on dense scenes); Phase 9/10 live-smoke; Goetia A/B.
+
+**1610/1610 tests green.**
