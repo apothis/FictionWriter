@@ -384,10 +384,9 @@ public final class AppState {
             return
         }
         let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
-        let extractor = OllamaEntityDiscoveryExtractor(
-            client: OllamaClient(baseURL: profile.baseURL, model: model)
-        )
+        let client = OllamaClient(baseURL: profile.baseURL, model: model)
         let embedder = embeddingClientFactory(projectURL)
+        let prose = scene.prose
 
         DebugLog.shared.write("[proposals] firing entity-discovery: scene=\(sceneId) known=\(knownNames.count) existing=\(existingEntities.count)")
         // Mark in-flight + push notification BEFORE the async call
@@ -399,19 +398,71 @@ public final class AppState {
             name: Self.proposedEntitiesDidChangeNotification,
             object: self
         )
-        extractor.extract(
-            scenePose: scene.prose,
-            sceneId: sceneId,
-            knownEntityNames: knownNames,
-            existingEntities: existingEntities,
-            embedder: embedder
-        ) { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.discoveringSceneIds.remove(sceneId)
-                self.handleEntityDiscoveryComplete(projectURL: projectURL, sceneId: sceneId, result: result)
+        // Resolve the GLiNER detector off-main (first call loads the
+        // ONNX model). Entity *detection* runs on GLiNER; the LLM keeps
+        // only Stage D normalisation. When the model bundle is absent,
+        // discovery falls back to the all-LLM extractor.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let extractor: EntityDiscoveryExtractor
+            if let detector = self.resolveGLiNERDetector() {
+                extractor = GLiNEREntityDiscoveryExtractor(
+                    detector: GLiNERCandidateDetector(detector: detector),
+                    provider: client
+                )
+            } else {
+                extractor = OllamaEntityDiscoveryExtractor(provider: client)
+            }
+            extractor.extract(
+                scenePose: prose,
+                sceneId: sceneId,
+                knownEntityNames: knownNames,
+                existingEntities: existingEntities,
+                embedder: embedder
+            ) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    self.discoveringSceneIds.remove(sceneId)
+                    self.handleEntityDiscoveryComplete(projectURL: projectURL, sceneId: sceneId, result: result)
+                }
             }
         }
+    }
+
+    // GLiNER entity detector — loaded once, lazily, on the first
+    // discovery fire. `glinerLoadAttempted` distinguishes "not yet
+    // loaded" from "load failed" (e.g. the gitignored model bundle is
+    // absent), so a missing bundle falls back to LLM detection once
+    // rather than re-attempting the load on every fire.
+    private let glinerLock = NSLock()
+    private var glinerDetector: GLiNERDetector?
+    private var glinerLoadAttempted = false
+
+    /// Resolve the shared GLiNER detector, loading it once. Blocks the
+    /// calling (background) thread on the first call. Returns nil when
+    /// the model bundle is unavailable — the caller then falls back to
+    /// LLM-based detection.
+    private func resolveGLiNERDetector() -> GLiNERDetector? {
+        glinerLock.lock()
+        defer { glinerLock.unlock() }
+        if let detector = glinerDetector { return detector }
+        if glinerLoadAttempted { return nil }
+        glinerLoadAttempted = true
+
+        final class Box: @unchecked Sendable { var detector: GLiNERDetector? }
+        let box = Box()
+        let semaphore = DispatchSemaphore(value: 0)
+        Task.detached {
+            box.detector = try? await GLiNERDetector()
+            semaphore.signal()
+        }
+        semaphore.wait()
+
+        if box.detector == nil {
+            DebugLog.shared.write("[proposals] GLiNER detector unavailable — discovery falls back to LLM detection")
+        }
+        glinerDetector = box.detector
+        return box.detector
     }
 
     func handleEntityDiscoveryComplete(
