@@ -46,6 +46,26 @@ public enum RelationshipConflict {
         }
     }
 
+    /// Resolve a discovery-proposal name (relationships are proposed
+    /// in character *names*) to a bible `Character`. Matches the
+    /// canonical name or any alias, case-insensitively and trimmed.
+    /// Returns the first match — nil when nothing matches.
+    public static func resolveCharacter(
+        name: String,
+        in characters: [Character]
+    ) -> Character? {
+        let needle = name.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !needle.isEmpty else { return nil }
+        return characters.first { c in
+            if c.name.lowercased().trimmingCharacters(in: .whitespaces) == needle {
+                return true
+            }
+            return c.aliases.contains {
+                $0.lowercased().trimmingCharacters(in: .whitespaces) == needle
+            }
+        }
+    }
+
     /// Merge an accepted relationship into a character's existing
     /// edges. Pure-data; the AppState accept flow calls this after
     /// the user has answered the demote prompt.

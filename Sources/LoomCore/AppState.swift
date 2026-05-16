@@ -457,6 +457,69 @@ public final class AppState {
         }
     }
 
+    /// Phase 10 Part B/2 — accept a proposed relationship from the
+    /// RelationshipProposalsQueue webview. Resolves the proposal's
+    /// from/to character names to bible UUIDs, merges the directed
+    /// edge into the from-character's `relationships` via
+    /// `RelationshipConflict.applyAccepted` (demoting a prior current
+    /// romantic edge when `demoteConflicting` is true — never
+    /// deleting), then removes the proposal from the on-disk store.
+    /// No-op on in-memory session, stale id, or unresolvable names.
+    public func acceptRelationshipProposal(proposalId: UUID, demoteConflicting: Bool) {
+        guard let projectURL = currentSession.url else {
+            DebugLog.shared.write("[relationships] acceptRelationshipProposal dropped — in-memory session id=\(proposalId)")
+            return
+        }
+        guard let payload = ProposedRelationshipsStore.load(in: projectURL) else {
+            DebugLog.shared.write("[relationships] acceptRelationshipProposal: no store, ignoring id=\(proposalId)")
+            return
+        }
+        guard let proposal = payload.proposals.first(where: { $0.id == proposalId }) else {
+            DebugLog.shared.write("[relationships] acceptRelationshipProposal: stale id=\(proposalId)")
+            return
+        }
+        let characters = currentSession.project.bible.characters
+        guard let fromCharacter = RelationshipConflict.resolveCharacter(name: proposal.fromName, in: characters),
+              let toCharacter = RelationshipConflict.resolveCharacter(name: proposal.toName, in: characters) else {
+            DebugLog.shared.write("[relationships] acceptRelationshipProposal: could not resolve from='\(proposal.fromName)' to='\(proposal.toName)' against bible — leaving proposal id=\(proposalId)")
+            return
+        }
+        let newEdge = Relationship(
+            toCharacterId: toCharacter.id,
+            kind: proposal.kind,
+            status: proposal.status,
+            sourceSceneId: proposal.sourceSceneId
+        )
+        var updated = fromCharacter
+        updated.relationships = RelationshipConflict.applyAccepted(
+            to: fromCharacter.relationships,
+            newEdge: newEdge,
+            demoteConflicting: demoteConflicting
+        )
+        currentSession.updateCharacter(updated)
+        try? ProposedRelationshipsStore.remove(proposalId: proposalId, in: projectURL)
+        DebugLog.shared.write("[relationships] accepted id=\(proposalId) \(proposal.fromName)→\(proposal.toName) kind=\(proposal.kind) demote=\(demoteConflicting)")
+        NotificationCenter.default.post(
+            name: Self.proposedRelationshipsDidChangeNotification,
+            object: self
+        )
+    }
+
+    /// Phase 10 Part B/2 — reject a proposed relationship: drop it
+    /// from the on-disk store. The bible is NOT mutated.
+    public func rejectRelationshipProposal(proposalId: UUID) {
+        guard let projectURL = currentSession.url else {
+            DebugLog.shared.write("[relationships] rejectRelationshipProposal dropped — in-memory session id=\(proposalId)")
+            return
+        }
+        try? ProposedRelationshipsStore.remove(proposalId: proposalId, in: projectURL)
+        DebugLog.shared.write("[relationships] rejected id=\(proposalId)")
+        NotificationCenter.default.post(
+            name: Self.proposedRelationshipsDidChangeNotification,
+            object: self
+        )
+    }
+
     /// Phase 10 — fire relationship discovery against `sceneId` and
     /// persist the proposals to the project's `ProposedRelationshipsStore`.
     /// Async; notifies via `proposedRelationshipsDidChangeNotification`

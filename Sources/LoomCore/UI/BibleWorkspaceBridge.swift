@@ -97,11 +97,19 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     // drops the proposal from the store.
     case acceptEntityProposal(proposalId: UUID, accepted: ProposedEntityAcceptance)
     case rejectEntityProposal(proposalId: UUID)
+    // Phase 10 Part B/2 — accept/reject a proposed relationship from
+    // the RelationshipProposalsQueue webview. Accept resolves the
+    // proposal's from/to names to bible Character UUIDs, merges the
+    // edge via `RelationshipConflict.applyAccepted`, and removes the
+    // proposal. `demoteConflicting` carries the user's answer to the
+    // demote-prior-partner confirm dialog.
+    case acceptRelationshipProposal(proposalId: UUID, demoteConflicting: Bool)
+    case rejectRelationshipProposal(proposalId: UUID)
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
         case body, nsfw
-        case proposalId, accepted
+        case proposalId, accepted, demoteConflicting
     }
 
     private enum Kind: String {
@@ -126,6 +134,8 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case ingestSceneExemplar
         case acceptEntityProposal
         case rejectEntityProposal
+        case acceptRelationshipProposal
+        case rejectRelationshipProposal
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -203,6 +213,13 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             try c.encode(accepted, forKey: .accepted)
         case .rejectEntityProposal(let proposalId):
             try c.encode(Kind.rejectEntityProposal.rawValue, forKey: .kind)
+            try c.encode(proposalId, forKey: .proposalId)
+        case .acceptRelationshipProposal(let proposalId, let demoteConflicting):
+            try c.encode(Kind.acceptRelationshipProposal.rawValue, forKey: .kind)
+            try c.encode(proposalId, forKey: .proposalId)
+            try c.encode(demoteConflicting, forKey: .demoteConflicting)
+        case .rejectRelationshipProposal(let proposalId):
+            try c.encode(Kind.rejectRelationshipProposal.rawValue, forKey: .kind)
             try c.encode(proposalId, forKey: .proposalId)
         }
     }
@@ -292,6 +309,15 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .rejectEntityProposal:
             let proposalId = try c.decode(UUID.self, forKey: .proposalId)
             self = .rejectEntityProposal(proposalId: proposalId)
+        case .acceptRelationshipProposal:
+            let proposalId = try c.decode(UUID.self, forKey: .proposalId)
+            let demoteConflicting = try c.decode(Bool.self, forKey: .demoteConflicting)
+            self = .acceptRelationshipProposal(
+                proposalId: proposalId, demoteConflicting: demoteConflicting
+            )
+        case .rejectRelationshipProposal:
+            let proposalId = try c.decode(UUID.self, forKey: .proposalId)
+            self = .rejectRelationshipProposal(proposalId: proposalId)
         }
     }
 }

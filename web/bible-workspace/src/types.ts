@@ -168,6 +168,11 @@ export interface BibleWorkspaceSnapshot {
   // list; accept/reject route through the bridge to AppState.
   // Optional for legacy-payload tolerance — default to [].
   proposedEntities?: SnapshotProposedEntity[];
+  // Phase 10 Part B — pending relationship proposals from the
+  // relationship-discovery pipeline. RelationshipProposalsQueue.tsx
+  // renders this list; accept/reject route through the bridge to
+  // AppState. Optional for legacy-payload tolerance — default to [].
+  proposedRelationships?: SnapshotProposedRelationship[];
 }
 
 // Phase 9 entity-discovery — webview projection of a ProposedEntity.
@@ -194,6 +199,26 @@ export interface SnapshotProposedFact {
   fact: string;
   certainty: string;
   evidenceQuote: string;
+}
+
+// Phase 10 Part B — webview projection of a
+// RelationshipDiscovery.Proposal. `status` is a string
+// ("current" | "past") for direct JS compat; `sourceSceneTitle` is
+// pre-resolved at build time. `conflictsWithCurrent` carries the
+// names of the from-character's existing current romantic edges that
+// accepting this proposal would conflict with — non-empty means the
+// review view surfaces a demote-confirm dialog on accept. Optional
+// for legacy-payload tolerance — readers default to [].
+export interface SnapshotProposedRelationship {
+  id: string;
+  fromName: string;
+  toName: string;
+  kind: string;
+  status: "current" | "past";
+  evidenceQuote: string;
+  sourceSceneId: string;
+  sourceSceneTitle: string;
+  conflictsWithCurrent?: string[];
 }
 
 // Payload accompanying acceptEntityProposal — what the user

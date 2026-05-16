@@ -63,5 +63,31 @@ func phase10RelationshipConflictTests() -> TestSuite {
         try expectEqual(conflicts.count, 2)
     }
 
+    // MARK: - resolveCharacter (Phase 10 Part B/2)
+
+    s.test("resolveCharacter matches on canonical name, case-insensitively") {
+        let chantal = Character(name: "Chantal")
+        let muriel = Character(name: "Muriel")
+        let hit = RelationshipConflict.resolveCharacter(name: "chantal", in: [chantal, muriel])
+        try expectEqual(hit?.id, chantal.id)
+    }
+
+    s.test("resolveCharacter trims surrounding whitespace before matching") {
+        let chantal = Character(name: "Chantal")
+        let hit = RelationshipConflict.resolveCharacter(name: "  Chantal ", in: [chantal])
+        try expectEqual(hit?.id, chantal.id)
+    }
+
+    s.test("resolveCharacter matches on an alias") {
+        let chantal = Character(name: "Chantal", aliases: ["Chan", "Ms Devereux"])
+        let hit = RelationshipConflict.resolveCharacter(name: "ms devereux", in: [chantal])
+        try expectEqual(hit?.id, chantal.id)
+    }
+
+    s.test("resolveCharacter returns nil when no name or alias matches") {
+        let chantal = Character(name: "Chantal")
+        try expectNil(RelationshipConflict.resolveCharacter(name: "Nobody", in: [chantal]))
+    }
+
     return s
 }

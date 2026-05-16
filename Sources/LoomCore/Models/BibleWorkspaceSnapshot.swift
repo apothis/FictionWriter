@@ -292,6 +292,13 @@ public struct SnapshotProposedRelationship: Codable, Equatable {
     public let evidenceQuote: String
     public let sourceSceneId: UUID
     public let sourceSceneTitle: String
+    /// Phase 10 Part B/2 — names of the from-character's existing
+    /// `.current` romantic edges that accepting this proposal would
+    /// conflict with (per `RelationshipConflict.conflictingCurrent`).
+    /// Non-empty → the webview surfaces the demote-confirm dialog on
+    /// accept. Resolved Swift-side so the exclusive-kind classifier
+    /// stays in one place.
+    public let conflictsWithCurrent: [String]
 
     public init(
         id: UUID,
@@ -301,7 +308,8 @@ public struct SnapshotProposedRelationship: Codable, Equatable {
         status: String,
         evidenceQuote: String,
         sourceSceneId: UUID,
-        sourceSceneTitle: String
+        sourceSceneTitle: String,
+        conflictsWithCurrent: [String] = []
     ) {
         self.id = id
         self.fromName = fromName
@@ -311,6 +319,27 @@ public struct SnapshotProposedRelationship: Codable, Equatable {
         self.evidenceQuote = evidenceQuote
         self.sourceSceneId = sourceSceneId
         self.sourceSceneTitle = sourceSceneTitle
+        self.conflictsWithCurrent = conflictsWithCurrent
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, fromName, toName, kind, status, evidenceQuote
+        case sourceSceneId, sourceSceneTitle, conflictsWithCurrent
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        fromName = try c.decode(String.self, forKey: .fromName)
+        toName = try c.decode(String.self, forKey: .toName)
+        kind = try c.decode(String.self, forKey: .kind)
+        status = try c.decode(String.self, forKey: .status)
+        evidenceQuote = try c.decode(String.self, forKey: .evidenceQuote)
+        sourceSceneId = try c.decode(UUID.self, forKey: .sourceSceneId)
+        sourceSceneTitle = try c.decode(String.self, forKey: .sourceSceneTitle)
+        conflictsWithCurrent = try c.decodeIfPresent(
+            [String].self, forKey: .conflictsWithCurrent
+        ) ?? []
     }
 }
 

@@ -53,6 +53,31 @@ func phase10SnapshotProposedRelationshipsTests() -> TestSuite {
         try expectEqual(snap.proposedRelationships, [])
     }
 
+    s.test("SnapshotProposedRelationship defaults conflictsWithCurrent to []") {
+        try expectEqual(sample().conflictsWithCurrent, [])
+    }
+
+    s.test("SnapshotProposedRelationship carries conflictsWithCurrent through Codable") {
+        let p = SnapshotProposedRelationship(
+            id: UUID(), fromName: "Chantal", toName: "Jacob", kind: "girlfriend",
+            status: "current", evidenceQuote: "q", sourceSceneId: UUID(),
+            sourceSceneTitle: "S", conflictsWithCurrent: ["Muriel"]
+        )
+        let data = try JSONEncoder().encode(p)
+        let back = try JSONDecoder().decode(SnapshotProposedRelationship.self, from: data)
+        try expectEqual(back.conflictsWithCurrent, ["Muriel"])
+    }
+
+    s.test("legacy SnapshotProposedRelationship JSON without conflictsWithCurrent → []") {
+        let legacy = """
+        {"id":"\(UUID().uuidString)","fromName":"A","toName":"B","kind":"friend","status":"current","evidenceQuote":"q","sourceSceneId":"\(UUID().uuidString)","sourceSceneTitle":"S"}
+        """
+        let back = try JSONDecoder().decode(
+            SnapshotProposedRelationship.self, from: Data(legacy.utf8)
+        )
+        try expectEqual(back.conflictsWithCurrent, [])
+    }
+
     s.test("build() with proposedRelationships parameter populates the snapshot") {
         let snap = BibleWorkspaceSnapshot.build(
             project: Project(title: "T"),

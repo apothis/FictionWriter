@@ -203,6 +203,7 @@ let suites: [TestSuite] = [
     phase10RelationshipAcceptTests(),
     phase10RelationshipDiscoveryWiringTests(),
     phase10SnapshotProposedRelationshipsTests(),
+    phase10BibleWorkspaceIntentRelationshipTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

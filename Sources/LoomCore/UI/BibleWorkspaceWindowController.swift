@@ -286,8 +286,23 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         let sceneTitleById: [UUID: String] = Dictionary(
             uniqueKeysWithValues: session.scenes.values.map { ($0.id, $0.title) }
         )
+        let characters = session.project.bible.characters
+        let characterNameById: [UUID: String] = Dictionary(
+            uniqueKeysWithValues: characters.map { ($0.id, $0.name) }
+        )
         return payload.proposals.map { p in
-            SnapshotProposedRelationship(
+            // Resolve the from-character to surface the demote-confirm
+            // cue: names of its existing current romantic edges that
+            // accepting this proposal would conflict with.
+            let conflicts: [String]
+            if let fromCharacter = RelationshipConflict.resolveCharacter(name: p.fromName, in: characters) {
+                conflicts = RelationshipConflict.conflictingCurrent(
+                    newKind: p.kind, existing: fromCharacter.relationships
+                ).map { characterNameById[$0.toCharacterId] ?? "(unknown)" }
+            } else {
+                conflicts = []
+            }
+            return SnapshotProposedRelationship(
                 id: p.id,
                 fromName: p.fromName,
                 toName: p.toName,
@@ -295,7 +310,8 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
                 status: p.status.rawValue,
                 evidenceQuote: p.evidenceQuote,
                 sourceSceneId: p.sourceSceneId,
-                sourceSceneTitle: sceneTitleById[p.sourceSceneId] ?? "(unknown scene)"
+                sourceSceneTitle: sceneTitleById[p.sourceSceneId] ?? "(unknown scene)",
+                conflictsWithCurrent: conflicts
             )
         }
     }
@@ -472,6 +488,12 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         case .rejectEntityProposal(let proposalId):
             appState.rejectEntityProposal(proposalId: proposalId)
             DebugLog.shared.write("[workspace] rejectEntityProposal proposalId=\(proposalId)")
+        case .acceptRelationshipProposal(let proposalId, let demoteConflicting):
+            appState.acceptRelationshipProposal(proposalId: proposalId, demoteConflicting: demoteConflicting)
+            DebugLog.shared.write("[workspace] acceptRelationshipProposal proposalId=\(proposalId) demote=\(demoteConflicting)")
+        case .rejectRelationshipProposal(let proposalId):
+            appState.rejectRelationshipProposal(proposalId: proposalId)
+            DebugLog.shared.write("[workspace] rejectRelationshipProposal proposalId=\(proposalId)")
         }
     }
 
