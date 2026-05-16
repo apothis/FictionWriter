@@ -191,6 +191,51 @@ public enum RelationshipDiscovery {
         """
     }
 
+    /// Self-consistency vote over K independent classifications of one
+    /// character pair. Each element is one run's parsed (deduped)
+    /// result; an empty array is that run's "none" vote.
+    ///
+    /// Returns the edge only if a *strict majority* of runs found any
+    /// relationship — gemma over-eagerly invents edges for unrelated
+    /// pairs but does so unstably run-to-run, so a minority vote is
+    /// almost always a hallucination. Among the runs that did find an
+    /// edge, the most frequent `(from, to, kind, status)` wins; ties
+    /// break toward the earliest run. K=1 degrades to "keep any edge".
+    public static func voteOnPair(
+        _ runs: [[ProposedRelationship]]
+    ) -> [ProposedRelationship] {
+        let votes = runs.compactMap { $0.first }
+        guard votes.count * 2 > runs.count else { return [] }
+
+        struct Key: Hashable {
+            let from: String
+            let to: String
+            let kind: String
+            let status: RelationshipStatus
+        }
+        func key(_ r: ProposedRelationship) -> Key {
+            Key(
+                from: r.fromName.lowercased().trimmingCharacters(in: .whitespaces),
+                to: r.toName.lowercased().trimmingCharacters(in: .whitespaces),
+                kind: r.kind.lowercased().trimmingCharacters(in: .whitespaces),
+                status: r.status
+            )
+        }
+        var counts: [Key: Int] = [:]
+        var best: ProposedRelationship = votes[0]
+        var bestCount = 0
+        for vote in votes {
+            let k = key(vote)
+            let n = (counts[k] ?? 0) + 1
+            counts[k] = n
+            if n > bestCount {
+                bestCount = n
+                best = vote
+            }
+        }
+        return [best]
+    }
+
     /// Parse the Stage 2 per-pair answer: either `none` or one
     /// `from | to | kind | status` line. Tolerant of preamble and
     /// bullet noise; drops any line whose endpoints aren't the two

@@ -46,7 +46,7 @@ func phase10RelationshipExtractorTests() -> TestSuite {
 
     s.test("happy path: one pair, one call, one proposal") {
         let stub = StubProvider()
-        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 1)
 
         var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
         extractor.extract(
@@ -70,7 +70,7 @@ func phase10RelationshipExtractorTests() -> TestSuite {
 
     s.test("three co-occurring characters fan out to three pair calls") {
         let stub = StubProvider()
-        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 1)
 
         var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
         extractor.extract(
@@ -98,7 +98,7 @@ func phase10RelationshipExtractorTests() -> TestSuite {
 
     s.test("a pair answered 'none' contributes no edge") {
         let stub = StubProvider()
-        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 1)
 
         var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
         extractor.extract(
@@ -119,7 +119,7 @@ func phase10RelationshipExtractorTests() -> TestSuite {
 
     s.test("fewer than two characters → empty success, no Ollama call") {
         let stub = StubProvider()
-        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 1)
 
         var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
         extractor.extract(
@@ -135,7 +135,7 @@ func phase10RelationshipExtractorTests() -> TestSuite {
 
     s.test("no character pair co-occurs in the scene → empty success, no call") {
         let stub = StubProvider()
-        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 1)
 
         var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
         // Both are bible characters but only one appears in this scene.
@@ -154,7 +154,7 @@ func phase10RelationshipExtractorTests() -> TestSuite {
 
     s.test("each pair call uses num_predict 2048 (preamble headroom)") {
         let stub = StubProvider()
-        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 1)
         extractor.extract(
             scenePose: "Chantal and Muriel.", sceneId: sceneId,
             characterNames: ["Chantal", "Muriel"]
@@ -165,7 +165,7 @@ func phase10RelationshipExtractorTests() -> TestSuite {
 
     s.test("duplicate edges within a pair answer collapse to one proposal") {
         let stub = StubProvider()
-        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 1)
 
         var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
         extractor.extract(
@@ -188,7 +188,7 @@ func phase10RelationshipExtractorTests() -> TestSuite {
 
     s.test("a partial transport failure still reports the pairs that succeeded") {
         let stub = StubProvider()
-        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 1)
 
         var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
         extractor.extract(
@@ -212,9 +212,72 @@ func phase10RelationshipExtractorTests() -> TestSuite {
         try expectEqual(rels.count, 1)
     }
 
-    s.test("a total transport failure surfaces as a failure") {
+    // MARK: - self-consistency voting
+
+    s.test("default votingRounds fires three calls per pair") {
         let stub = StubProvider()
         let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+        extractor.extract(
+            scenePose: "Chantal and Muriel.", sceneId: sceneId,
+            characterNames: ["Chantal", "Muriel"]
+        ) { _ in }
+        try expectEqual(stub.queued.count, 3)
+    }
+
+    s.test("an edge a majority of rounds agree on survives the vote") {
+        let stub = StubProvider()
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 3)
+
+        var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
+        extractor.extract(
+            scenePose: "Chantal kissed Muriel.", sceneId: sceneId,
+            characterNames: ["Chantal", "Muriel"]
+        ) { captured = $0 }
+
+        try expectEqual(stub.queued.count, 3)
+        stub.cannedResponses = [
+            .success(pairLine("Chantal", "Muriel", "girlfriend", "current")),
+            .success(pairLine("Chantal", "Muriel", "girlfriend", "current")),
+            .success("none"),
+        ]
+        stub.flushAll()
+
+        let result = try expectNotNil(captured)
+        guard case .success(let rels) = result else {
+            throw TestFailure(message: "expected success", file: #file, line: #line)
+        }
+        try expectEqual(rels.count, 1)
+        try expectEqual(rels[0].kind, "girlfriend")
+    }
+
+    s.test("an edge only a minority of rounds find is voted out") {
+        let stub = StubProvider()
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 3)
+
+        var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
+        extractor.extract(
+            scenePose: "Chantal passed Muriel.", sceneId: sceneId,
+            characterNames: ["Chantal", "Muriel"]
+        ) { captured = $0 }
+
+        // gemma hallucinates an edge on one of three rounds — dropped.
+        stub.cannedResponses = [
+            .success(pairLine("Chantal", "Muriel", "sister", "current")),
+            .success("none"),
+            .success("none"),
+        ]
+        stub.flushAll()
+
+        let result = try expectNotNil(captured)
+        guard case .success(let rels) = result else {
+            throw TestFailure(message: "expected success", file: #file, line: #line)
+        }
+        try expectEqual(rels.count, 0)
+    }
+
+    s.test("a total transport failure surfaces as a failure") {
+        let stub = StubProvider()
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub, votingRounds: 1)
 
         var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
         extractor.extract(

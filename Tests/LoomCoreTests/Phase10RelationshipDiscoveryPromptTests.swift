@@ -163,5 +163,56 @@ func phase10RelationshipDiscoveryPromptTests() -> TestSuite {
         try expectEqual(kept.count, 1)
     }
 
+    // MARK: - voteOnPair (self-consistency)
+
+    s.test("voteOnPair keeps an edge a strict majority of runs agree on") {
+        let out = RelationshipDiscovery.voteOnPair([
+            [rel("Abby", "Judy", "mother")],
+            [rel("Abby", "Judy", "mother")],
+            [],
+        ])
+        try expectEqual(out.count, 1)
+        try expectEqual(out[0].kind, "mother")
+    }
+
+    s.test("voteOnPair drops an edge only a minority of runs found") {
+        // The hallucination case: gemma invents an edge on 1 of 3 runs.
+        let out = RelationshipDiscovery.voteOnPair([
+            [rel("Megan", "Judy", "sister")],
+            [],
+            [],
+        ])
+        try expectEqual(out.count, 0)
+    }
+
+    s.test("voteOnPair returns the modal edge when runs disagree on kind") {
+        let out = RelationshipDiscovery.voteOnPair([
+            [rel("Abby", "Judy", "mother")],
+            [rel("Abby", "Judy", "mother")],
+            [rel("Abby", "Judy", "parent")],
+        ])
+        try expectEqual(out.count, 1)
+        try expectEqual(out[0].kind, "mother")
+    }
+
+    s.test("voteOnPair breaks a kind tie toward the first run") {
+        let out = RelationshipDiscovery.voteOnPair([
+            [rel("Abby", "Judy", "mother")],
+            [rel("Abby", "Judy", "parent")],
+            [],
+        ])
+        try expectEqual(out.count, 1)
+        try expectEqual(out[0].kind, "mother")
+    }
+
+    s.test("voteOnPair with a single round keeps any edge found") {
+        let out = RelationshipDiscovery.voteOnPair([[rel("A", "B", "friend")]])
+        try expectEqual(out.count, 1)
+    }
+
+    s.test("voteOnPair on all-none runs returns nothing") {
+        try expectEqual(RelationshipDiscovery.voteOnPair([[], [], []]).count, 0)
+    }
+
     return s
 }
