@@ -1613,3 +1613,42 @@ accepted/rejected on the map.
 - Stage D latency (~52s on dense scenes), Phase 9/10 live-smoke, Goetia A/B.
 
 **1603/1603 tests green.**
+
+### 15.24 Session ledger — 2026-05-16 (visual relationship mapper — increments 2–4)
+
+Continuation of §15.23. Completed the drag-and-drop relationship mapper. 3
+commits. Tests 1603 → 1615.
+
+- **Increment 2 — node-layout persistence.** `RelationshipMapLayoutStore` is a
+  per-project sidecar (`relationship-map/layout.json`) of dragged node
+  positions — view state, kept out of the bible. A `setRelationshipNodePosition`
+  bridge intent upserts one node on drag-stop (no snapshot re-push); the saved
+  layout rides the snapshot and seeds initial node placement.
+- **Increment 3 — in-graph edge editing.** Drag character→character to create
+  an edge; click an edge to edit kind/status/notes or delete. Two intents:
+  `setRelationshipEdge` upserts via `RelationshipConflict.applyAccepted`
+  (`demoteConflicting: true` — a manual romantic edge demotes a prior current
+  one, never deletes); `deleteRelationshipEdge` removes a `(from,to,kind)`
+  edge. The React Flow graph re-syncs from each snapshot so edits show
+  immediately while persisted positions hold.
+- **Increment 4 — discovery ghost edges.** Pending relationship-discovery
+  proposals render as dashed amber edges (proposal names resolved to bible
+  characters by name/alias). Clicking one opens a review modal — evidence,
+  source scene, romantic-conflict warning — with Accept/Reject routed through
+  the existing `acceptRelationshipProposal` / `rejectRelationshipProposal`
+  intents. Webview-only; no new Swift.
+
+The mapper is feature-complete: a React Flow graph reachable from the
+character list, with draggable persisted nodes, full edge CRUD, and inline
+discovery review. It is a WKWebView feature — verified by clean tsc/vite/swift
+builds; not browser-previewable without the live Loom snapshot bridge, so
+in-app exercise is still pending.
+
+#### Open follow-ups carried forward
+
+- **Relationship-discovery reliability** — the GLiREL spike + two-stage
+  pairwise LLM classifier (§15.23).
+- In-app exercise of the relationship mapper.
+- Stage D latency (~52s on dense scenes), Phase 9/10 live-smoke, Goetia A/B.
+
+**1615/1615 tests green.**
