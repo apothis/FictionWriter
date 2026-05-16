@@ -1652,3 +1652,54 @@ in-app exercise is still pending.
 - Stage D latency (~52s on dense scenes), Phase 9/10 live-smoke, Goetia A/B.
 
 **1615/1615 tests green.**
+
+### 15.25 Session ledger — 2026-05-16 (GLiREL spike — NO-GO)
+
+Ran the GLiREL accuracy spike the §15.23 research recommended as the go/no-go
+for a GLiNER-style deterministic relationship extractor. No repo commits — the
+spike lives in a throwaway venv (`/Volumes/SSD1/glirel_spike/`).
+
+#### Toolchain
+
+glirel 1.2.1 needs Python ≥3.10 (PEP-604 syntax) — the machine only has system
+Python 3.9. Unblocked cleanly with `uv` (already installed): `uv python install
+3.12` + an isolated venv on the big volume, no system change. glirel pins no
+dependency versions, so `uv` pulled bleeding-edge `transformers 5.8.1` which
+broke loading three ways (hub-mixin signature, tiktoken mis-detection, then a
+normal missing `protobuf`/`sentencepiece`). Resolved by pinning
+`transformers==4.49.0` (glirel's era) + a one-line patch making glirel's
+`_from_pretrained` args optional. Dependency-rot — exactly the "one
+researcher's project, moderate maturity" risk the research flagged.
+
+#### Accuracy verdict — NO-GO
+
+GLiREL `glirel-large-v0` runs, is deterministic, and is refusal-proof (it
+processed the explicit scene without issue — an encoder). But zero-shot
+accuracy on fiction prose is **too poor to use**:
+
+- **Sanity example** ("Marek loved his sister Yelena, but he despised Anders,
+  who had once been Yelena's boyfriend") — got Marek↔Yelena *sister* ✓ and
+  Anders↔Yelena *boyfriend* ✓, but **hallucinated** a Marek↔Anders *boyfriend*
+  edge (0.54 — scored *above* some correct edges). On a trivial one-sentence
+  case.
+- **test2 Scene 2** (Judy/Allie/Megan) — collapsed: it labelled **every** pair
+  "sister" (0.36–0.45), including Megan (not anyone's sister). Missed the
+  Judy/Allie lover relationship and Megan's role entirely.
+- Score ranges of correct vs hallucinated edges overlap, so no threshold
+  cleanly separates them.
+
+This confirms the research's central unknown: news/Wikipedia-trained zero-shot
+RE does **not** transfer to fiction character relationships. GLiREL is not the
+GLiNER-style win. The encoder path is dead unless someone fine-tunes weights on
+fiction relationship data — out of scope.
+
+#### Path forward
+
+The research's fallback stands and is now the recommendation: **two-stage
+pairwise LLM classifier** — enumerate character pairs, classify each pair
+independently against a relation label set ("A→B: lover / sister / none?").
+Bounded classification, not open generation; no new dependencies; invented
+edges structurally impossible. Combined with the §15.23 name-list filter, this
+is the realistic relationship-discovery improvement. Not yet built.
+
+**1615/1615 tests green.**
