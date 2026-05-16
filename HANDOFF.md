@@ -1462,3 +1462,52 @@ it into entity discovery. 5 commits, all on `main`. Tests 1574 → 1587.
 **1587/1587 tests green.** GLiNER entity detector is complete and wired into
 discovery; the generative Stage A2 is replaced. Long-scene chunking is the
 clear next step (the detector currently has no length guard).
+
+### 15.21 Session ledger — 2026-05-16 (GLiNER long-scene chunking + live eval)
+
+Continuation of §15.20. Added long-scene windowing, ran the GLiNER-vs-LLM
+eval on real scenes, and fixed the two issues it surfaced. 5 commits on
+`main`. Tests 1587 → 1596.
+
+- **Long-scene windowing.** `GLiNERInputs.wordWindows` splits a scene into
+  ≤300-word windows at sentence boundaries; `GLiNERDetector.detect` runs
+  inference per window and concatenates. Entities never cross a sentence edge,
+  so per-window results need no boundary dedup, and char offsets stay absolute.
+
+- **EntityDiscoverySpike — GLiNER mode + a bug fix.** `LOOM_SPIKE_DETECTOR=gliner`
+  runs the eval's detection step through GLiNER; `LOOM_SPIKE_FIXTURE` overrides
+  the fixture path. The spike's inline filtering never deduped candidates by
+  surface — fine for the LLM (few candidates) but GLiNER emits one per *mention*
+  ("Chantal" ×40), so ~90 Stage D LLM calls fired per scene. Added
+  `dedupCandidatesBySurface` as the first filter, matching production's
+  `EntityDiscoveryPipeline.applyFilters`.
+
+- **Eval results.** On the 8-scene graded fixture: GLiNER **100% / 100% / 100%**
+  (P/R/F1) vs the LLM's flaky 60–92% F1 (two same-config LLM runs scored 42.9%
+  and 85.7% recall — that swing *is* the gemma instability). On `test2`'s two
+  explicit scenes (the ones that derailed gemma in §15.19): the LLM produced
+  **zero** candidates both times (Stage A2 refused/derailed); GLiNER detected
+  **all 7** entities.
+
+- **Two fixes from the test2 eval.** (1) On dense prose the quantized model
+  occasionally emits a high-confidence *wide* span (one crossed a sentence
+  boundary); `GLiNERDecoder` now caps entity width at `maxEntityWords` (8).
+  (2) gemma's Stage D normalisation listed every name in the scene as an alias
+  of whichever entity it was normalising ("Miss Abby" as an alias of "Megan");
+  `EntityDiscovery.sanitizeAliases` keeps an alias only if it shares a
+  significant (non-title, non-determiner) word token with the canonical name.
+  With both fixes, test2 went **71.4% → 100% F1**.
+
+#### Open follow-ups carried forward
+
+- **Stage D latency** — discovery on a dense scene is ~75–110s, all of it Stage
+  D (one gemma normalisation call per survivor, long `one_line` generations).
+  Detection itself is instant. The ≤30s/scene target is now purely a Stage D
+  throughput problem — candidates for a faster path: shorter `one_line`, a
+  smaller/faster model, or batching.
+- Phase 9 / Phase 10 live-smoke, the writer-model A/B against Goetia — still
+  open from §15.17–15.18.
+
+**1596/1596 tests green.** GLiNER entity detection is production-quality —
+100% F1 on both the graded fixture and `test2`'s explicit scenes. The residual
+discovery cost is Stage D latency, not correctness.
