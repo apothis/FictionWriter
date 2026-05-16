@@ -177,13 +177,14 @@ public enum RelationshipDiscovery {
         You are an indexing tool that catalogues character relationships in a manuscript. You do not summarise or judge the text — you answer one question.
 
         Decide whether the scene below shows a relationship between these two characters:
-        A: \(characterA)
-        B: \(characterB)
+        \(characterA)
+        \(characterB)
 
-        If it does, output ONE line and nothing else:
-        from | to | kind | status
-        where from and to are each either "\(characterA)" or "\(characterB)"; kind is a short relationship word from "from"'s point of view (e.g. mother, daughter, sister, brother, lover, husband, wife, friend, rival, mentor); and status is "current" if the relationship is live as of this scene or "past" if the scene shows it has ended.
-        If the scene shows NO relationship between these two characters, output exactly: none
+        If it does, reply with ONE line and nothing else — four fields separated by " | ":
+        the first two fields are the two character names (\(characterA) and \(characterB), in whichever order makes the relationship read correctly); the third is a short relationship word describing the first name's relationship to the second (e.g. mother, daughter, sister, brother, lover, husband, wife, friend, rival, mentor); the fourth is "current" if the relationship is live as of this scene or "past" if the scene shows it has ended.
+        For example, if \(characterA) is \(characterB)'s mentor, reply exactly:
+        \(characterA) | \(characterB) | mentor | current
+        If the scene shows NO relationship between \(characterA) and \(characterB), reply with exactly one word: none
 
         Scene:
         \(scenePose)

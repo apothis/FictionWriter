@@ -54,8 +54,11 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
         }
 
         // Stage 2 — one bounded classification call per pair, fanned
-        // out. num_predict 256: each answer is one line or "none".
-        let options = OllamaChatOptions(numPredict: 256)
+        // out. num_predict 2048: the answer is one line, but gemma
+        // emits a reasoning preamble first — a tight cap hits the
+        // length limit with empty content before the answer lands
+        // (the §15.19 pathology; verified live with a 256-token cap).
+        let options = OllamaChatOptions(numPredict: 2048)
         // Shared collection state — one slot per pair plus a counter.
         final class Box {
             var edges: [[RelationshipDiscovery.ProposedRelationship]]

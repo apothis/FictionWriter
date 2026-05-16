@@ -152,7 +152,7 @@ func phase10RelationshipExtractorTests() -> TestSuite {
         }
     }
 
-    s.test("each pair call uses num_predict 256") {
+    s.test("each pair call uses num_predict 2048 (preamble headroom)") {
         let stub = StubProvider()
         let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
         extractor.extract(
@@ -160,7 +160,7 @@ func phase10RelationshipExtractorTests() -> TestSuite {
             characterNames: ["Chantal", "Muriel"]
         ) { _ in }
         try expectEqual(stub.queued.count, 1)
-        try expectEqual(stub.queued[0].options.numPredict, 256)
+        try expectEqual(stub.queued[0].options.numPredict, 2048)
     }
 
     s.test("duplicate edges within a pair answer collapse to one proposal") {

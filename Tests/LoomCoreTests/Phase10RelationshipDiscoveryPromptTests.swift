@@ -50,7 +50,7 @@ func phase10RelationshipDiscoveryPromptTests() -> TestSuite {
 
     // MARK: - buildPairClassificationPrompt (stage 2)
 
-    s.test("pair prompt names both characters, the scene, and the line format") {
+    s.test("pair prompt names both characters, the scene, and a worked example") {
         let prompt = RelationshipDiscovery.buildPairClassificationPrompt(
             characterA: "Chantal", characterB: "Muriel",
             scenePose: "Chantal kissed Muriel."
@@ -58,10 +58,11 @@ func phase10RelationshipDiscoveryPromptTests() -> TestSuite {
         try expectTrue(prompt.contains("Chantal"))
         try expectTrue(prompt.contains("Muriel"))
         try expectTrue(prompt.contains("Chantal kissed Muriel."))
-        try expectTrue(prompt.contains("from | to | kind | status"))
+        // The worked example uses the real names — so the model
+        // substitutes them rather than echoing literal "from | to".
+        try expectTrue(prompt.contains("Chantal | Muriel | mentor | current"))
         // The bounded escape hatch.
         try expectTrue(prompt.lowercased().contains("none"))
-        try expectTrue(prompt.lowercased().contains("current"))
         try expectTrue(prompt.lowercased().contains("past"))
     }
 
