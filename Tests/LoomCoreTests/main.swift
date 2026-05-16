@@ -205,7 +205,6 @@ let suites: [TestSuite] = [
     phase10SnapshotProposedRelationshipsTests(),
     phase10BibleWorkspaceIntentRelationshipTests(),
     phase9CandidateLineFormatTests(),
-    phase10RelationshipLineFormatTests(),
     glinerRuntimeTests(),
     glinerTokenizerTests(),
     glinerInputsTests(),

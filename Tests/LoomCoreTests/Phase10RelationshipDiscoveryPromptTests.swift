@@ -1,130 +1,112 @@
 import Foundation
 @testable import LoomCore
 
-/// Phase 10 step 2 — relationship-discovery prompt, schema, parser.
-/// Sibling of Phase 9's `EntityDiscovery` grammar/prompt tests.
+/// Relationship discovery — two-stage pairwise classification: pure
+/// functions for pair enumeration, the per-pair prompt, the per-pair
+/// answer parser, plus dedup and the known-character filter.
 func phase10RelationshipDiscoveryPromptTests() -> TestSuite {
     let s = TestSuite("Phase10RelationshipDiscoveryPrompt")
 
-    // MARK: - Prompt
+    // MARK: - candidatePairs (stage 1)
 
-    s.test("prompt includes the scene prose verbatim") {
-        let prose = "Chantal kissed Muriel. Jacob was forgotten."
-        let prompt = RelationshipDiscovery.buildDiscoveryPrompt(
-            scenePose: prose, characterNames: ["Chantal", "Muriel", "Jacob"]
+    s.test("candidatePairs enumerates every pair of co-occurring characters") {
+        let pairs = RelationshipDiscovery.candidatePairs(
+            characterNames: ["Chantal", "Muriel", "Jacob"],
+            scenePose: "Chantal kissed Muriel while Jacob watched."
         )
-        try expectTrue(prompt.contains(prose))
+        try expectEqual(pairs.count, 3)
+        let asSets = pairs.map { Set($0) }
+        try expectTrue(asSets.contains(Set(["Chantal", "Muriel"])))
+        try expectTrue(asSets.contains(Set(["Chantal", "Jacob"])))
+        try expectTrue(asSets.contains(Set(["Muriel", "Jacob"])))
     }
 
-    s.test("prompt enumerates the known character names") {
-        let prompt = RelationshipDiscovery.buildDiscoveryPrompt(
-            scenePose: "...", characterNames: ["Chantal", "Muriel", "Jacob"]
+    s.test("candidatePairs drops characters absent from the scene") {
+        // Karim is in the bible but not in this scene.
+        let pairs = RelationshipDiscovery.candidatePairs(
+            characterNames: ["Chantal", "Muriel", "Karim"],
+            scenePose: "Chantal kissed Muriel."
+        )
+        try expectEqual(pairs.count, 1)
+        try expectEqual(Set(pairs[0]), Set(["Chantal", "Muriel"]))
+    }
+
+    s.test("candidatePairs matches scene presence case-insensitively, dedups names") {
+        let pairs = RelationshipDiscovery.candidatePairs(
+            characterNames: ["chantal", "Chantal", "Muriel"],
+            scenePose: "CHANTAL and muriel walked."
+        )
+        try expectEqual(pairs.count, 1)
+    }
+
+    s.test("candidatePairs with fewer than two present → no pairs") {
+        try expectEqual(
+            RelationshipDiscovery.candidatePairs(
+                characterNames: ["Chantal", "Muriel"], scenePose: "Chantal was alone."
+            ).count,
+            0
+        )
+    }
+
+    // MARK: - buildPairClassificationPrompt (stage 2)
+
+    s.test("pair prompt names both characters, the scene, and the line format") {
+        let prompt = RelationshipDiscovery.buildPairClassificationPrompt(
+            characterA: "Chantal", characterB: "Muriel",
+            scenePose: "Chantal kissed Muriel."
         )
         try expectTrue(prompt.contains("Chantal"))
         try expectTrue(prompt.contains("Muriel"))
-        try expectTrue(prompt.contains("Jacob"))
+        try expectTrue(prompt.contains("Chantal kissed Muriel."))
+        try expectTrue(prompt.contains("from | to | kind | status"))
+        // The bounded escape hatch.
+        try expectTrue(prompt.lowercased().contains("none"))
+        try expectTrue(prompt.lowercased().contains("current"))
+        try expectTrue(prompt.lowercased().contains("past"))
     }
 
-    s.test("prompt instructs the current-vs-past distinction") {
-        let instr = RelationshipDiscovery.promptInstruction.lowercased()
-        try expectTrue(instr.contains("current"))
-        try expectTrue(instr.contains("past"))
-    }
+    // MARK: - parsePairClassification (stage 2 answer)
 
-    // MARK: - Schema
-
-    s.test("schema is an array of objects with status enum + required keys") {
-        let schema = RelationshipDiscovery.discoveryJSONSchema()
-        try expectEqual(schema["type"] as? String, "array")
-        let items = try expectNotNil(schema["items"] as? [String: Any])
-        let required = try expectNotNil(items["required"] as? [String])
-        try expectEqual(Set(required), Set(["from", "to", "kind", "status", "evidence_quote"]))
-        let props = try expectNotNil(items["properties"] as? [String: Any])
-        let status = try expectNotNil(props["status"] as? [String: Any])
-        try expectEqual(Set(status["enum"] as? [String] ?? []), Set(["current", "past"]))
-    }
-
-    // MARK: - Parser
-
-    s.test("clean JSON array decodes into ProposedRelationship values") {
-        let raw = """
-        [
-          {"from":"Chantal","to":"Muriel","kind":"girlfriend","status":"current","evidence_quote":"Chantal kissed Muriel."},
-          {"from":"Chantal","to":"Jacob","kind":"ex-boyfriend","status":"past","evidence_quote":"He wasn't really my type."}
-        ]
-        """
-        let rels = try RelationshipDiscovery.parseRelationships(raw)
-        try expectEqual(rels.count, 2)
-        try expectEqual(rels[0].fromName, "Chantal")
-        try expectEqual(rels[0].toName, "Muriel")
-        try expectEqual(rels[0].kind, "girlfriend")
-        try expectEqual(rels[0].status, .current)
-        try expectEqual(rels[1].status, .past)
-    }
-
-    s.test("unrecognised status falls back to .current") {
-        let raw = """
-        [{"from":"A","to":"B","kind":"friend","status":"banana","evidence_quote":"q"}]
-        """
-        let rels = try RelationshipDiscovery.parseRelationships(raw)
-        try expectEqual(rels.count, 1)
-        try expectEqual(rels[0].status, .current)
-    }
-
-    s.test("parser tolerates preamble and postamble around the array") {
-        let raw = "Sure! Here you go:\n[{\"from\":\"A\",\"to\":\"B\",\"kind\":\"friend\",\"status\":\"current\",\"evidence_quote\":\"q\"}]\nHope that helps."
-        let rels = try RelationshipDiscovery.parseRelationships(raw)
-        try expectEqual(rels.count, 1)
-        try expectEqual(rels[0].fromName, "A")
-    }
-
-    s.test("no array at all → throws noJSONArrayFound") {
-        try expectThrows {
-            _ = try RelationshipDiscovery.parseRelationships("there is no json here")
-        }
-    }
-
-    s.test("per-object recovery salvages a truncated array") {
-        // Array never closes (model hit a cap mid-stream); the first
-        // complete object should still be recovered.
-        let raw = "[{\"from\":\"A\",\"to\":\"B\",\"kind\":\"friend\",\"status\":\"current\",\"evidence_quote\":\"q\"},{\"from\":\"A\",\"to\":"
-        let rels = try RelationshipDiscovery.parseRelationships(raw)
-        try expectEqual(rels.count, 1)
-        try expectEqual(rels[0].toName, "B")
-    }
-
-    s.test("parser tolerates from_character / to_character / evidence field-name synonyms") {
-        // No-format mode (2026-05-16): unconstrained gemma4_2b free-
-        // styles key names. The parser accepts the common synonyms.
-        let raw = "[{\"from_character\":\"Chantal\",\"to_character\":\"Muriel\",\"kind\":\"girlfriend\",\"status\":\"current\",\"evidence\":\"q\"}]"
-        let rels = try RelationshipDiscovery.parseRelationships(raw)
-        try expectEqual(rels.count, 1)
-        try expectEqual(rels[0].fromName, "Chantal")
-        try expectEqual(rels[0].toName, "Muriel")
-        try expectEqual(rels[0].kind, "girlfriend")
-    }
-
-    s.test("prompt names the exact JSON field keys (no-format mode)") {
-        let prompt = RelationshipDiscovery.buildDiscoveryPrompt(
-            scenePose: "x", characterNames: ["A", "B"]
+    s.test("pair parser decodes a clean four-field line") {
+        let rels = RelationshipDiscovery.parsePairClassification(
+            "Chantal | Muriel | girlfriend | current",
+            characterA: "Chantal", characterB: "Muriel"
         )
-        try expectTrue(prompt.contains("\"from\""))
-        try expectTrue(prompt.contains("\"to\""))
-        try expectTrue(prompt.contains("\"evidence_quote\""))
-    }
-
-    s.test("entries missing required fields are dropped") {
-        let raw = """
-        [
-          {"from":"A","to":"B","kind":"friend","status":"current","evidence_quote":"q"},
-          {"from":"A","kind":"friend","status":"current","evidence_quote":"q"}
-        ]
-        """
-        let rels = try RelationshipDiscovery.parseRelationships(raw)
         try expectEqual(rels.count, 1)
+        try expectEqual(rels[0].fromName, "Chantal")
+        try expectEqual(rels[0].toName, "Muriel")
+        try expectEqual(rels[0].kind, "girlfriend")
+        try expectEqual(rels[0].status, .current)
     }
 
-    // MARK: - dedup
+    s.test("pair parser treats 'none' as no relationship") {
+        try expectEqual(
+            RelationshipDiscovery.parsePairClassification(
+                "none", characterA: "A", characterB: "B"
+            ).count,
+            0
+        )
+    }
+
+    s.test("pair parser drops a line naming a character other than the asked pair") {
+        // The model hallucinated a third name — not in the asked pair.
+        let rels = RelationshipDiscovery.parsePairClassification(
+            "Chantal | Narrator | friend | current",
+            characterA: "Chantal", characterB: "Muriel"
+        )
+        try expectEqual(rels.count, 0)
+    }
+
+    s.test("pair parser tolerates a leading bullet and an unknown status") {
+        let rels = RelationshipDiscovery.parsePairClassification(
+            "- Judy | Allie | sister | banana",
+            characterA: "Judy", characterB: "Allie"
+        )
+        try expectEqual(rels.count, 1)
+        try expectEqual(rels[0].status, .current)
+    }
+
+    // MARK: - dedupRelationships
 
     func rel(_ from: String, _ to: String, _ kind: String, _ status: RelationshipStatus = .current) -> RelationshipDiscovery.ProposedRelationship {
         RelationshipDiscovery.ProposedRelationship(
@@ -151,11 +133,33 @@ func phase10RelationshipDiscoveryPromptTests() -> TestSuite {
 
     s.test("dedup keeps distinct directions and distinct kinds") {
         let out = RelationshipDiscovery.dedupRelationships([
-            rel("A", "B", "mentor"),   // A -> B
-            rel("B", "A", "student"),  // reverse direction
-            rel("A", "B", "friend"),   // same direction, different kind
+            rel("A", "B", "mentor"),
+            rel("B", "A", "student"),
+            rel("A", "B", "friend"),
         ])
         try expectEqual(out.count, 3)
+    }
+
+    // MARK: - filterToKnownCharacters
+
+    s.test("filterToKnownCharacters drops edges to an invented character") {
+        let kept = RelationshipDiscovery.filterToKnownCharacters(
+            [
+                rel("Megan", "Abby", "lover"),
+                rel("Lucas", "Narrator", "spouse"),
+            ],
+            characterNames: ["Abby", "Megan", "Lucas"]
+        )
+        try expectEqual(kept.count, 1)
+        try expectEqual(kept[0].fromName, "Megan")
+    }
+
+    s.test("filterToKnownCharacters matches names case-insensitively") {
+        let kept = RelationshipDiscovery.filterToKnownCharacters(
+            [rel(" chantal ", "MURIEL", "lover")],
+            characterNames: ["Chantal", "Muriel"]
+        )
+        try expectEqual(kept.count, 1)
     }
 
     return s
