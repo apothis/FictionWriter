@@ -100,5 +100,37 @@ func phase10RelationshipLineFormatTests() -> TestSuite {
         try expectTrue(prompt.lowercased().contains("past"))
     }
 
+    s.test("filterToKnownCharacters drops edges to an invented character") {
+        let edges = [
+            RelationshipDiscovery.ProposedRelationship(
+                fromName: "Megan", toName: "Abby", kind: "lover",
+                status: .current, evidenceQuote: "q"
+            ),
+            // gemma invented "Narrator" for the first-person narrator.
+            RelationshipDiscovery.ProposedRelationship(
+                fromName: "Lucas", toName: "Narrator", kind: "spouse",
+                status: .current, evidenceQuote: "q"
+            ),
+        ]
+        let kept = RelationshipDiscovery.filterToKnownCharacters(
+            edges, characterNames: ["Abby", "Megan", "Lucas"]
+        )
+        try expectEqual(kept.count, 1)
+        try expectEqual(kept[0].fromName, "Megan")
+    }
+
+    s.test("filterToKnownCharacters matches names case-insensitively") {
+        let edges = [
+            RelationshipDiscovery.ProposedRelationship(
+                fromName: " chantal ", toName: "MURIEL", kind: "lover",
+                status: .current, evidenceQuote: "q"
+            ),
+        ]
+        let kept = RelationshipDiscovery.filterToKnownCharacters(
+            edges, characterNames: ["Chantal", "Muriel"]
+        )
+        try expectEqual(kept.count, 1)
+    }
+
     return s
 }

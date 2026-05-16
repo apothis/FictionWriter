@@ -56,6 +56,7 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
             prompt: prompt,
             schema: schema,
             options: options,
+            characterNames: characterNames,
             attemptsRemaining: 1,
             completion: completion
         )
@@ -65,6 +66,7 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
         prompt: String,
         schema: [String: Any],
         options: OllamaChatOptions,
+        characterNames: [String],
         attemptsRemaining: Int,
         completion: @escaping (Result<[RelationshipDiscovery.ProposedRelationship], Error>) -> Void
     ) {
@@ -73,7 +75,12 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
             case .failure(let err):
                 completion(.failure(err))
             case .success(let raw):
-                let parsed = RelationshipDiscovery.parseRelationshipLines(raw)
+                // Drop edges to hallucinated characters before the
+                // empty-check, so an all-invented response re-rolls.
+                let parsed = RelationshipDiscovery.filterToKnownCharacters(
+                    RelationshipDiscovery.parseRelationshipLines(raw),
+                    characterNames: characterNames
+                )
                 // A response with real content but no parseable lines
                 // = the model derailed. Re-roll once. An empty result
                 // from a trivially-empty response is a legitimate
@@ -87,6 +94,7 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
                         prompt: prompt,
                         schema: schema,
                         options: options,
+                        characterNames: characterNames,
                         attemptsRemaining: attemptsRemaining - 1,
                         completion: completion
                     )

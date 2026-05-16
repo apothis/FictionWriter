@@ -281,6 +281,26 @@ public enum RelationshipDiscovery {
         return out
     }
 
+    /// Drop edges whose endpoints aren't both in the known-character
+    /// list. The discovery prompt says "only use characters from this
+    /// list", but the model invents names anyway — e.g. "Narrator" for
+    /// a first-person narrator who is in the list under their proper
+    /// name. A hallucinated endpoint can't resolve to a bible
+    /// character, so the edge is unusable. Case-insensitive, trimmed.
+    public static func filterToKnownCharacters(
+        _ relationships: [ProposedRelationship],
+        characterNames: [String]
+    ) -> [ProposedRelationship] {
+        let known = Set(characterNames.map {
+            $0.lowercased().trimmingCharacters(in: .whitespaces)
+        })
+        return relationships.filter { r in
+            let from = r.fromName.lowercased().trimmingCharacters(in: .whitespaces)
+            let to = r.toName.lowercased().trimmingCharacters(in: .whitespaces)
+            return known.contains(from) && known.contains(to)
+        }
+    }
+
     private static func recoverPerObject(_ slice: Substring) -> [ProposedRelationship] {
         var out: [ProposedRelationship] = []
         var depth = 0

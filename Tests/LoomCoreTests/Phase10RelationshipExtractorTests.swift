@@ -67,6 +67,62 @@ func phase10RelationshipExtractorTests() -> TestSuite {
         try expectEqual(rels[1].status, .past)
     }
 
+    s.test("edges to a character not in the list are dropped") {
+        let stub = StubProvider()
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+
+        var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
+        extractor.extract(
+            scenePose: "x",
+            sceneId: sceneId,
+            characterNames: ["Abby", "Megan"]
+        ) { captured = $0 }
+
+        // One valid edge + one to an invented "Narrator".
+        stub.cannedResponses.append(.success(relResponse([
+            ("Megan", "Abby", "lover", "current"),
+            ("Megan", "Narrator", "rival", "current"),
+        ])))
+        stub.flushNext()
+
+        let result = try expectNotNil(captured)
+        guard case .success(let rels) = result else {
+            throw TestFailure(message: "expected success, got \(result)", file: #file, line: #line)
+        }
+        try expectEqual(rels.count, 1)
+        try expectEqual(rels[0].toName, "Abby")
+    }
+
+    s.test("a response of only invented-character edges is retried") {
+        let stub = StubProvider()
+        let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
+
+        var captured: Result<[RelationshipDiscovery.ProposedRelationship], Error>?
+        extractor.extract(
+            scenePose: "x",
+            sceneId: sceneId,
+            characterNames: ["Abby", "Megan"]
+        ) { captured = $0 }
+
+        // First response: every edge names an out-of-list character →
+        // filters to empty → re-roll. Retry returns a clean edge.
+        stub.cannedResponses.append(.success(relResponse([
+            ("Narrator", "Stranger", "rival", "current"),
+        ])))
+        stub.cannedResponses.append(.success(relResponse([
+            ("Megan", "Abby", "lover", "current"),
+        ])))
+        stub.flushNext()
+        stub.flushNext()
+
+        let result = try expectNotNil(captured)
+        guard case .success(let rels) = result else {
+            throw TestFailure(message: "expected success after retry, got \(result)", file: #file, line: #line)
+        }
+        try expectEqual(rels.count, 1)
+        try expectEqual(rels[0].fromName, "Megan")
+    }
+
     s.test("calls Ollama with num_predict 4096 (no-format headroom)") {
         let stub = StubProvider()
         let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
