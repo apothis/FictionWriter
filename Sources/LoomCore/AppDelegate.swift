@@ -262,6 +262,49 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
 
         fileMenuItem.submenu = fileMenu
 
+        // Edit menu — the standard text-editing commands. Without
+        // these menu items the Cmd-Z/X/C/V/A key equivalents never
+        // reach the responder chain, so undo/cut/copy/paste/select-all
+        // only worked via the right-click context menu. Each item has
+        // a nil target, so AppKit routes the action to the first
+        // responder — the focused NSTextView, WKWebView, NSTextField,
+        // etc. — exactly as the system Edit menu does.
+        let editMenuItem = NSMenuItem()
+        main.addItem(editMenuItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(NSMenuItem(
+            title: "Undo",
+            action: Selector(("undo:")),
+            keyEquivalent: "z"))
+        let redoItem = NSMenuItem(
+            title: "Redo",
+            action: Selector(("redo:")),
+            keyEquivalent: "z")
+        redoItem.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redoItem)
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(NSMenuItem(
+            title: "Cut",
+            action: #selector(NSText.cut(_:)),
+            keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(
+            title: "Copy",
+            action: #selector(NSText.copy(_:)),
+            keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(
+            title: "Paste",
+            action: #selector(NSText.paste(_:)),
+            keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem(
+            title: "Delete",
+            action: #selector(NSText.delete(_:)),
+            keyEquivalent: ""))
+        editMenu.addItem(NSMenuItem(
+            title: "Select All",
+            action: #selector(NSText.selectAll(_:)),
+            keyEquivalent: "a"))
+        editMenuItem.submenu = editMenu
+
         // View menu — Phase 3 §E adds the Plan view toggle.
         let viewMenuItem = NSMenuItem()
         main.addItem(viewMenuItem)
