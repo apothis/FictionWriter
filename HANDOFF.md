@@ -1880,3 +1880,88 @@ empirical diminishing returns.
 
 **1618/1618 tests green.** (1601 → 1618: +6 `voteOnPair`, +3 voting
 orchestration, +8 evidence-gate; the extractor was not refactored.)
+
+### 15.28 Session ledger — 2026-05-17 (entity-detection fixes + writer-model A/B)
+
+Continuation of §15.27. An in-app session: the user ran the carried-forward
+writer-model A/B (Goetia vs gemma 4 31B) on a fresh ~490-word seed scene in
+the running `Loom.app`, which incidentally exercised entity discovery against
+real on-disk projects and surfaced three real bugs. Tests 1618 → 1627. The
+app was rebuilt + relaunched twice as fixes landed.
+
+#### Entity detection — three fixes from live use
+
+The seed scene was run through entity discovery in two fresh projects (test3,
+test4). Three bugs surfaced; each was TDD'd and re-validated via
+`EntityDiscoverySpike` against the 8-scene graded fixture + test2 (the spike's
+inline Stage D was updated alongside so the harness keeps mirroring
+production).
+
+1. **GLiNER threshold 0.5 → 0.45.** First run found only 1 of the scene's 2
+   characters. The new `EntityDetectionProbe` (committed `Tools/`) dumps every
+   span's sigmoid score: "Della" scored **0.492** on both mentions — GLiNER's
+   0.5 Python-default cutoff rejected it by 0.008, while pronoun noise sat far
+   below (~0.31), leaving a clean gap. `GLiNERDetector.defaultThreshold`
+   lowered to 0.45. Graded fixture + test2 both stay 100% F1.
+
+2. **Stage D normalisation runs unconstrained.** Next run: both names
+   detected, but "Marcus" lost — `Stage D parse failed: malformedJSON`. The
+   §15.19/§15.22 pathology: Ollama's `format`-constrained sampling
+   intermittently degenerates on gemma4_2b, truncating the JSON object.
+   `EntityDiscoveryPipeline.runStageD` now passes `schema: [:]` and pins the
+   shape in-prompt via a worked example (the §15.19 Stage A2 fix). 0 Stage D
+   parse failures after.
+
+3. **Generic-label drop.** The unconstrained Stage D, being more *consistent*,
+   surfaced a latent FP: a first-person narrator GLiNER tags gets normalised
+   to a generic role label ("The Character" / "The Narrator").
+   `EntityDiscovery.isGenericPersonLabel` flags a canonical name composed
+   wholly of generic person/role nouns (after a leading determiner);
+   `runStageD` drops those survivors. Both fixtures returned to **100%
+   precision / recall / F1**.
+
+Net: entity discovery on the seed scene now proposes both Della + Marcus
+cleanly. Residual by-design behaviour: single-mention places ("Pell Lake")
+are still dropped by the place-recurrence filter, and "the Hartley house"
+(GLiNER score 0.303) stays below threshold — pronoun noise sits at that
+level, so the threshold can't cleanly recover settings.
+
+#### Writer-model A/B — Goetia vs gemma 4 31B
+
+Both models continued the identical seed (cut on a deliberate *manual* beat —
+"His hand moved against her, slow and deliberate"). Verdict: **Goetia is the
+better fit as the writer model for this app's purpose (explicit fiction).**
+
+- **Continuation-point fidelity** — Goetia continued the manual thread the
+  seed actually stopped on (slow build → her climax → "Your turn" → penetration).
+  gemma skipped it, jumping straight to intercourse — it overrode the handoff.
+- **Explicit register** — Goetia writes the strong-NSFW payoff fluently and
+  specifically; gemma stays euphemistic and reticent ("pushed through her
+  resistance" is its peak), fading toward the literary/suggestive.
+- **Continuity** — Goetia reused an established trait, calling Marcus's
+  hesitation "another one of those old-fashioned courtesies" — a callback to
+  the seed's "the gentleman in him, always asking first."
+- **gemma's edge** — more elevated literary prose and stronger interiority
+  (it found a genuine emotional beat: "I don't want you to leave / I know.
+  Me too."). Worth not losing if a register switch is ever wanted.
+
+Recommendation recorded, not yet actioned — switching the default writer
+model from gemma 4 31B to Goetia is the user's call.
+
+#### Tooling added (committed)
+
+- `Tools/RelationshipDiscoveryProbe` — §15.27's relationship precision probe.
+- `Tools/EntityDetectionProbe` — runs GLiNER on a scene file at a low
+  threshold, dumps every span's sigmoid score; how the "Della" miss was
+  diagnosed.
+
+#### Open follow-ups carried forward
+
+- Decide whether to switch the default writer model to Goetia.
+- In-app smoke of relationship discovery + the mapper (§15.26 #2) — entity
+  discovery is now the only one of the three exercised live.
+- Stage D latency (~52s, ~100s on the dense test2 scene); Phase 9/10
+  live-smoke beyond what this session covered.
+
+**1627/1627 tests green.** (1618 → 1627: +1 threshold pin, +2 Stage D
+unconstrained, +6 generic-label.)
