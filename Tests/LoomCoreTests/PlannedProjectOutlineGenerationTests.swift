@@ -164,6 +164,17 @@ func plannedProjectOutlineGenerationTests() -> TestSuite {
         try expectTrue(prompt.contains("3"))
     }
 
+    s.test("scene prompt insists on full beat coverage through to the last beat") {
+        // When a chapter has more beats than scenes the model tends to
+        // front-load and drop the ending — the prompt must require the
+        // final scene to land the chapter's last beat.
+        let prompt = OutlineGeneration.buildSceneGenerationPrompt(
+            chapter: chapterPlan(scenes: 3),
+            premise: "x", characterSketch: "y"
+        )
+        try expectTrue(prompt.contains("the final scene must reach the chapter's last beat"))
+    }
+
     s.test("scene parser decodes clean title | summary lines") {
         let raw = """
         The Rooftop Run | Vesna sprints a delivery and is ambushed.

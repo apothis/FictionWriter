@@ -179,7 +179,7 @@ public enum OutlineGeneration {
         This chapter covers these story beats:
         \(beatLines)
 
-        Write exactly \(chapter.sceneCount) scene(s), covering the beats above in order. For each scene, write one line: a short scene title, then " | ", then a one-sentence summary of what concretely happens in that scene. Reply with only those lines, nothing else.
+        Write exactly \(chapter.sceneCount) scene(s). Together the scenes must cover ALL of the beats listed above, in order, and the final scene must reach the chapter's last beat. If there are more beats than scenes, let earlier scenes each carry more than one beat. For each scene, write one line: a short scene title, then " | ", then a one-sentence summary of what concretely happens in that scene. Reply with only those lines, nothing else.
         For example:
         The Rooftop Run | Vesna sprints a delivery across the dawn rooftops and is ambushed.
         """
