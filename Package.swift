@@ -168,5 +168,15 @@ let package = Package(
             dependencies: ["LoomCore"],
             path: "Tools/OutlineDraftProbe"
         ),
+        // Continuity Audit (L10) Phase A feasibility spike. Drives the
+        // ContinuityAuditSpike fixture through per-scene typed-claim
+        // extraction and pairwise adjudication against the live local
+        // models, and scores both against the hand-graded gold set.
+        //   swift run ContinuityAuditSpike
+        .executableTarget(
+            name: "ContinuityAuditSpike",
+            dependencies: ["LoomCore"],
+            path: "Tools/ContinuityAuditSpike"
+        ),
     ]
 )
