@@ -2296,3 +2296,56 @@ draft is an editable starting point.
 
 **1747/1747 tests green.** (1727 → 1747: +10 beat planning, +6 scene
 draft prompt, +3 draft coordinator, +1 Plan context menu.)
+
+### 15.34 Session ledger — 2026-05-17 (Planned Project — polish + LitRPG styles)
+
+Post-Phase-5 fixes from in-app use, plus a style-library expansion.
+Tests 1747 → 1749. 4 functional commits.
+
+#### Style-id determinism — a real bug
+
+Built-in starter styles were created with a random `UUID()` per
+launch. With no `styles.json` yet, a planned project's
+`assignedStyleIds` reference the built-ins — so after an app relaunch
+the ids no longer matched and **every assigned style silently
+dropped** from generation. (The first in-app draft smoke ran
+style-less without anyone noticing.) Fixed: built-in ids are now
+derived deterministically from name + type via FNV-1a — stable across
+processes. `StyleLibrary.stableStyleID`.
+
+#### UX coordination for outline-driven writing
+
+Three gaps surfaced in real use: a freshly-created planned project
+opened with nothing selected; drafting a scene gave no sense of
+location; a draft ran ~50s with no visible sign. Fixes:
+`createPlannedProject` selects the first outline scene;
+`draftSceneFromOutline` selects the scene being drafted; the editor
+surfaces `OutlineDraftCoordinator` start/finish — the tray shows its
+working state and the scene's prose reloads when the draft lands.
+
+#### Probe deadlock fix
+
+`OutlineDraftProbe` hung: the coordinator marshals completions to the
+main queue (correct for the app), but the CLI probe blocked the main
+thread on a semaphore. Now uses `dispatchMain()` with a `queue: nil`
+observer. (Process note: chasing this hang was handled badly —
+duplicate relaunches, polling, overlapping wakeups; see the
+`feedback_diagnose_dont_flail` memory.)
+
+#### LitRPG styles
+
+Seven LitRPG-family genre styles (LitRPG, GameLit, Dungeon Core,
+System Apocalypse, VRMMO LitRPG, Cultivation LitRPG, Cozy LitRPG) and
+two registers (LitRPG System Interface, Crunchy / Optimizer) added to
+the built-in library, grounded in genre research.
+
+#### Open follow-ups (carried from §15.33)
+
+1. **Per-beat echo** — beats open by repeating the prior beat's last
+   line. Recurs. Likely fix: pass a short tail summary into
+   `SceneDraftPrompt` rather than the whole prose-so-far. Priority.
+2. **Register loses to genre** when the two conflict — lower priority,
+   inherent tension; the register section could be weighted harder.
+
+**1749/1749 tests green.** (1747 → 1749: +1 style-id determinism,
++1 LitRPG styles.)
