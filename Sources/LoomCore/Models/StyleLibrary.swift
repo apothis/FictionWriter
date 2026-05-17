@@ -204,6 +204,75 @@ public enum StyleLibrary {
                 "Make the landscape itself an obstacle and a presence.",
             ]
         ),
+        // LitRPG family — fiction built on explicit game systems.
+        // "All LitRPG is GameLit; not all GameLit is LitRPG": LitRPG
+        // makes visible RPG stats load-bearing, GameLit keeps game
+        // elements as lighter texture. The variety styles below cover
+        // the established subgenres.
+        builtIn(
+            "LitRPG", .genre,
+            descriptor: "Fiction in which explicit role-playing-game mechanics — levels, stats, skills, classes, quests, and system messages — are a visible, load-bearing part of the story. The reader follows the numbers as the character grows, and the mechanics are fused to plot and character rather than decorative.",
+            constraints: [
+                "Surface game mechanics explicitly — levels, stats, skills, quests, system notifications — and let the reader watch progression happen.",
+                "Keep the underlying system internally consistent: track numbers, costs, and rules, and honour them.",
+                "Tie every mechanical gain to a choice or consequence in the story — never numbers for their own sake.",
+                "Keep the prose clear, modern, and accessible; favour momentum over ornament.",
+            ]
+        ),
+        builtIn(
+            "GameLit", .genre,
+            descriptor: "Fiction set in or shaped by a world that runs on game-like systems, where those elements colour the story without dominating it. Skill trees, classes, and game logic are present as texture and backdrop while the characters and plot stay in the foreground.",
+            constraints: [
+                "Let game-like systems flavour the world without making stat-tracking the point of every scene.",
+                "Keep characters and plot in the foreground; mechanics serve the story, not the reverse.",
+                "Introduce game elements naturally, as part of how the world simply works.",
+            ]
+        ),
+        builtIn(
+            "Dungeon Core", .genre,
+            descriptor: "LitRPG told from the dungeon's side — the protagonist is the dungeon core itself, growing, designing rooms, breeding monsters, and defending against the adventurers who come to plunder it. Strategy, management, and creative building drive the story.",
+            constraints: [
+                "Keep the dungeon's growth, design choices, and resource management central to the plot.",
+                "Render the protagonist's non-human perspective consistently — it perceives and reasons as a dungeon, not a person.",
+                "Make each expansion and defence a deliberate, consequential choice the reader can follow.",
+            ]
+        ),
+        builtIn(
+            "System Apocalypse", .genre,
+            descriptor: "A LitRPG of catastrophe: a 'System' descends on the ordinary world, most people die, and the survivors are thrust into a reality of levels, skills, and monsters. Survival, scarcity, and adaptation under sudden brutal rules drive the story.",
+            constraints: [
+                "Open the world's transformation as a hard rupture and keep its stakes lethal and immediate.",
+                "Ground the System's arrival in a recognisable real world turned deadly.",
+                "Make survival, scarcity, and adaptation — not just leveling — the engine of tension.",
+            ]
+        ),
+        builtIn(
+            "VRMMO LitRPG", .genre,
+            descriptor: "LitRPG set inside a literal virtual-reality game world that characters log into and out of. The game's rules are explicit and absolute, but the story plays the boundary between the virtual and the real — what is at stake when the game is only a game, and when it stops being one.",
+            constraints: [
+                "Treat the game world's rules as explicit, absolute, and consistent.",
+                "Keep the line between the virtual and the real present and meaningful to the stakes.",
+                "Render the game as a place with its own society, economy, and texture — not just a mechanics layer.",
+            ]
+        ),
+        builtIn(
+            "Cultivation LitRPG", .genre,
+            descriptor: "LitRPG fused with the cultivation tradition of xianxia and wuxia — characters ascend through ranked realms of power by cultivating qi, body, and spirit, the climb rendered through explicit game-like levels and systems. Martial progression, breakthroughs, and the long road toward transcendence drive the story.",
+            constraints: [
+                "Structure progression as ranked realms or stages with clear thresholds and breakthroughs.",
+                "Render cultivation as disciplined effort — training, insight, and setback — never free power.",
+                "Let the world's hierarchy of strength shape its society, its conflicts, and the protagonist's choices.",
+            ]
+        ),
+        builtIn(
+            "Cozy LitRPG", .genre,
+            descriptor: "Low-stakes, slice-of-life LitRPG — crafting, cooking, farming, shopkeeping, and town-building inside a game-like world. The pleasure is competence, small steady progress, and community rather than danger. Calm and meditative in mood.",
+            constraints: [
+                "Keep stakes low and human-scaled — a livelihood, a friendship, a small place that thrives.",
+                "Let progression come through crafting, building, and everyday competence rather than combat.",
+                "Hold a calm, warm, unhurried mood; resolve conflict gently.",
+            ]
+        ),
     ]
 
     // MARK: - Register styles
@@ -303,6 +372,28 @@ public enum StyleLibrary {
                 "Keep sexual content off the page; imply rather than depict.",
                 "Close the scene before explicit intimacy begins.",
                 "Convey attraction through emotion, gesture, and subtext.",
+            ]
+        ),
+        // LitRPG-specific registers — the prose-craft side of the
+        // genre: how game-system text sits on the page, and the
+        // mechanics-forward narrative voice.
+        builtIn(
+            "LitRPG System Interface", .register,
+            descriptor: "A prose register for handling game-system text — level-ups, stat blocks, quest logs, skill tooltips, and notifications. The System's voice is set clearly apart from the narrative prose: terse, neutral, structured, and formatted the same way every time it appears.",
+            constraints: [
+                "Set system text visibly apart from the narrative prose — as discrete notifications or blocks, not blended into a sentence.",
+                "Keep the System's voice terse, neutral, and impersonal — labels, numbers, and short declaratives.",
+                "Format every system element consistently — the same structure for stats, quests, and notifications throughout.",
+                "Place system blocks so they punctuate the prose rather than interrupt its flow.",
+            ]
+        ),
+        builtIn(
+            "Crunchy / Optimizer", .register,
+            descriptor: "A narrative register that foregrounds the mechanics — the narration thinks in numbers, builds, and trade-offs, and treats optimisation as a genuine pleasure. The prose stays clear, brisk, and modern, inviting the reader to follow the maths and the decision-making.",
+            constraints: [
+                "Let the narration reason explicitly in mechanics — costs, ratios, build choices, trade-offs.",
+                "Keep the prose clear, modern, and brisk; too much ornament reads as drag.",
+                "Make optimisation decisions legible — show the reasoning so the reader can follow it and second-guess it.",
             ]
         ),
     ]

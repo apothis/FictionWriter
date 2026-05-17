@@ -78,5 +78,30 @@ func plannedProjectStyleTests() -> TestSuite {
         }
     }
 
+    s.test("the built-in library includes LitRPG genres and registers") {
+        let byName = Dictionary(
+            StyleLibrary.builtInStarters.map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let litrpgGenres = [
+            "LitRPG", "GameLit", "Dungeon Core", "System Apocalypse",
+            "VRMMO LitRPG", "Cultivation LitRPG", "Cozy LitRPG",
+        ]
+        for name in litrpgGenres {
+            let style = try expectNotNil(byName[name])
+            try expectEqual(style.type, .genre)
+            try expectTrue(!style.descriptor.isEmpty, "\(name) needs a descriptor")
+            try expectTrue(!style.constraints.isEmpty, "\(name) needs constraints")
+            try expectTrue(style.isBuiltIn)
+        }
+        let litrpgRegisters = ["LitRPG System Interface", "Crunchy / Optimizer"]
+        for name in litrpgRegisters {
+            let style = try expectNotNil(byName[name])
+            try expectEqual(style.type, .register)
+            try expectTrue(!style.descriptor.isEmpty, "\(name) needs a descriptor")
+            try expectTrue(!style.constraints.isEmpty, "\(name) needs constraints")
+        }
+    }
+
     return s
 }
