@@ -216,6 +216,7 @@ let suites: [TestSuite] = [
     relationshipMapLayoutStoreTests(),
     plannedProjectLengthScenarioTests(),
     plannedProjectOutlineSizingTests(),
+    plannedProjectStoryFrameworkTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
