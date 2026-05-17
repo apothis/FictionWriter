@@ -2023,3 +2023,63 @@ gap claims *before* scoping work around them.
 
 **1665/1665 tests green.** (1627 → 1665: +33 across the seven Phase 1
 work items.)
+
+### 15.30 Session ledger — 2026-05-17 (Planned Project mode — Phase 2)
+
+Phase 2 of LOOM_PLANNED_PROJECT — the premise → outline pipeline.
+Tests 1665 → 1693. 9 commits.
+
+#### The pipeline (5 work items, all TDD)
+
+`OutlineGeneration` namespace + `OutlineGenerator`:
+- **Stage 1 — beats.** `buildBeatGenerationPrompt` / `parseGeneratedBeats`
+  — premise + sketch → the framework's 15 filled beat slots; tolerant
+  line parser, framework-ordered.
+- **Stage 2 — chapter map.** `planChapters` — pure deterministic
+  beat→chapter allocation (contiguous near-even groups; scene counts
+  spread the same way). Flat scenarios yield one plan.
+- **Stage 3 — scenes.** `buildSceneGenerationPrompt` / `parseGeneratedScenes`
+  — one chapter → its scenes (`title | summary` lines).
+- **Stage 4 — assembly.** `reconcileScenes` (deterministic count is
+  authoritative — pad/truncate), `assembleOutline` → a populated
+  `Manuscript` + `Scene` objects (status `.todo`).
+- **`OutlineGenerator`** — the async orchestrator (Stage 1 → 2 → 3 → 4)
+  over an injected `OllamaCallProvider`.
+
+#### Probe — gemma vs Goetia (the writer model)
+
+`OutlineGenerationProbe` ran both. gemma4_2b: competent but abstract,
+65s, one placeholder scene. **Goetia (the writer model on KoboldCpp):
+markedly more concrete and scene-ready** — named entities, real
+dialogue, sensory grounding — exact scene counts, ~18s. Outline
+generation should use the writer model. Per the user: timing is not
+critical for this stage, detail quality is.
+
+#### Two follow-on fixes
+
+- **Stage 3 arc-completion.** The first Goetia run stopped at the dark
+  moment, never reaching the Finale — Stage 3 front-loaded a chapter's
+  beats. The prompt now requires the scenes to cover *all* beats with
+  the final scene reaching the chapter's last beat. Re-probe: count
+  adherence fixed (0 placeholders, consistent). Residual: the arc
+  still tends to end on a hook rather than a hard resolution
+  (likely Stage 1 "Final Image" beat quality / open-ended premise) —
+  n=2, not chased further; the editable outline (Phase 4) is the
+  mitigation.
+- **`KoboldCallProvider`** — production adapter bridging a
+  `KoboldGenerating` client (the Goetia writer model) to the
+  `OllamaCallProvider` abstraction. Wraps the prompt in the model's
+  instruct template (Mistral V7) since KoboldCpp `/api/v1/generate`
+  is raw completion. `OutlineGenerator` can now run on the writer
+  model; wiring it into the guided-creation flow is Phase 4.
+
+#### Open follow-ups
+
+- Phase 3 — style wiring into `PromptBuilder`.
+- Phase 4 — guided-creation UI; wire `OutlineGenerator` +
+  `KoboldCallProvider` into project creation.
+- Phase 5 — outline-driven writing.
+- Optional: print Stage 1 beats in the probe to diagnose the
+  soft-resolution tendency.
+
+**1693/1693 tests green.** (1665 → 1693: +28 across Phase 2.)
