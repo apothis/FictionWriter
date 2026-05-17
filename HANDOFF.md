@@ -2189,14 +2189,30 @@ resolution `GenerationCoordinator.start()` runs. The style descriptors
 and constraints reach `fullPrompt`; the `styleSheet` chiclet appears.
 No stubs.
 
+#### Menu-accessible style library
+
+The style library is app-level and editable any time, so it shouldn't
+require entering the wizard. A `#styles` URL fragment boots the wizard
+bundle straight into the style editor; `PlannedProjectWindowController`
+gains a `.styleLibrary` mode and a "Style Library…" File-menu item
+opens it. The standalone editor's "Done" posts a `closeWizardWindow`
+intent.
+
+#### In-app live smoke (2026-05-17) — verified
+
+The full flow was driven in `Loom.app` against the live KoboldCpp
+writer server (Goetia): File → New Planned Project → premise + sketch →
+Generate (the `generateOutline` intent round-tripped through the real
+WKWebView; ~staged outline returned) → the review step rendered the
+generated scenes → Create → `NSSavePanel` → a `.loom` bundle landed on
+disk with the `plannedConfig`, the 3 outline scenes, and the Bible
+character "Wren Calloway" seeded from the sketch. The standalone
+"Style Library…" menu item also verified (opens the editor on the real
+built-in library). The whole AppKit↔WKWebView↔writer-model chain works.
+
 #### Open follow-ups
 
-- **In-app smoke** — the AppKit wizard window opening, the live
-  `generateOutline` round-trip (needs the KoboldCpp writer server up),
-  and `createPlannedProject` through the real WKWebView are not yet
-  exercised in `Loom.app`. The pieces are unit-tested + browser-tested;
-  the AppKit↔WKWebView round-trip is in-app smoke territory.
 - Phase 5 — outline-driven writing.
 
-**1726/1726 tests green.** (1708 → 1726: +7 bridge intents, +1 AppState,
-+3 snapshot, +5 style editor, +2 Phase 3 end-to-end.)
+**1727/1727 tests green.** (1708 → 1727: +7 bridge intents, +1 AppState,
++3 snapshot, +6 style editor, +2 Phase 3 end-to-end.)
