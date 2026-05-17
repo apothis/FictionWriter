@@ -358,6 +358,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         writeFromTemplate.target = self
         writeFromTemplate.toolTip = "Generate a new scene using a Template Scene's extracted structural skeleton (beat ordering, modality flow, pacing) but with new characters and content. (Phase 7 — see LOOM_SCENE_TEMPLATE.md)"
         bibleMenu.addItem(writeFromTemplate)
+        // Phase 5 — draft the current scene from its outline summary.
+        let draftFromOutline = NSMenuItem(
+            title: "Draft Scene From Outline",
+            action: #selector(draftSceneFromOutlineClicked),
+            keyEquivalent: "")
+        draftFromOutline.target = self
+        draftFromOutline.toolTip = "Draft the current scene's prose from its outline summary — planned beat by beat, in the project's assigned styles. (Phase 5 — Planned Project mode)"
+        bibleMenu.addItem(draftFromOutline)
         bibleMenu.addItem(.separator())
         // Phase 9 — manual trigger for the entity-discovery pipeline.
         // Auto-trigger landing later; for now the user invokes per
@@ -777,6 +785,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         // closes itself once the project is created.
         plannedProjectWindow = PlannedProjectWindowController(appState: AppState.shared)
         plannedProjectWindow?.showAndActivate()
+    }
+
+    @objc private func draftSceneFromOutlineClicked() {
+        let session = AppState.shared.currentSession
+        guard let sceneId = session.currentSceneId else {
+            let alert = NSAlert()
+            alert.messageText = "No scene selected"
+            alert.informativeText = "Select a scene in the sidebar or Plan view, then draft it from its outline."
+            alert.runModal()
+            return
+        }
+        AppState.shared.draftSceneFromOutline(sceneId: sceneId)
     }
 
     @objc private func openStyleLibraryClicked() {

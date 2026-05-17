@@ -49,7 +49,7 @@ public final class PlanViewController: NSViewController,
         layout.minimumInteritemSpacing = DesignTokens.Spacing.md
         layout.minimumLineSpacing = DesignTokens.Spacing.md
 
-        let cv = NSCollectionView()
+        let cv = PlanCollectionView()
         cv.collectionViewLayout = layout
         cv.dataSource = self
         cv.delegate = self
@@ -57,6 +57,12 @@ public final class PlanViewController: NSViewController,
         cv.allowsMultipleSelection = false
         cv.backgroundColors = [.clear]
         cv.register(PlanSceneCardItem.self, forItemWithIdentifier: PlanSceneCardItem.identifier)
+        // Phase 5 — right-click a card for the outline-draft + status
+        // actions. The subclass hit-tests the event; the controller
+        // builds the per-card menu.
+        cv.menuProvider = { [weak self] indexPath in
+            self?.contextMenu(forItemAt: indexPath)
+        }
         self.collectionView = cv
         scroll.documentView = cv
 
@@ -105,6 +111,57 @@ public final class PlanViewController: NSViewController,
         session.selectScene(id: card.sceneId)
     }
 
+    // MARK: Context menu (Phase 5 — outline-driven writing)
+
+    /// The scene a context-menu action targets — set when the menu is
+    /// built for a right-clicked card, read by the action handlers.
+    private var contextMenuSceneId: UUID?
+
+    /// Build the right-click menu for the card at `indexPath`: draft
+    /// the scene from its outline, and set its status.
+    private func contextMenu(forItemAt indexPath: IndexPath) -> NSMenu? {
+        guard indexPath.item < cards.count else { return nil }
+        let card = cards[indexPath.item]
+        contextMenuSceneId = card.sceneId
+
+        let menu = NSMenu()
+        let draft = NSMenuItem(
+            title: "Draft From Outline",
+            action: #selector(draftCardFromOutline),
+            keyEquivalent: "")
+        draft.target = self
+        menu.addItem(draft)
+
+        menu.addItem(.separator())
+        let statusItem = NSMenuItem(title: "Status", action: nil, keyEquivalent: "")
+        let statusMenu = NSMenu()
+        for status in SceneStatus.allCases {
+            let item = NSMenuItem(
+                title: status.rawValue.capitalized,
+                action: #selector(setCardStatus(_:)),
+                keyEquivalent: "")
+            item.target = self
+            item.representedObject = status.rawValue
+            item.state = (status == card.status) ? .on : .off
+            statusMenu.addItem(item)
+        }
+        statusItem.submenu = statusMenu
+        menu.addItem(statusItem)
+        return menu
+    }
+
+    @objc private func draftCardFromOutline() {
+        guard let sceneId = contextMenuSceneId else { return }
+        AppState.shared.draftSceneFromOutline(sceneId: sceneId)
+    }
+
+    @objc private func setCardStatus(_ sender: NSMenuItem) {
+        guard let sceneId = contextMenuSceneId,
+              let raw = sender.representedObject as? String,
+              let status = SceneStatus(rawValue: raw) else { return }
+        session.setSceneStatus(id: sceneId, to: status)
+    }
+
     // MARK: Test surface
 
     public var cardsForTesting: [PlanSceneCard] { cards }
@@ -112,6 +169,25 @@ public final class PlanViewController: NSViewController,
     public func simulateCardClickForTesting(at index: Int) {
         guard index < cards.count else { return }
         session.selectScene(id: cards[index].sceneId)
+    }
+
+    /// Test hook — the context menu the right-click handler would
+    /// build for the card at `index`.
+    public func contextMenuForTesting(at index: Int) -> NSMenu? {
+        contextMenu(forItemAt: IndexPath(item: index, section: 0))
+    }
+}
+
+/// NSCollectionView subclass that routes a right-click into a
+/// per-item context menu. `menu(for:)` hit-tests the event location
+/// to the card under the cursor and asks `menuProvider` to build it.
+final class PlanCollectionView: NSCollectionView {
+    var menuProvider: ((IndexPath) -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let indexPath = indexPathForItem(at: point) else { return nil }
+        return menuProvider?(indexPath)
     }
 }
 

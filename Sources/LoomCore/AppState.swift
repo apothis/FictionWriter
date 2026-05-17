@@ -52,6 +52,11 @@ public final class AppState {
     /// `LedgerDiff` pure-data pass.
     public let ledgerCoordinator: LedgerExtractionCoordinator
 
+    /// Planned Project mode Phase 5 — the in-flight outline-scene
+    /// drafter, retained for the run's duration. nil when no draft is
+    /// running. See `draftSceneFromOutline(sceneId:)`.
+    private var outlineDraftCoordinator: OutlineDraftCoordinator?
+
     /// Phase 4 #7 sub-task 3 — in-memory pending-suggestions queue,
     /// populated from extraction results via `LedgerDiff.diff(...)`.
     /// The Bible inspector chip (sub-task 4) reads from this; the
@@ -854,6 +859,25 @@ public final class AppState {
         DebugLog.shared.write(
             "[loom] createPlannedProject at=\(url.lastPathComponent) scenes=\(outline.scenes.count)"
         )
+    }
+
+    /// Planned Project mode — Phase 5: draft an outline scene from its
+    /// summary. Builds an `OutlineDraftCoordinator` over the writer
+    /// model and starts it; the coordinator plans beats, drafts the
+    /// scene beat by beat, writes the prose back, and advances the
+    /// scene's status to `.draft`. The coordinator is retained for the
+    /// run's duration. A no-op while a draft is already in flight.
+    @discardableResult
+    public func draftSceneFromOutline(sceneId: UUID) -> OutlineDraftCoordinator? {
+        if outlineDraftCoordinator?.isGenerating == true {
+            DebugLog.shared.write("[outline-draft] ignored — a draft is already running")
+            return outlineDraftCoordinator
+        }
+        let provider = KoboldCallProvider(client: registry.clientForDefault())
+        let coordinator = OutlineDraftCoordinator(session: currentSession, provider: provider)
+        outlineDraftCoordinator = coordinator
+        coordinator.start(sceneId: sceneId)
+        return coordinator
     }
 
     /// Load an existing `.loom` directory at `url` and switch the

@@ -42,5 +42,23 @@ func phase3PlanViewControllerTests() -> TestSuite {
         try expectEqual(session.currentSceneId, s2.id)
     }
 
+    // Phase 5 — the card right-click menu: draft-from-outline + status.
+    s.test("card context menu offers Draft From Outline and a Status submenu") {
+        let session = ProjectSession(project: Project(title: "T"))
+        let scene = session.addScene(title: "A")
+        session.setSceneStatus(id: scene.id, to: .draft)
+        let vc = PlanViewController(session: session)
+        _ = vc.view
+
+        let menu = try expectNotNil(vc.contextMenuForTesting(at: 0))
+        try expectEqual(menu.item(at: 0)?.title, "Draft From Outline")
+        let statusMenu = try expectNotNil(menu.items.last?.submenu)
+        try expectEqual(statusMenu.items.count, SceneStatus.allCases.count)
+        // The scene's current status (.draft) is the checked item.
+        let checked = statusMenu.items.filter { $0.state == .on }
+        try expectEqual(checked.count, 1)
+        try expectEqual(checked.first?.title, "Draft")
+    }
+
     return s
 }
