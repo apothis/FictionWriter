@@ -73,7 +73,7 @@
 | What a character KNOWS / does-not-know at a given scene | `LedgerKnowledge.compute` (walks `flatSceneIds`, buckets KNOWS/UNKNOWNS) | `Generation/LedgerKnowledge.swift` |
 | Discover character relationships | `RelationshipDiscovery`, `OllamaRelationshipDiscoveryExtractor`, `RelationshipConflict` | `Generation/` |
 | Who is present in a scene | `ScenePresence` | `Generation/ScenePresence.swift` |
-| **Whole-manuscript continuity audit (L10)** | `ContinuityAudit`, `ContinuityConflictRetrieval` — *in progress, Phase B* | `Generation/Continuity*.swift`, `LOOM_CONTINUITY_AUDIT.md` |
+| **Whole-manuscript continuity audit (L10)** | Phase B engine complete: `ContinuityAudit` (claim extraction + pairwise adjudication), `OllamaContinuityExtractor`, `ContinuityClaimFilter`, `ContinuitySubjectResolver`, `ContinuityConflictRetrieval`, `ContinuityKnowledgeCheck`, `ContinuityFinding`, `ContinuityAuditEngine`, `ContinuityAuditStore` | `Generation/Continuity*.swift`, `Storage/ContinuityAuditStore.swift`, `LOOM_CONTINUITY_AUDIT.md` |
 
 ### Prompt assembly & generation modes
 | Problem | Solution | Files |

@@ -2453,3 +2453,61 @@ write-up: `LOOM_CONTINUITY_AUDIT.md` §13.
 
 **1777/1777 tests green.** (1755 → 1777: +11 continuity-audit
 extraction, +11 continuity-audit adjudication.)
+
+### 15.37 Session ledger — 2026-05-17/18 (Continuity Audit — Phase B engine)
+
+Built the whole continuity-audit production pipeline. Tests 1755 → 1834.
+~16 commits. TDD throughout.
+
+#### What landed
+
+Nine modules, all red→green→commit:
+
+- `ContinuityAudit` — claim/verdict types + extraction & adjudication
+  prompts/schemas/tolerant parsers (Phase A foundation).
+- `ContinuityConflictRetrieval` — candidate-pair retrieval with
+  source-routing (only narration claims enter world-fact pairs — kills
+  the spike's dialogue-lie false positive) + type-routing.
+- `ContinuitySubjectResolver` — grounds claim subjects to canonical
+  entity names (bible/alias index; GLiNER seam documented).
+- `ContinuityKnowledgeCheck` — deterministic knowledge-before-reveal
+  detection, similarity injected.
+- `ContinuityFinding` (+ assembly) — the finding type; contradiction
+  verdicts / knowledge violations → findings.
+- `ContinuityClaimFilter` — dedup + evidence-quote validation,
+  mirrors `LedgerFilters`.
+- `OllamaContinuityExtractor` — production extractor mirroring
+  `OllamaLedgerExtractor` (retry-on-empty + scene-aware budget).
+- `ContinuityAuditStore` — sidecar persistence; re-audit carries
+  triage status forward.
+- `ContinuityAuditEngine` — the orchestrator (extract → ground →
+  retrieve → adjudicate → knowledge-check → assemble → store).
+
+#### Two pieces of mid-build feedback, both incorporated
+
+The user flagged existing infrastructure to reuse rather than
+reinvent: `LedgerFilters` (extraction retry / cosine filters) and
+GLiNER (NSFW-robust NER for subject grounding). Both documented in
+`LOOM_CONTINUITY_AUDIT.md` §3.1/§3.3 and applied. Also created
+`LOOM_TECH_STACK.md` — a problem→solution→file registry + dead-ends
+table — so future work checks for existing solutions first.
+
+#### Scope decisions
+
+- **Timeline** folded into retrieval + adjudication (temporal claims
+  are a `pairableType`; age conflicts ride the attribute path) — no
+  standalone chronology engine in v1. `LOOM_CONTINUITY_AUDIT.md` §3.5.
+- **`ContinuityClaimFilter` built + unit-tested but not yet wired into
+  the engine** — needs a live embedder; the async embed orchestration
+  is the remaining Phase-B-tail wire-up.
+
+#### Open follow-ups → close Phase B, then Phase C
+
+1. Live end-to-end run of `ContinuityAuditEngine` against the real
+   models (extraction on Ollama, adjudication on Goetia) — currently
+   stub-smoke-tested only.
+2. Wire `ContinuityClaimFilter` into the engine behind a live embedder
+   (mirror `LedgerFilterPipeline`'s batched-embed orchestration).
+3. Phase C — the Bible Workspace surface + on-demand trigger.
+
+**1834/1834 tests green.**

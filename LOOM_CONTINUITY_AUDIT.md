@@ -1,10 +1,11 @@
 # Loom — Continuity Audit (design + plan)
 
-> **Status: Phase A spike complete — GO (2026-05-17).** Research-grounded;
-> the pairwise-adjudication feasibility gate is cleared (§13). This document
-> is the authoritative plan for the whole-manuscript continuity audit feature;
-> it follows the `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT` pattern. Inventory
-> pointer: **L10** in [`LOOM_PLAN.md`](LOOM_PLAN.md).
+> **Status: Phase B engine complete (2026-05-18).** Phase A spike cleared the
+> feasibility gate (§13); Phase B built the production pipeline end to end
+> (§14). Remaining: a live end-to-end run of the engine, the `ClaimFilter`
+> embedder wire-up, then Phase C (Bible Workspace surface). This document is
+> the authoritative plan; it follows the `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT`
+> pattern. Inventory pointer: **L10** in [`LOOM_PLAN.md`](LOOM_PLAN.md).
 
 ## 0. What this is
 
@@ -429,3 +430,32 @@ heavier prompt language.
    conflicts across "Mara" / "she" / "the investigator".
 4. Goetia adjudication is ~one call per candidate pair — fold into the §8 cost
    model (background, progress indicator).
+
+## 14. Phase B — production engine (2026-05-18)
+
+Phase B built the whole pipeline, TDD throughout (1755 → 1834 tests). Nine
+pure-data / orchestration modules in `Sources/LoomCore/`:
+
+| Module | Role |
+|---|---|
+| `ContinuityAudit` | claim/verdict types, extraction + adjudication prompts/schemas/parsers (Phase A) |
+| `OllamaContinuityExtractor` | production extractor — retry-on-empty + scene-aware budget, mirrors `OllamaLedgerExtractor` |
+| `ContinuityClaimFilter` | dedup + evidence-quote validation, mirrors `LedgerFilters` |
+| `ContinuitySubjectResolver` | grounds claim subjects to canonical entity names |
+| `ContinuityConflictRetrieval` | candidate-pair retrieval; source-routing + type-routing |
+| `ContinuityKnowledgeCheck` | deterministic knowledge-before-reveal detection |
+| `ContinuityFinding` (+ assembly) | the finding type; verdict/violation → finding |
+| `ContinuityAuditEngine` | the orchestrator — extract → ground → retrieve → adjudicate → knowledge-check → store |
+| `ContinuityAuditStore` | sidecar persistence; re-audit carries triage status forward |
+
+**Scope decisions taken during the build:**
+- **Timeline** folded into retrieval + adjudication (§3.5) — no standalone
+  chronology engine in v1.
+- **`ContinuityClaimFilter` is built and unit-tested but not yet wired into
+  the engine** — it needs a live embedder; the async embed orchestration is
+  the remaining Phase-B-tail wire-up (mirror `LedgerFilterPipeline`).
+
+**Not yet done:** a live end-to-end run of `ContinuityAuditEngine` against the
+real models (extraction on Ollama, adjudication on Goetia) — the engine is
+stub-smoke-tested only. That live pass + the filter wire-up close Phase B
+before Phase C (the Bible Workspace surface).
