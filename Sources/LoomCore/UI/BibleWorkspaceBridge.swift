@@ -51,6 +51,51 @@ public enum BibleWorkspaceBridge {
     public static func decodeIntent(_ data: Data) throws -> BibleWorkspaceIntent {
         try JSONDecoder().decode(BibleWorkspaceIntent.self, from: data)
     }
+
+    /// Phase 4 — the Swift→JS reply leg for request/reply intents
+    /// (`generateOutline`, `createPlannedProject`). Produces a
+    /// one-line `window.loom.resolveReply(<envelope>)` call; the JS
+    /// bridge's promise map keys off `requestId`. Success carries a
+    /// JSON-encoded `value`; the wrapping object is built so the JSON
+    /// is inlined as a JS object literal, the same way
+    /// `encodeSnapshotPush` avoids a string-literal escaping layer.
+    public static func encodeReply<V: Encodable>(
+        requestId: String, value: V
+    ) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let valueData = try encoder.encode(value)
+        let valueJSON = String(data: valueData, encoding: .utf8) ?? "null"
+        let envelope = """
+        {"requestId":\(jsStringLiteral(requestId)),"ok":true,"value":\(valueJSON)}
+        """
+        return "window.loom.resolveReply(\(escapeSeparators(envelope)));"
+    }
+
+    /// The failure counterpart of `encodeReply` — `ok:false` with a
+    /// human-readable `error` message. Non-throwing: the message is
+    /// the only dynamic part and is escaped as a JSON string.
+    public static func encodeReplyError(requestId: String, message: String) -> String {
+        let envelope = """
+        {"requestId":\(jsStringLiteral(requestId)),"ok":false,"error":\(jsStringLiteral(message))}
+        """
+        return "window.loom.resolveReply(\(escapeSeparators(envelope)));"
+    }
+
+    /// Encode a Swift string as a JSON string literal (quotes +
+    /// escaping). Routed through JSONEncoder so control characters,
+    /// quotes and backslashes are handled correctly.
+    private static func jsStringLiteral(_ s: String) -> String {
+        let data = (try? JSONEncoder().encode(s)) ?? Data("\"\"".utf8)
+        return String(data: data, encoding: .utf8) ?? "\"\""
+    }
+
+    /// U+2028/U+2029 are legal JSON but unsafe in pre-ES2019 JS — the
+    /// same defensive escape `encodeSnapshotPush` applies.
+    private static func escapeSeparators(_ s: String) -> String {
+        s.replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+    }
 }
 
 /// Phase 4.5 §5.2 — typed intents posted from the React side back
@@ -120,6 +165,18 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     // Relationship-map mapper — remove the directed edge identified
     // by (from, to, kind).
     case deleteRelationshipEdge(fromCharacterId: UUID, toCharacterId: UUID, edgeKind: String)
+    // Planned Project mode Phase 4 — the guided-creation wizard.
+    // Both carry a `requestId` so the JS `postRequest` promise map
+    // can pair the async `resolveReply` (the existing intents are
+    // fire-and-forget + snapshot-echo; these are request/reply).
+    // `generateOutline` runs the staged outline pipeline on the
+    // writer model and replies with a `GeneratedOutline`;
+    // `createPlannedProject` carries the user-edited outline to disk.
+    case generateOutline(requestId: String, config: PlannedProjectConfig)
+    case createPlannedProject(
+        requestId: String, title: String,
+        config: PlannedProjectConfig, outline: OutlineGeneration.GeneratedOutline
+    )
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
@@ -127,6 +184,7 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case proposalId, accepted, demoteConflicting
         case x, y
         case fromCharacterId, toCharacterId, edgeKind, status, notes
+        case requestId, config, title, outline
     }
 
     private enum Kind: String {
@@ -156,6 +214,8 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case setRelationshipNodePosition
         case setRelationshipEdge
         case deleteRelationshipEdge
+        case generateOutline
+        case createPlannedProject
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -258,6 +318,16 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             try c.encode(fromId, forKey: .fromCharacterId)
             try c.encode(toId, forKey: .toCharacterId)
             try c.encode(edgeKind, forKey: .edgeKind)
+        case .generateOutline(let requestId, let config):
+            try c.encode(Kind.generateOutline.rawValue, forKey: .kind)
+            try c.encode(requestId, forKey: .requestId)
+            try c.encode(config, forKey: .config)
+        case .createPlannedProject(let requestId, let title, let config, let outline):
+            try c.encode(Kind.createPlannedProject.rawValue, forKey: .kind)
+            try c.encode(requestId, forKey: .requestId)
+            try c.encode(title, forKey: .title)
+            try c.encode(config, forKey: .config)
+            try c.encode(outline, forKey: .outline)
         }
     }
 
@@ -376,6 +446,20 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             let edgeKind = try c.decode(String.self, forKey: .edgeKind)
             self = .deleteRelationshipEdge(
                 fromCharacterId: fromId, toCharacterId: toId, edgeKind: edgeKind
+            )
+        case .generateOutline:
+            let requestId = try c.decode(String.self, forKey: .requestId)
+            let config = try c.decode(PlannedProjectConfig.self, forKey: .config)
+            self = .generateOutline(requestId: requestId, config: config)
+        case .createPlannedProject:
+            let requestId = try c.decode(String.self, forKey: .requestId)
+            let title = try c.decode(String.self, forKey: .title)
+            let config = try c.decode(PlannedProjectConfig.self, forKey: .config)
+            let outline = try c.decode(
+                OutlineGeneration.GeneratedOutline.self, forKey: .outline
+            )
+            self = .createPlannedProject(
+                requestId: requestId, title: title, config: config, outline: outline
             )
         }
     }

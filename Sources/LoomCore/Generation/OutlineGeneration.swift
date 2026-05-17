@@ -208,7 +208,9 @@ public enum OutlineGeneration {
 
     /// The assembled outline — a `Manuscript` structure plus the
     /// `Scene` objects it references. The caller persists both.
-    public struct GeneratedOutline: Equatable {
+    /// `Codable` so the guided-creation wizard can round-trip an
+    /// edited outline back to Swift over the webview bridge (Phase 4).
+    public struct GeneratedOutline: Equatable, Codable {
         public let manuscript: Manuscript
         public let scenes: [Scene]
 
