@@ -225,6 +225,7 @@ let suites: [TestSuite] = [
     plannedProjectStylePromptTests(),
     plannedProjectCreationTests(),
     plannedProjectBridgeIntentTests(),
+    plannedProjectAppStateTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive

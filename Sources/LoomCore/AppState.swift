@@ -830,6 +830,32 @@ public final class AppState {
         DebugLog.shared.write("[loom] createProject at=\(url.lastPathComponent)")
     }
 
+    /// Planned Project mode — create a `.loom` directory from a
+    /// generated outline and switch the current session onto it. The
+    /// guided-creation counterpart of `createProject`: the bundle
+    /// carries the outline's `Manuscript`, the `PlannedProjectConfig`,
+    /// and a Bible character seeded from the sketch.
+    public func createPlannedProject(
+        at url: URL,
+        title: String,
+        config: PlannedProjectConfig,
+        outline: OutlineGeneration.GeneratedOutline
+    ) throws {
+        let storage = ProjectStorage()
+        let project = try storage.createPlannedProject(
+            at: url, title: title, config: config, outline: outline
+        )
+        let scenesById = Dictionary(
+            uniqueKeysWithValues: outline.scenes.map { ($0.id, $0) }
+        )
+        currentSession.replace(project: project, scenes: scenesById, url: url)
+        try pushRecentAndSave(url)
+        reconfigureRetrieval(for: url)
+        DebugLog.shared.write(
+            "[loom] createPlannedProject at=\(url.lastPathComponent) scenes=\(outline.scenes.count)"
+        )
+    }
+
     /// Load an existing `.loom` directory at `url` and switch the
     /// current session to it. Uses the recovery path so a corrupt
     /// `project.json` falls back to `project.json.bak` automatically.
