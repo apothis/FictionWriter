@@ -159,5 +159,14 @@ let package = Package(
             dependencies: ["LoomCore"],
             path: "Tools/OutlineGenerationProbe"
         ),
+        // Planned Project Phase 5 — runs OutlineDraftCoordinator
+        // against the live writer model and prints the drafted scene
+        // prose, for tuning the beat-plan + per-beat draft prompts.
+        //   swift run OutlineDraftProbe
+        .executableTarget(
+            name: "OutlineDraftProbe",
+            dependencies: ["LoomCore"],
+            path: "Tools/OutlineDraftProbe"
+        ),
     ]
 )
