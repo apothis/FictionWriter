@@ -43,9 +43,11 @@ public struct PlannedProjectConfig: Codable, Equatable {
     }
 
     /// A Bible character seeded from the character sketch — the name
-    /// is the leading token before the first comma / dash, the full
-    /// sketch becomes the one-line. Nil when the sketch is empty.
-    /// The writer renames/edits it in the bible afterwards.
+    /// is the leading token before the first comma / dash; the full
+    /// sketch seeds both the one-line and the description so the
+    /// character isn't created with an empty body. Nil when the
+    /// sketch is empty. The writer renames/edits it in the bible
+    /// afterwards.
     public func seedCharacter() -> Character? {
         let sketch = characterSketch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sketch.isEmpty else { return nil }
@@ -54,6 +56,6 @@ public struct PlannedProjectConfig: Codable, Equatable {
             .trimmingCharacters(in: .whitespaces) ?? ""
         // A very long leading run is a description, not a name.
         let name = (lead.isEmpty || lead.count > 40) ? "Protagonist" : lead
-        return Character(name: name, oneLine: sketch)
+        return Character(name: name, oneLine: sketch, description: sketch)
     }
 }

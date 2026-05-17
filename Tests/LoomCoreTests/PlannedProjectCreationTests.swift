@@ -19,6 +19,9 @@ func plannedProjectCreationTests() -> TestSuite {
         let character = try expectNotNil(config.seedCharacter())
         try expectEqual(character.name, "Vesna")
         try expectEqual(character.oneLine, "Vesna, late thirties — a courier.")
+        // The sketch also seeds the fuller description field so the
+        // bible character isn't created with an empty body.
+        try expectEqual(character.description, "Vesna, late thirties — a courier.")
     }
 
     s.test("seedCharacter takes the name before an em-dash") {
