@@ -1776,11 +1776,12 @@ GLiNER HF cache entries (0.6 GB), the uv package cache (2.5 GB), the pip cache
 
 **1601/1601 tests green.**
 
-### 15.27 Session ledger — 2026-05-17 (relationship-discovery precision — self-consistency voting)
+### 15.27 Session ledger — 2026-05-17 (relationship-discovery precision — levers exhausted)
 
 Picked up §15.26 next-step #1 (relationship-discovery precision). The in-app
 smoke (#2) was deferred by the user — it needs the AppKit GUI + a live local
-LLM, which can't be driven autonomously. 1 commit. Tests 1601 → 1610.
+LLM, which can't be driven autonomously. Tests 1601 → 1618. Outcome: every
+precision lever was tried and live-probed; none works (see verdict below).
 
 #### Self-consistency voting
 
@@ -1807,21 +1808,75 @@ Rationale: gemma's residual edge invention is *unstable run-to-run* (§15.23),
 so a minority vote is almost always a hallucination. A majority vote drops it
 without touching recall for edges the model reliably finds.
 
-#### Not yet done — live validation
+#### Live probe — voting buys recall, not precision
 
-Voting is unit-verified but **not live-probed** — empirically confirming it
-cuts the residual hallucination needs Ollama + gemma running (the §15.26 probe
-path). The voting logic strictly cannot make precision worse for unstable
-hallucinations, but the *magnitude* of the precision win is unmeasured. A live
-probe on `test2` Scene 2 is the next verification step. Latency cost: a dense
-5-character scene (~10 pairs) now fires ~30 calls instead of 10 — concurrent
-fan-out, background/non-blocking, acknowledged tolerable.
+Built `RelationshipDiscoveryProbe` (a committed `Tools/` runner) and probed
+voting on `test2` Scene 2 (the dense 5-character explicit scene) against live
+gemma4_2b. Baseline (`votingRounds=1`, 3 runs): 8/7/6 edges — visibly
+unstable; 11 distinct edges, 7 in ≥2 runs, 4 in only 1. Voting (`rounds=3`)
+recovered all 5 real character-pairs (recall 100% vs baseline ~87%) but
+precision stayed ~62% — because the residual hallucination is **not** purely
+unstable. It splits two ways: an unstable tail voting drops, and a **stable
+mis-classification core** (gemma reliably calls Megan the "sister" of
+Judy/Allie, in a *majority* of runs) that voting structurally cannot touch.
+At 3× latency (~150s → ~432s/scene) for a recall-only gain, voting was turned
+**off by default** (`votingRounds` default 3 → 1); the machinery is kept for
+pairing with a precision lever.
+
+#### Evidence gate — built, probed, does not work
+
+Added a binary evidence gate as the precision lever:
+`RelationshipDiscovery.buildRelationshipGatePrompt` asks a conservative "do
+these two have a relationship?" question; `parseGateResponse` admits a pair
+only if the model cites a sentence that genuinely occurs in the scene
+(whitespace/case-insensitive substring check, ≥12 chars). Pure functions,
+TDD'd, **not wired into the production extractor**.
+
+Probed n=2 on Scene 2: **unstable and structurally flawed.** Run 1 looked
+great (gate precision 100%, gated edges 4/4 real). Run 2 collapsed (gate
+admitted 2 real + 3 unrelated, dropped 3 real; gated recall 2/5). The flaw:
+the substring check kills *fabricated* quotes but not *misattributed real*
+ones — run 2 admitted both Judy↔Lucas and Megan↔Lucas by citing the **same**
+real sentence about *Abby's* marriage to Lucas (it contains "Lucas", so it
+verifies). The gate inherits the base model's instability.
+
+#### Stronger model (gemma4_4b) — worse, not better
+
+Probed the §15.26 "stronger model" lever. gemma4_4b is **worse**: it never
+answers "none", asserts an edge for all 10 pairs (precision 50%), and the gate
+admits all 10 because 4b will always cite *some* sentence. More compliant, not
+more discriminating.
+
+#### Verdict — precision is not fixable with the available tooling
+
+None of the levers — self-consistency voting, the evidence gate, a stronger
+local model — reliably fixes relationship-discovery precision on dense
+multi-character scenes. Root cause is the §15.23 verdict standing firm
+(small local models too unstable here) plus the §15.25 GLiREL spike (encoder
+path dead). A real fix needs a fundamentally better model or fiction-fine-
+tuned weights — out of scope. **The shipped design already backstops this:**
+discovery output is *proposals*, surfaced as reviewable ghost edges on the
+mapper with accept/reject (§15.24). A noisy-but-complete proposal stream the
+writer curates is the design — the §15.26 two-stage classifier's recall win
+is the part that matters and it stands. Precision work stopped here at
+empirical diminishing returns.
+
+#### State of the committed code
+
+- Voting machinery (`voteOnPair`, `votingRounds`) — kept, **default off**.
+- Evidence gate (`buildRelationshipGatePrompt`, `parseGateResponse`) — kept as
+  tested opt-in pure functions, **unused by production**, in case a future
+  better model makes the gate viable.
+- `OllamaRelationshipDiscoveryExtractor` production behaviour is unchanged
+  from §15.26 (one typed call per pair, no gate).
+- `Tools/RelationshipDiscoveryProbe` — committed; the record of the above.
 
 #### Open follow-ups carried forward
 
-- Live-probe the voting precision win (Ollama required).
 - In-app smoke — GLiNER discovery, relationship discovery, the mapper — the
-  Swift round-trip against a real on-disk project (§15.26 #2).
+  Swift round-trip against a real on-disk project (§15.26 #2). Still the
+  highest-value verification left.
 - Stage D latency (~52s on dense scenes); Phase 9/10 live-smoke; Goetia A/B.
 
-**1610/1610 tests green.**
+**1618/1618 tests green.** (1601 → 1618: +6 `voteOnPair`, +3 voting
+orchestration, +8 evidence-gate; the extractor was not refactored.)
