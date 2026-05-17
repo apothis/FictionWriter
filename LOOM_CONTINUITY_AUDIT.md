@@ -192,12 +192,20 @@ A/Bs this.
   *references* fact F in scene S is a violation if F's first `asserted`
   exposure for that character is a scene *after* S. Deterministic given the
   reveal ordering; the LLM only extracts the "character references F" claim.
-- **Timeline** — extract temporal anchors per scene, build an ordering against
-  `flatSceneIds` (the canonical narrative order — [`ManuscriptWalk.swift:12`](Sources/LoomCore/Editing/ManuscriptWalk.swift)),
-  flag interval/age/duration violations deterministically. The LLM only
-  *normalises* vague time expressions ("a few weeks later") into comparable
-  form. Note: Loom does not yet model flashbacks / out-of-order scenes — the
-  audit assumes `flatSceneIds` is chronological, and §11 flags this.
+- **Timeline & chronology** — v1 **folds timeline conflicts into the
+  retrieval + adjudication path** rather than building a separate
+  deterministic chronology engine. The reason (a Phase-B scope finding): the
+  conflict cases are already covered there — a `temporal` claim is a
+  `pairableType`, so two temporal claims about the same subject (e.g. a storm
+  dated "last week" vs. "a month ago") form a candidate pair and are
+  adjudicated; an age conflict is an `attribute` claim (`attributeKey: "age"`)
+  and rides the attribute path; event-ordering conflicts need the LLM anyway.
+  The *additional* value of a standalone deterministic engine — absolute
+  ordering, interval/duration arithmetic — needs real temporal-expression
+  normalisation, which is disproportionate for v1 and entangled with the
+  unresolved flashback question (§11.2). The spike confirmed Goetia
+  adjudicates the storm-date conflict correctly (pair p5). A dedicated
+  chronology engine is deferred to a later phase.
 
 ## 4. False-positive defenses — the real battle
 
@@ -296,9 +304,11 @@ precision/recall — the make-or-break number, given CONTRADOC; (c) the
 extractor-model vs. Goetia adjudicator A/B. **Gate: if pairwise adjudication
 precision cannot clear a usable bar, the feature is rethought or shelved.**
 
-**Phase B — Production engine.** Claim extraction, typed fact-base + diffing,
-candidate retrieval, adjudication, deterministic knowledge-state + timeline
-checks, finding assembly, `ContinuityAuditStore`. Covers classes 1–3.
+**Phase B — Production engine.** Claim extraction (+ filter pass), subject
+resolution, candidate retrieval, adjudication, the deterministic
+knowledge-state check, finding assembly, `ContinuityAuditStore`, the engine
+orchestrator. Timeline conflicts are folded into retrieval + adjudication
+(§3.5); a standalone chronology engine is deferred.
 
 **Phase C — Bible Workspace surface + on-demand trigger.** Snapshot fields,
 intents, the finding-card review UI, progress indicator. End-to-end on-demand
