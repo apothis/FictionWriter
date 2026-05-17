@@ -121,5 +121,58 @@ func plannedProjectOutlineGenerationTests() -> TestSuite {
         try expectTrue(sceneCounts.max()! - sceneCounts.min()! <= 1)
     }
 
+    // MARK: - Stage 3: scene generation
+
+    func chapterPlan(scenes: Int) -> OutlineGeneration.ChapterPlan {
+        OutlineGeneration.ChapterPlan(
+            beats: [OutlineGeneration.GeneratedBeat(
+                beatName: "Catalyst", summary: "a message arrives"
+            )],
+            sceneCount: scenes
+        )
+    }
+
+    s.test("scene prompt names the premise, the chapter's beats, and the scene count") {
+        let prompt = OutlineGeneration.buildSceneGenerationPrompt(
+            chapter: chapterPlan(scenes: 3),
+            premise: "A courier smuggles a memory.",
+            characterSketch: "Vesna, a courier."
+        )
+        try expectTrue(prompt.contains("A courier smuggles a memory"))
+        try expectTrue(prompt.contains("a message arrives"))
+        try expectTrue(prompt.contains("3"))
+    }
+
+    s.test("scene parser decodes clean title | summary lines") {
+        let raw = """
+        The Rooftop Run | Vesna sprints a delivery and is ambushed.
+        The Stranger | A stranger says the cargo is worth reading.
+        """
+        let scenes = OutlineGeneration.parseGeneratedScenes(raw)
+        try expectEqual(scenes.count, 2)
+        try expectEqual(scenes[0].title, "The Rooftop Run")
+        try expectEqual(scenes[0].summary, "Vesna sprints a delivery and is ambushed.")
+    }
+
+    s.test("scene parser tolerates numbering and bold markup on the title") {
+        let scenes = OutlineGeneration.parseGeneratedScenes(
+            "1. **The Rooftop Run** | Vesna runs the rooftops."
+        )
+        try expectEqual(scenes.count, 1)
+        try expectEqual(scenes[0].title, "The Rooftop Run")
+    }
+
+    s.test("scene parser skips a line with no separator or an empty field") {
+        let raw = """
+        A line with no bar at all.
+        The Real Scene | something happens.
+        | missing title
+        Missing Summary |
+        """
+        let scenes = OutlineGeneration.parseGeneratedScenes(raw)
+        try expectEqual(scenes.count, 1)
+        try expectEqual(scenes[0].title, "The Real Scene")
+    }
+
     return s
 }

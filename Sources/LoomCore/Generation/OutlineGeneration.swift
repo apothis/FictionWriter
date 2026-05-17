@@ -141,4 +141,66 @@ public enum OutlineGeneration {
             (count * (i + 1)) / groups - (count * i) / groups
         }
     }
+
+    // MARK: - Stage 3: scene generation
+
+    /// One scene as Stage 3 describes it — a title and a one-sentence
+    /// summary. The orchestrator turns each into a `Scene` (status
+    /// `.todo`, empty prose) when it assembles the `Manuscript`.
+    public struct SceneOutline: Equatable {
+        public let title: String
+        public let summary: String
+
+        public init(title: String, summary: String) {
+            self.title = title
+            self.summary = summary
+        }
+    }
+
+    /// Stage 3 prompt: break one chapter into exactly its planned
+    /// number of scenes, covering the chapter's beats in order.
+    public static func buildSceneGenerationPrompt(
+        chapter: ChapterPlan,
+        premise: String,
+        characterSketch: String
+    ) -> String {
+        let beatLines = chapter.beats
+            .map { "- \($0.beatName): \($0.summary)" }
+            .joined(separator: "\n")
+        return """
+        You are a story-outlining tool. Break the chapter described below into exactly \(chapter.sceneCount) scene(s).
+
+        Premise:
+        \(premise)
+
+        Main character:
+        \(characterSketch)
+
+        This chapter covers these story beats:
+        \(beatLines)
+
+        Write exactly \(chapter.sceneCount) scene(s), covering the beats above in order. For each scene, write one line: a short scene title, then " | ", then a one-sentence summary of what concretely happens in that scene. Reply with only those lines, nothing else.
+        For example:
+        The Rooftop Run | Vesna sprints a delivery across the dawn rooftops and is ambushed.
+        """
+    }
+
+    /// Parse a Stage 3 response: `title | summary` lines. Tolerant of
+    /// preamble, bullets, numbering, and bold markup; a line missing
+    /// the separator or either field is skipped.
+    public static func parseGeneratedScenes(_ raw: String) -> [SceneOutline] {
+        var out: [SceneOutline] = []
+        for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: true) {
+            let line = rawLine.drop(while: { lineLeadingNoiseCharacters.contains($0) })
+            guard let bar = line.firstIndex(of: "|") else { continue }
+            let title = String(line[..<bar])
+                .replacingOccurrences(of: "*", with: "")
+                .trimmingCharacters(in: .whitespaces)
+            let summary = String(line[line.index(after: bar)...])
+                .trimmingCharacters(in: .whitespaces)
+            guard !title.isEmpty, !summary.isEmpty else { continue }
+            out.append(SceneOutline(title: title, summary: summary))
+        }
+        return out
+    }
 }
