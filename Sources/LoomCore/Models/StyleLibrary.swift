@@ -20,6 +20,11 @@ import Foundation
 public enum StyleLibrary {
 
     /// A built-in style — `isBuiltIn` is forced true via this helper.
+    /// The id is derived deterministically from name + type: built-ins
+    /// have no `styles.json` to persist an id, so a random `UUID()`
+    /// would differ every launch and a project's `assignedStyleIds`
+    /// (which reference these built-ins) would stop resolving after a
+    /// relaunch — silently dropping the writer's chosen styles.
     private static func builtIn(
         _ name: String,
         _ type: StyleType,
@@ -27,9 +32,35 @@ public enum StyleLibrary {
         constraints: [String]
     ) -> Style {
         Style(
+            id: stableStyleID(name: name, type: type),
             name: name, type: type, descriptor: descriptor,
             constraints: constraints, exemplars: [], isBuiltIn: true
         )
+    }
+
+    /// A stable, process-independent UUID for a built-in starter
+    /// style, derived from its name + type via FNV-1a (Foundation's
+    /// `Hasher` is per-process randomised and can't be used here).
+    /// Pure function — the same inputs yield the same id in every
+    /// process and on every machine.
+    public static func stableStyleID(name: String, type: StyleType) -> UUID {
+        func fnv1a(_ s: String) -> UInt64 {
+            var h: UInt64 = 0xcbf2_9ce4_8422_2325
+            for byte in s.utf8 {
+                h ^= UInt64(byte)
+                h = h &* 0x0000_0100_0000_01B3
+            }
+            return h
+        }
+        func bytes(_ v: UInt64) -> [UInt8] {
+            (0..<8).map { UInt8((v >> (8 * (7 - $0))) & 0xFF) }
+        }
+        let b = bytes(fnv1a("loom.style/\(type.rawValue)/\(name)"))
+            + bytes(fnv1a("\(name)/\(type.rawValue)/loom.style"))
+        return UUID(uuid: (
+            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+            b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+        ))
     }
 
     public static let builtInStarters: [Style] = genres + registers

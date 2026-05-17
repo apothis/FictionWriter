@@ -50,5 +50,33 @@ func plannedProjectStyleTests() -> TestSuite {
         try expectTrue(!style.isBuiltIn)
     }
 
+    s.test("built-in starter styles have deterministic, unique ids") {
+        // The derivation is a pure function — same inputs, same id.
+        try expectEqual(
+            StyleLibrary.stableStyleID(name: "Noir", type: .genre),
+            StyleLibrary.stableStyleID(name: "Noir", type: .genre)
+        )
+        // Distinct name or type → distinct id.
+        try expectTrue(
+            StyleLibrary.stableStyleID(name: "Noir", type: .genre)
+                != StyleLibrary.stableStyleID(name: "Terse", type: .register)
+        )
+        try expectTrue(
+            StyleLibrary.stableStyleID(name: "Noir", type: .genre)
+                != StyleLibrary.stableStyleID(name: "Noir", type: .register)
+        )
+        // Every starter id is unique — no collisions across the library.
+        let ids = StyleLibrary.builtInStarters.map(\.id)
+        try expectEqual(Set(ids).count, ids.count)
+        // The starter library uses the derivation — not random UUIDs,
+        // so a project's assignedStyleIds survive an app relaunch.
+        for style in StyleLibrary.builtInStarters {
+            try expectEqual(
+                style.id,
+                StyleLibrary.stableStyleID(name: style.name, type: style.type)
+            )
+        }
+    }
+
     return s
 }

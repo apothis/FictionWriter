@@ -1,6 +1,8 @@
 # LOOM — Planned Project Mode
 
-**Status:** Design / planning. No code yet. Authored 2026-05-17.
+**Status:** Built — all five phases shipped 2026-05-17 (see HANDOFF
+§15.29–§15.33). This document is the design of record; the live
+build state is tracked in HANDOFF.md.
 
 **Origin:** User feature request — a guided project-creation mode that turns a
 short character sketch + a few-sentence plot premise into an editable
