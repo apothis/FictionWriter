@@ -80,15 +80,32 @@ public final class OutlineDraftCoordinator {
             sceneSummary: summary, targetWordCount: targetWords
         ) { [weak self] result in
             guard let self = self else { return }
-            switch result {
-            case .failure(let error):
-                self.finish(sceneId: sceneId, prose: "", beatCount: 0, error: error)
-            case .success(let beats):
-                self.draftBeat(
-                    index: 0, beats: beats, sceneId: sceneId,
-                    sceneSummary: summary, styles: styles, accumulated: ""
-                )
+            self.onMain {
+                switch result {
+                case .failure(let error):
+                    self.finish(sceneId: sceneId, prose: "", beatCount: 0, error: error)
+                case .success(let beats):
+                    self.draftBeat(
+                        index: 0, beats: beats, sceneId: sceneId,
+                        sceneSummary: summary, styles: styles, accumulated: ""
+                    )
+                }
             }
+        }
+    }
+
+    /// Run `work` on the main thread. The provider's completion fires
+    /// on whatever queue the HTTP client uses (off-main for the real
+    /// `KoboldCallProvider`); the coordinator mutates `ProjectSession`
+    /// and schedules its debounced auto-save Timer, both of which must
+    /// happen on the main runloop. When already on main (the
+    /// synchronous test stubs), `work` runs inline so the per-beat
+    /// recursion stays deterministic for tests.
+    private func onMain(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
         }
     }
 
@@ -128,21 +145,23 @@ public final class OutlineDraftCoordinator {
         let options = OllamaChatOptions(numPredict: max(256, beat.targetWords * 4))
         provider.call(prompt: prompt, schema: [:], options: options) { [weak self] result in
             guard let self = self else { return }
-            switch result {
-            case .failure(let error):
-                self.finish(
-                    sceneId: sceneId, prose: accumulated,
-                    beatCount: beats.count, error: error
-                )
-            case .success(let raw):
-                let beatProse = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-                let next = accumulated.isEmpty
-                    ? beatProse
-                    : accumulated + "\n\n" + beatProse
-                self.draftBeat(
-                    index: index + 1, beats: beats, sceneId: sceneId,
-                    sceneSummary: sceneSummary, styles: styles, accumulated: next
-                )
+            self.onMain {
+                switch result {
+                case .failure(let error):
+                    self.finish(
+                        sceneId: sceneId, prose: accumulated,
+                        beatCount: beats.count, error: error
+                    )
+                case .success(let raw):
+                    let beatProse = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let next = accumulated.isEmpty
+                        ? beatProse
+                        : accumulated + "\n\n" + beatProse
+                    self.draftBeat(
+                        index: index + 1, beats: beats, sceneId: sceneId,
+                        sceneSummary: sceneSummary, styles: styles, accumulated: next
+                    )
+                }
             }
         }
     }
