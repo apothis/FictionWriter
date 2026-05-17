@@ -86,6 +86,61 @@ func phase9SnapshotProposedEntitiesTests() -> TestSuite {
         try expectEqual(snap.proposedEntities, [])
     }
 
+    // MARK: - filterProposalsAgainstBible
+
+    func proposal(
+        _ name: String, kind: EntityDiscovery.Kind, aliases: [String] = []
+    ) -> EntityDiscovery.ProposedEntity {
+        EntityDiscovery.ProposedEntity(
+            id: UUID(), kind: kind, canonicalName: name, aliases: aliases,
+            oneLine: "x", evidenceQuote: "x", sourceSceneId: UUID(), confidence: 0.8
+        )
+    }
+
+    s.test("filterProposalsAgainstBible drops a proposal matching a bible character") {
+        // A proposal written before its entity was promoted lingers in
+        // the store; the snapshot must re-check it against the bible.
+        let out = EntityDiscovery.filterProposalsAgainstBible(
+            [proposal("Marcus", kind: .character), proposal("Della", kind: .character)],
+            characterNames: ["Marcus"], placeNames: [], objectNames: []
+        )
+        try expectEqual(out.count, 1)
+        try expectEqual(out[0].canonicalName, "Della")
+    }
+
+    s.test("filterProposalsAgainstBible keeps proposals not in the bible") {
+        let out = EntityDiscovery.filterProposalsAgainstBible(
+            [proposal("Della", kind: .character)],
+            characterNames: ["Marcus"], placeNames: [], objectNames: []
+        )
+        try expectEqual(out.count, 1)
+    }
+
+    s.test("filterProposalsAgainstBible is kind-aware") {
+        // A bible *place* named "Marcus" must not suppress a *character*.
+        let out = EntityDiscovery.filterProposalsAgainstBible(
+            [proposal("Marcus", kind: .character)],
+            characterNames: [], placeNames: ["Marcus"], objectNames: []
+        )
+        try expectEqual(out.count, 1)
+    }
+
+    s.test("filterProposalsAgainstBible matches case-insensitively and trims") {
+        let out = EntityDiscovery.filterProposalsAgainstBible(
+            [proposal("  marcus ", kind: .character)],
+            characterNames: ["Marcus"], placeNames: [], objectNames: []
+        )
+        try expectEqual(out.count, 0)
+    }
+
+    s.test("filterProposalsAgainstBible drops a proposal whose alias matches the bible") {
+        let out = EntityDiscovery.filterProposalsAgainstBible(
+            [proposal("Marc", kind: .character, aliases: ["Marcus"])],
+            characterNames: ["Marcus"], placeNames: [], objectNames: []
+        )
+        try expectEqual(out.count, 0)
+    }
+
     s.test("build() with proposedEntities parameter produces a populated snapshot") {
         let project = Project(title: "T")
         let queue = LedgerSuggestionsQueue()

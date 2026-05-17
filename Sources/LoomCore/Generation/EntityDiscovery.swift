@@ -169,6 +169,37 @@ public enum EntityDiscovery {
         return words.allSatisfy { generic.contains($0) }
     }
 
+    /// Drop proposals whose canonical name (or any alias) already
+    /// matches a bible entity of the same kind. `isKnownSurface` only
+    /// guards *fresh detection* at discovery time; a proposal written
+    /// before its entity was promoted lingers in the on-disk store, so
+    /// the proposals snapshot re-checks every stored proposal against
+    /// the *current* bible. Case-insensitive, whitespace-trimmed.
+    public static func filterProposalsAgainstBible(
+        _ proposals: [ProposedEntity],
+        characterNames: [String],
+        placeNames: [String],
+        objectNames: [String]
+    ) -> [ProposedEntity] {
+        func norm(_ s: String) -> String {
+            s.lowercased().trimmingCharacters(in: .whitespaces)
+        }
+        let chars = Set(characterNames.map(norm))
+        let places = Set(placeNames.map(norm))
+        let objects = Set(objectNames.map(norm))
+        return proposals.filter { p in
+            let known: Set<String>
+            switch p.kind {
+            case .character: known = chars
+            case .place: known = places
+            case .object: known = objects
+            }
+            if known.contains(norm(p.canonicalName)) { return false }
+            if p.aliases.contains(where: { known.contains(norm($0)) }) { return false }
+            return true
+        }
+    }
+
     // MARK: - Pre-gate: known-entity filter (§6.4 first-run fix)
 
     /// Returns true iff `surface` (case-insensitive, whitespace-

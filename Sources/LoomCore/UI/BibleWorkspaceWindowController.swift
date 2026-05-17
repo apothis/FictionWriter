@@ -255,7 +255,17 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         for f in payload.facts {
             factsByEntity[f.proposedEntityId] = f.facts
         }
-        return payload.entities.map { p in
+        // Suppress proposals for entities already in the bible — a
+        // proposal written before its entity was promoted lingers in
+        // the store and would otherwise keep showing in the queue.
+        let bible = session.project.bible
+        let visibleEntities = EntityDiscovery.filterProposalsAgainstBible(
+            payload.entities,
+            characterNames: bible.characters.flatMap { [$0.name] + $0.aliases },
+            placeNames: bible.settings.flatMap { [$0.name] + $0.aliases },
+            objectNames: bible.objects.flatMap { [$0.name] + $0.aliases }
+        )
+        return visibleEntities.map { p in
             let facts = (factsByEntity[p.id] ?? []).map { ef in
                 SnapshotProposedFact(
                     fact: ef.fact,
