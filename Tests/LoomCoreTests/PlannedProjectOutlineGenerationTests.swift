@@ -78,5 +78,48 @@ func plannedProjectOutlineGenerationTests() -> TestSuite {
         try expectEqual(beats.map(\.beatName), ["Catalyst", "Midpoint"])
     }
 
+    // MARK: - Stage 2: chapter map
+
+    func allBeats() -> [OutlineGeneration.GeneratedBeat] {
+        framework.beatSlots.map {
+            OutlineGeneration.GeneratedBeat(beatName: $0.name, summary: "x")
+        }
+    }
+
+    s.test("a flat scenario produces a single chapter plan with every beat") {
+        let sizing = OutlineSizing.plan(for: .shortStory)  // flat
+        let plans = OutlineGeneration.planChapters(beats: allBeats(), sizing: sizing)
+        try expectEqual(plans.count, 1)
+        try expectEqual(plans[0].beats.count, 15)
+        try expectEqual(plans[0].sceneCount, sizing.sceneCount)
+    }
+
+    s.test("a chaptered scenario produces one plan per chapter") {
+        let sizing = OutlineSizing.plan(for: .novella)
+        let plans = OutlineGeneration.planChapters(beats: allBeats(), sizing: sizing)
+        try expectEqual(plans.count, sizing.chapterCount)
+    }
+
+    s.test("every beat is assigned to exactly one chapter, in order") {
+        let sizing = OutlineSizing.plan(for: .novel)
+        let plans = OutlineGeneration.planChapters(beats: allBeats(), sizing: sizing)
+        try expectEqual(plans.flatMap { $0.beats }, allBeats())
+    }
+
+    s.test("scene counts across chapters sum to the sizing total") {
+        let sizing = OutlineSizing.plan(for: .novel)
+        let plans = OutlineGeneration.planChapters(beats: allBeats(), sizing: sizing)
+        try expectEqual(plans.map(\.sceneCount).reduce(0, +), sizing.sceneCount)
+    }
+
+    s.test("beats and scenes are distributed near-evenly across chapters") {
+        let sizing = OutlineSizing.plan(for: .novella)
+        let plans = OutlineGeneration.planChapters(beats: allBeats(), sizing: sizing)
+        let beatCounts = plans.map { $0.beats.count }
+        let sceneCounts = plans.map(\.sceneCount)
+        try expectTrue(beatCounts.max()! - beatCounts.min()! <= 1)
+        try expectTrue(sceneCounts.max()! - sceneCounts.min()! <= 1)
+    }
+
     return s
 }

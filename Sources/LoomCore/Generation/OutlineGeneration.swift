@@ -95,4 +95,50 @@ public enum OutlineGeneration {
             .replacingOccurrences(of: "_", with: "")
             .trimmingCharacters(in: .whitespaces)
     }
+
+    // MARK: - Stage 2: chapter map
+
+    /// One chapter's slice of the outline: the beats it covers (in
+    /// story order) and how many scenes to generate for it.
+    public struct ChapterPlan: Equatable {
+        public let beats: [GeneratedBeat]
+        public let sceneCount: Int
+
+        public init(beats: [GeneratedBeat], sceneCount: Int) {
+            self.beats = beats
+            self.sceneCount = sceneCount
+        }
+    }
+
+    /// Stage 2: map the generated beats onto chapters. Pure,
+    /// deterministic — the structure is computed in code, never asked
+    /// of the LLM. Beats are split into contiguous, near-even,
+    /// order-preserving groups; `OutlineSizing.sceneCount` is spread
+    /// the same way. A flat scenario (`chapterCount == 0`) yields a
+    /// single plan covering the whole story.
+    public static func planChapters(
+        beats: [GeneratedBeat],
+        sizing: OutlineSizing
+    ) -> [ChapterPlan] {
+        let chapters = max(1, sizing.chapterCount)
+        let beatSizes = distribute(beats.count, into: chapters)
+        let sceneSizes = distribute(sizing.sceneCount, into: chapters)
+        var plans: [ChapterPlan] = []
+        var cursor = 0
+        for i in 0..<chapters {
+            let slice = Array(beats[cursor..<(cursor + beatSizes[i])])
+            cursor += beatSizes[i]
+            plans.append(ChapterPlan(beats: slice, sceneCount: sceneSizes[i]))
+        }
+        return plans
+    }
+
+    /// Split `count` items into `groups` contiguous, near-even buckets
+    /// (bucket sizes differ by at most 1, and sum to `count`).
+    private static func distribute(_ count: Int, into groups: Int) -> [Int] {
+        guard groups > 0 else { return [] }
+        return (0..<groups).map { i in
+            (count * (i + 1)) / groups - (count * i) / groups
+        }
+    }
 }
