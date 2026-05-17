@@ -220,6 +220,7 @@ let suites: [TestSuite] = [
     plannedProjectStyleTests(),
     plannedProjectStyleLibraryStoreTests(),
     plannedProjectConfigTests(),
+    plannedProjectOutlineGenerationTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
