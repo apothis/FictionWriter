@@ -54,7 +54,7 @@ public enum BibleWorkspaceBridge {
 
     /// Phase 4 — the Swift→JS reply leg for request/reply intents
     /// (`generateOutline`, `createPlannedProject`). Produces a
-    /// one-line `window.loom.resolveReply(<envelope>)` call; the JS
+    /// one-line `window.loomWizard.resolveReply(<envelope>)` call; the JS
     /// bridge's promise map keys off `requestId`. Success carries a
     /// JSON-encoded `value`; the wrapping object is built so the JSON
     /// is inlined as a JS object literal, the same way
@@ -69,7 +69,7 @@ public enum BibleWorkspaceBridge {
         let envelope = """
         {"requestId":\(jsStringLiteral(requestId)),"ok":true,"value":\(valueJSON)}
         """
-        return "window.loom.resolveReply(\(escapeSeparators(envelope)));"
+        return "window.loomWizard.resolveReply(\(escapeSeparators(envelope)));"
     }
 
     /// The failure counterpart of `encodeReply` — `ok:false` with a
@@ -79,7 +79,7 @@ public enum BibleWorkspaceBridge {
         let envelope = """
         {"requestId":\(jsStringLiteral(requestId)),"ok":false,"error":\(jsStringLiteral(message))}
         """
-        return "window.loom.resolveReply(\(escapeSeparators(envelope)));"
+        return "window.loomWizard.resolveReply(\(escapeSeparators(envelope)));"
     }
 
     /// Encode a Swift string as a JSON string literal (quotes +

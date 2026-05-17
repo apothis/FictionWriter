@@ -87,14 +87,14 @@ func plannedProjectBridgeIntentTests() -> TestSuite {
         try expectEqual(back, intent)
     }
 
-    s.test("encodeReply wraps a value in window.loom.resolveReply with ok:true") {
+    s.test("encodeReply wraps a value in window.loomWizard.resolveReply with ok:true") {
         let js = try BibleWorkspaceBridge.encodeReply(
             requestId: "req-5", value: sampleOutline()
         )
-        try expectTrue(js.hasPrefix("window.loom.resolveReply("),
+        try expectTrue(js.hasPrefix("window.loomWizard.resolveReply("),
             "must call resolveReply; got: \(js)")
         try expectTrue(js.hasSuffix(");"), "must end with );; got: \(js)")
-        let middle = String(js.dropFirst("window.loom.resolveReply(".count).dropLast(2))
+        let middle = String(js.dropFirst("window.loomWizard.resolveReply(".count).dropLast(2))
         let obj = try (JSONSerialization.jsonObject(
             with: middle.data(using: .utf8)!) as? [String: Any]) ?? [:]
         try expectEqual(obj["requestId"] as? String, "req-5")
@@ -106,9 +106,9 @@ func plannedProjectBridgeIntentTests() -> TestSuite {
         let js = BibleWorkspaceBridge.encodeReplyError(
             requestId: "req-6", message: "writer server unreachable"
         )
-        try expectTrue(js.hasPrefix("window.loom.resolveReply("),
+        try expectTrue(js.hasPrefix("window.loomWizard.resolveReply("),
             "must call resolveReply; got: \(js)")
-        let middle = String(js.dropFirst("window.loom.resolveReply(".count).dropLast(2))
+        let middle = String(js.dropFirst("window.loomWizard.resolveReply(".count).dropLast(2))
         let obj = try (JSONSerialization.jsonObject(
             with: middle.data(using: .utf8)!) as? [String: Any]) ?? [:]
         try expectEqual(obj["requestId"] as? String, "req-6")
