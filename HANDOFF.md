@@ -2349,3 +2349,34 @@ the built-in library, grounded in genre research.
 
 **1749/1749 tests green.** (1747 → 1749: +1 style-id determinism,
 +1 LitRPG styles.)
+
+### 15.35 Session ledger — 2026-05-17 (Phase 5 prose-tuning follow-ups)
+
+Cleared both carried-forward follow-ups. Tests 1749 → 1755. 2 commits.
+
+#### Per-beat echo (priority) — fixed
+
+`SceneDraftPrompt.buildBeatPrompt` embedded the whole accumulated
+draft as `[PROSE SO FAR]` and told the writer to "continue directly
+from" it; the writer latched onto the tail and reopened each beat by
+restating the prior beat's closing line verbatim. Fix: embed only the
+trailing ~60 words (`priorProseTailWords`) — the BEAT PLAN already
+carries the running summary — reframed as a voice-continuity seam
+(`[WHERE THE PREVIOUS BEAT LEFT OFF …]`), `…`-prefixed when truncated.
+The "continue directly" instruction is replaced with a positive cue
+to open at the next moment of the scene. Probe-validated against
+Goetia: 1055-word/3-beat draft, no verbatim seam echo.
+
+#### Register loses to genre — fixed
+
+`StylePrompt.render` now adds an explicit precedence rule when both a
+genre and a register are assigned: the genre owns mood/atmosphere/
+content, the register owns sentence construction and wins the
+overlap. Leads stay plain when only one type is assigned (no dangling
+cross-reference). Probe-validated (Noir + Minimalist): simile density
+dropped 12 → 3, sentence rhythm visibly clipped, Noir mood retained.
+Note: probe comparison is n=1; generation is stochastic, but the drop
+plus the rhythm shift is a clear signal.
+
+**1755/1755 tests green.** (1749 → 1755: +4 scene-draft-prompt tail,
++2 style-prompt precedence.)
