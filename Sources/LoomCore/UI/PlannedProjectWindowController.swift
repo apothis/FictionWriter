@@ -22,11 +22,22 @@ import WebKit
 public final class PlannedProjectWindowController: NSWindowController,
     WKScriptMessageHandler, WKNavigationDelegate {
 
+    /// What the window opens into. The wizard bundle hosts both
+    /// surfaces; `.styleLibrary` boots straight into the style editor
+    /// (via a `#styles` URL fragment the React side reads) so the
+    /// library is reachable from the menu without the full wizard.
+    public enum Mode {
+        case wizard
+        case styleLibrary
+    }
+
     private let appState: AppState
+    private let mode: Mode
     private let webView: WKWebView
 
-    public init(appState: AppState) {
+    public init(appState: AppState, mode: Mode = .wizard) {
         self.appState = appState
+        self.mode = mode
 
         let config = WKWebViewConfiguration()
         let controller = WKUserContentController()
@@ -48,10 +59,13 @@ public final class PlannedProjectWindowController: NSWindowController,
             backing: .buffered,
             defer: false
         )
-        window.title = "New Planned Project"
+        window.title = mode == .styleLibrary ? "Style Library" : "New Planned Project"
         window.contentView = webView
         window.minSize = NSSize(width: 640, height: 520)
-        window.setFrameAutosaveName("Loom.PlannedProjectWindow")
+        window.setFrameAutosaveName(
+            mode == .styleLibrary
+                ? "Loom.StyleLibraryWindow" : "Loom.PlannedProjectWindow"
+        )
         super.init(window: window)
 
         controller.add(self, name: "loom")
@@ -68,8 +82,13 @@ public final class PlannedProjectWindowController: NSWindowController,
             forResource: "plannedProject", withExtension: "html",
             subdirectory: "PlannedProject"
         ) {
-            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-            DebugLog.shared.write("[planned] loaded wizard bundle from \(url.path)")
+            // `#styles` boots the bundle straight into the style
+            // editor; the default (no fragment) shows the wizard.
+            let loadURL = mode == .styleLibrary
+                ? URL(string: url.absoluteString + "#styles") ?? url
+                : url
+            webView.loadFileURL(loadURL, allowingReadAccessTo: url.deletingLastPathComponent())
+            DebugLog.shared.write("[planned] loaded wizard bundle (mode=\(mode)) from \(url.path)")
         } else {
             webView.loadHTMLString(
                 "<h1>Planned Project wizard bundle not built — run scripts/build-bible-workspace.sh</h1>",
@@ -149,6 +168,9 @@ public final class PlannedProjectWindowController: NSWindowController,
         case .deleteStyle(let id):
             applyStyleMutation { StyleLibrary.removing(id: id, from: $0) }
             DebugLog.shared.write("[planned] deleteStyle id=\(id)")
+        case .closeWizardWindow:
+            DebugLog.shared.write("[planned] closeWizardWindow")
+            window?.close()
         default:
             // The wizard window only handles the planned-project
             // request/reply intents; anything else is misrouted.

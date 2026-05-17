@@ -153,6 +153,12 @@ export function postDeleteStyle(id: string): void {
   postFireAndForget("deleteStyle", { id });
 }
 
+/// Ask the host to close this window — used by the standalone style
+/// editor's "Done" button (when not running inside the wizard).
+export function postCloseWindow(): void {
+  postFireAndForget("closeWizardWindow", {});
+}
+
 // Dev-only browser-preview harness. In `vite dev` there is no Swift
 // host to push a snapshot, so feed the mock. Guarded by
 // `import.meta.env.DEV` so it never reaches the production bundle.

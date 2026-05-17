@@ -4,11 +4,17 @@ import { Input } from "../components/ui/Input";
 import { Textarea } from "../components/ui/Textarea";
 import { cn } from "../lib/cn";
 import {
+  postCloseWindow,
   requestCreatePlannedProject,
   requestGenerateOutline,
   subscribeToPlannedSnapshots,
 } from "./bridge";
 import { StyleEditor } from "./StyleEditor";
+
+// `#styles` boots the bundle straight into the style-library editor
+// as a standalone window (opened from the menu); the default shows
+// the guided-creation wizard. Read once at module load.
+const STANDALONE_STYLES = window.location.hash === "#styles";
 import type {
   GeneratedOutline,
   LengthScenario,
@@ -73,6 +79,14 @@ export function WizardApp() {
       <div className="flex h-screen items-center justify-center text-sm text-loom-fg-tertiary">
         Awaiting the style library…
       </div>
+    );
+  }
+
+  if (STANDALONE_STYLES) {
+    // Standalone window — "Done" closes the window rather than
+    // returning to a wizard step.
+    return (
+      <StyleEditor initialStyles={snapshot.styles} onClose={postCloseWindow} />
     );
   }
 

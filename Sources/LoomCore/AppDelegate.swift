@@ -209,6 +209,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         newPlannedProject.target = self
         fileMenu.addItem(newPlannedProject)
 
+        let styleLibrary = NSMenuItem(
+            title: "Style Library…",
+            action: #selector(openStyleLibraryClicked),
+            keyEquivalent: "")
+        styleLibrary.target = self
+        fileMenu.addItem(styleLibrary)
+
         let openProject = NSMenuItem(
             title: "Open Project…",
             action: #selector(openProjectClicked),
@@ -720,12 +727,28 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     // MARK: - Planned Project wizard window (LOOM_PLANNED_PROJECT.md §6)
 
     private var plannedProjectWindow: PlannedProjectWindowController?
+    private var styleLibraryWindow: PlannedProjectWindowController?
 
     @objc private func newPlannedProjectClicked() {
         // A fresh controller each time — the wizard is single-use and
         // closes itself once the project is created.
         plannedProjectWindow = PlannedProjectWindowController(appState: AppState.shared)
         plannedProjectWindow?.showAndActivate()
+    }
+
+    @objc private func openStyleLibraryClicked() {
+        // The style library is app-level and editable any time —
+        // reachable from the menu, not only inside the wizard. Reuse
+        // the window while it's open; a fresh controller after it has
+        // been closed (closing may release the window).
+        if let existing = styleLibraryWindow, existing.window?.isVisible == true {
+            existing.showAndActivate()
+            return
+        }
+        styleLibraryWindow = PlannedProjectWindowController(
+            appState: AppState.shared, mode: .styleLibrary
+        )
+        styleLibraryWindow?.showAndActivate()
     }
 
     @objc private func openBibleWorkspaceClicked() {

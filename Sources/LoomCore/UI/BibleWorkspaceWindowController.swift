@@ -547,7 +547,8 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
             }
             session.updateCharacter(from)
             DebugLog.shared.write("[workspace] deleteRelationshipEdge \(fromId)→\(toId) kind=\(edgeKind)")
-        case .generateOutline, .createPlannedProject, .upsertStyle, .deleteStyle:
+        case .generateOutline, .createPlannedProject, .upsertStyle, .deleteStyle,
+             .closeWizardWindow:
             // Planned Project mode intents are dispatched by the
             // guided-creation wizard window, not this session-bound
             // controller. Reaching here means a misrouted intent.

@@ -58,5 +58,14 @@ func plannedProjectStyleEditorTests() -> TestSuite {
         try expectEqual(back, intent)
     }
 
+    s.test("closeWizardWindow intent round-trips through Codable") {
+        let intent = BibleWorkspaceIntent.closeWizardWindow
+        let data = try JSONEncoder().encode(intent)
+        let obj = try (JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        try expectEqual(obj["kind"] as? String, "closeWizardWindow")
+        let back = try JSONDecoder().decode(BibleWorkspaceIntent.self, from: data)
+        try expectEqual(back, intent)
+    }
+
     return s
 }

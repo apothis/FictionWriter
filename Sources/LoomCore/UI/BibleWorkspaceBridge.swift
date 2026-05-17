@@ -197,6 +197,10 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     // wizard window re-pushes its snapshot after applying.
     case upsertStyle(style: Style)
     case deleteStyle(id: UUID)
+    // Posted by the style-library editor's "Done" button when it runs
+    // as a standalone window (opened from the menu, not inside the
+    // wizard). The host closes the window.
+    case closeWizardWindow
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
@@ -239,6 +243,7 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case createPlannedProject
         case upsertStyle
         case deleteStyle
+        case closeWizardWindow
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -357,6 +362,8 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .deleteStyle(let id):
             try c.encode(Kind.deleteStyle.rawValue, forKey: .kind)
             try c.encode(id, forKey: .id)
+        case .closeWizardWindow:
+            try c.encode(Kind.closeWizardWindow.rawValue, forKey: .kind)
         }
     }
 
@@ -496,6 +503,8 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .deleteStyle:
             let id = try c.decode(UUID.self, forKey: .id)
             self = .deleteStyle(id: id)
+        case .closeWizardWindow:
+            self = .closeWizardWindow
         }
     }
 }
