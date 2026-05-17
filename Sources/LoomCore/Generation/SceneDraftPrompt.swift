@@ -10,15 +10,28 @@ import Foundation
 ///    (`StylePrompt.render`), genre then register.
 /// 3. SCENE — the whole scene's outline summary, so the writer knows
 ///    the arc the current beat sits inside.
-/// 4. BEAT PLAN — every beat's intent, the current one marked.
-/// 5. PRIOR PROSE — the beats already drafted (running continuity).
+/// 4. BEAT PLAN — every beat's intent, the current one marked. This
+///    doubles as the running summary: it already says what every
+///    earlier beat covered.
+/// 5. SEAM — only a short trailing slice of the prose so far, for
+///    voice continuity. The whole accumulated draft is deliberately
+///    NOT embedded: passing it made the writer latch onto its final
+///    line and reopen each beat by restating that line verbatim.
 /// 6. INSTRUCTION at recency — write the current beat to its word
-///    target, continue from the prose above, end on a clean sentence.
+///    target, open at the next moment of the scene, end on a clean
+///    sentence.
 ///
 /// Instruction-at-recency mirrors `BeatGeneration.buildBeatPrompt`
 /// (Phase 7). The string is instruct-template-agnostic; the
 /// coordinator wraps it for the writer model at request time.
 public enum SceneDraftPrompt {
+
+    /// Prior prose embedded in a beat prompt is capped to this many
+    /// trailing words. Long enough for the writer to pick up voice and
+    /// immediate situation, short enough that there is no whole "prose
+    /// so far" body for it to continue *inside* of — the BEAT PLAN
+    /// carries the running summary instead.
+    static let priorProseTailWords = 60
 
     public static func buildBeatPrompt(
         sceneSummary: String,
@@ -32,6 +45,7 @@ public enum SceneDraftPrompt {
         }
         let beat = beats[currentBeatIndex]
         let isFinal = currentBeatIndex == beats.count - 1
+        let hasPrior = !priorProse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         let styleText = StylePrompt.render(styles)
         let styleBlock = styleText.isEmpty ? "" : "\n\n\(styleText)"
@@ -41,15 +55,21 @@ public enum SceneDraftPrompt {
             return "Beat \(b.index + 1) (~\(b.targetWords) words): \(b.intent)\(marker)"
         }.joined(separator: "\n")
 
-        let priorSection: String
-        if priorProse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            priorSection = "[PROSE SO FAR — none; the current beat is the scene's opening]"
-        } else {
-            priorSection = """
-            [PROSE SO FAR — already written, do not repeat or rephrase it]
-            \(priorProse)
+        let seamSection: String
+        if hasPrior {
+            seamSection = """
+
+
+            [WHERE THE PREVIOUS BEAT LEFT OFF — for voice continuity only; this ground is already on the page, do not retread it]
+            \(tail(of: priorProse))
             """
+        } else {
+            seamSection = ""
         }
+
+        let openingInstruction = hasPrior
+            ? "Open the CURRENT beat at the next moment of the scene — a fresh sentence that carries the action onward. The previous beat is finished; its closing line is already written, so start past it."
+            : "This is the scene's opening — establish it from the first line."
 
         let endingInstruction = isFinal
             ? "This is the final beat — bring the scene to a close on a clean sentence boundary."
@@ -63,13 +83,21 @@ public enum SceneDraftPrompt {
         \(sceneSummary)
 
         [BEAT PLAN]
-        \(planLines)
-
-        \(priorSection)
+        \(planLines)\(seamSection)
 
         [INSTRUCTION]
         Write the CURRENT beat: \(beat.intent)
-        Target length: about \(beat.targetWords) words. Continue directly from the prose so far. \(endingInstruction)
+        Target length: about \(beat.targetWords) words. \(openingInstruction) \(endingInstruction)
         """
+    }
+
+    /// The trailing `priorProseTailWords` words of `prose`. When the
+    /// prose is longer than the cap the slice is prefixed with `…` so
+    /// the writer sees it as a fragment, not a passage to extend.
+    private static func tail(of prose: String) -> String {
+        let trimmed = prose.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = trimmed.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+        guard words.count > priorProseTailWords else { return trimmed }
+        return "… " + words.suffix(priorProseTailWords).joined(separator: " ")
     }
 }

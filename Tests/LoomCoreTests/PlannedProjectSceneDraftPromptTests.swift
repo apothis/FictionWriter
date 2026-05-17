@@ -82,6 +82,61 @@ func plannedProjectSceneDraftPromptTests() -> TestSuite {
         try expectTrue(genreAt.lowerBound < registerAt.lowerBound)
     }
 
+    s.test("a long prior prose is trimmed to a short tail — early prose is dropped") {
+        let early = "ZEBRAMARKER the vault was very old."
+        let filler = Array(repeating: "filler", count: 90).joined(separator: " ")
+        let late = "QUOKKAMARKER she set her hand to the cold lock."
+        let prior = early + " " + filler + " " + late
+        let prompt = SceneDraftPrompt.buildBeatPrompt(
+            sceneSummary: "A scene.",
+            beats: beats,
+            currentBeatIndex: 1,
+            priorProse: prior,
+            styles: []
+        )
+        try expectFalse(prompt.contains("ZEBRAMARKER"),
+                        "the head of a long prior prose must not reach the prompt")
+        try expectTrue(prompt.contains("QUOKKAMARKER"),
+                       "the tail of the prior prose carries voice continuity")
+    }
+
+    s.test("a trimmed prior prose tail is marked as a fragment") {
+        let prior = Array(repeating: "word", count: 200).joined(separator: " ")
+        let prompt = SceneDraftPrompt.buildBeatPrompt(
+            sceneSummary: "A scene.",
+            beats: beats,
+            currentBeatIndex: 1,
+            priorProse: prior,
+            styles: []
+        )
+        try expectTrue(prompt.contains("…"))
+    }
+
+    s.test("a short prior prose passes through whole, untrimmed") {
+        let prior = "Mara stood before the door, listening for the guard."
+        let prompt = SceneDraftPrompt.buildBeatPrompt(
+            sceneSummary: "A scene.",
+            beats: beats,
+            currentBeatIndex: 1,
+            priorProse: prior,
+            styles: []
+        )
+        try expectTrue(prompt.contains(prior))
+        try expectFalse(prompt.contains("…"))
+    }
+
+    s.test("the instruction no longer tells the writer to continue directly from the prior prose") {
+        let prompt = SceneDraftPrompt.buildBeatPrompt(
+            sceneSummary: "A scene.",
+            beats: beats,
+            currentBeatIndex: 1,
+            priorProse: "Mara stood before the door.",
+            styles: []
+        )
+        try expectFalse(prompt.contains("Continue directly from the prose so far"),
+                        "that phrasing invites the writer to restate the prior beat's last line")
+    }
+
     s.test("an out-of-range beat index yields an empty prompt") {
         try expectEqual(
             SceneDraftPrompt.buildBeatPrompt(
