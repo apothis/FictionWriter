@@ -124,6 +124,39 @@ func glinerEntityDiscoveryExtractorTests() -> TestSuite {
         try expectTrue(provider.schemas[0].isEmpty)
     }
 
+    s.test("Stage D output normalised to a generic label is dropped") {
+        // Stage D sometimes renames a candidate (a first-person
+        // narrator) to a generic role label — never bible-worthy.
+        let detector = StubDetector()
+        let provider = StubProvider()
+        let extractor = GLiNEREntityDiscoveryExtractor(detector: detector, provider: provider)
+
+        var captured: Result<[EntityDiscovery.ProposedEntity], Error>?
+        extractor.extract(
+            scenePose: "I watched them from the doorway.",
+            sceneId: sceneId,
+            knownEntityNames: [],
+            existingEntities: [],
+            embedder: nil
+        ) { captured = $0 }
+
+        detector.canned = [.success([
+            EntityDiscovery.Candidate(
+                surface: "Abby", kind: .character,
+                firstSeenQuote: "I watched them from the doorway."
+            ),
+        ])]
+        detector.flush()
+        provider.canned = [.success(dResponse(kind: "character", canonical: "The Narrator"))]
+        provider.flush()
+
+        let result = try expectNotNil(captured)
+        guard case .success(let proposals) = result else {
+            throw TestFailure(message: "expected success, got \(result)", file: #file, line: #line)
+        }
+        try expectEqual(proposals.count, 0)
+    }
+
     s.test("detector failure propagates to the caller, no Stage D call") {
         let detector = StubDetector()
         let provider = StubProvider()

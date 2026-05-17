@@ -119,7 +119,16 @@ public enum EntityDiscoveryPipeline {
                 if done { box.fired = true }
                 lock.unlock()
                 if done {
-                    let normalised = box.results.compactMap { $0 }
+                    // Drop any survivor Stage D renamed to a generic
+                    // role label ("The Character", "The Narrator") —
+                    // a normalisation artefact, never bible-worthy.
+                    let normalised = box.results.compactMap { $0 }.filter { ent in
+                        if EntityDiscovery.isGenericPersonLabel(ent.canonicalName) {
+                            DebugLog.shared.write("[proposals] Stage D dropped generic label: '\(ent.canonicalName)'")
+                            return false
+                        }
+                        return true
+                    }
                     DebugLog.shared.write("[proposals] Stage D: \(survivors.count) survivors → \(normalised.count) normalised")
                     let deduped = EntityDiscovery.dedupByCanonicalName(normalised)
                     let proposals = deduped.map { n in

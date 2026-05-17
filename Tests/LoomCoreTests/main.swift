@@ -177,6 +177,7 @@ let suites: [TestSuite] = [
     phase8SamplerFamilyOverrideTests(),
     phase9EntityDiscoveryTypesTests(),
     phase9AnatomyBlocklistTests(),
+    phase9GenericLabelTests(),
     phase9PromotionGateTests(),
     phase9DedupEngineTests(),
     phase9ScorerTests(),

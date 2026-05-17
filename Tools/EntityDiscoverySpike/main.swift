@@ -517,6 +517,11 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
         }
     }
 
+    // Drop survivors Stage D renamed to a generic role label
+    // ("The Character", "The Narrator") — mirrors production's
+    // EntityDiscoveryPipeline.runStageD.
+    normalised = normalised.filter { !EntityDiscovery.isGenericPersonLabel($0.canonicalName) }
+
     // Fix-5: post-Stage-D dedup on identical canonical names —
     // catches the eds-06 "Marius Thorn" duplicate that Wegmann
     // style-embedding didn't merge at Stage C.

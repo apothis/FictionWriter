@@ -138,6 +138,37 @@ public enum EntityDiscovery {
         return sawAnatomy
     }
 
+    /// Generic person / role nouns that are never a real character
+    /// name on their own — a canonical name composed wholly of these
+    /// (after a leading determiner) is a normalisation artefact, e.g.
+    /// Stage D rendering a first-person narrator as "The Character" or
+    /// "The Narrator".
+    static let narratorRoleNouns: Set<String> = [
+        "character", "characters", "narrator", "narrators",
+        "protagonist", "protagonists", "figure", "stranger",
+        "speaker", "someone", "somebody", "individual",
+        "guy", "guys", "gentleman", "gentlemen",
+    ]
+
+    /// True iff `name`, after a leading determiner, consists *wholly*
+    /// of generic person / role nouns — never a real proper name. A
+    /// single content word (proper noun, "Captain", "Vance") flips it
+    /// to false so the entity is kept. Used to drop the Stage D
+    /// artefact where a first-person narrator is normalised to a
+    /// generic label.
+    public static func isGenericPersonLabel(_ name: String) -> Bool {
+        var words = name
+            .lowercased()
+            .split(whereSeparator: { !$0.isLetter })
+            .map(String.init)
+        if let first = words.first, leadingDeterminers.contains(first) {
+            words.removeFirst()
+        }
+        guard !words.isEmpty else { return false }
+        let generic = genericPersonNouns.union(narratorRoleNouns)
+        return words.allSatisfy { generic.contains($0) }
+    }
+
     // MARK: - Pre-gate: known-entity filter (§6.4 first-run fix)
 
     /// Returns true iff `surface` (case-insensitive, whitespace-
