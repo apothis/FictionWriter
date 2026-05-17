@@ -2268,10 +2268,31 @@ its own thin per-beat coordinator instead.
 `OutlineDraftProbe`: a 900-word/3-beat scene drafted in 37s, coherent
 and on-summary. In-app: opened a planned project, fired Bible → Draft
 Scene From Outline — a 1,319-word/4-beat scene drafted (~50s), prose
-and `draft` status persisted to disk. Residual: the final beat
-sometimes lightly echoes the prior beat's closing lines despite the
-"do not repeat" instruction — a small-model artifact, mitigated by the
-draft being editable; not chased (n=1).
+and `draft` status persisted to disk. A later styled probe run
+(Noir genre + Minimalist register) confirmed the style block reaches
+the prompt and conditions the prose.
+
+#### Follow-ups — Phase 5 prose tuning (both need a look)
+
+1. **Per-beat echo.** Each beat after the first sometimes opens by
+   repeating the prior beat's closing line verbatim, despite the
+   "do not repeat or rephrase" instruction in `SceneDraftPrompt`. Seen
+   in both the in-app draft and the styled probe — not n=1, it
+   recurs. The per-beat prompt passes the full prose-so-far; the
+   writer latches onto its tail. Worth trying: pass only a short tail
+   summary rather than the whole prior prose, or a stronger
+   structural cue at the seam.
+2. **Register loses to genre.** When genre and register pull opposite
+   ways (Noir's atmosphere vs. Minimalist's spareness), the prose
+   honours the genre and only partially honours the register —
+   atmospheric similes survive that a strict minimalist register
+   would cut. This is the §3.2 tension by design; never 100%
+   resolvable when two styles conflict, but the register section
+   (last in the prompt, framed as hard constraints) could be
+   weighted harder. Lower priority than #1.
+
+Both verified to be *present-but-tuning*, not correctness bugs — the
+draft is an editable starting point.
 
 **1747/1747 tests green.** (1727 → 1747: +10 beat planning, +6 scene
 draft prompt, +3 draft coordinator, +1 Plan context menu.)
