@@ -64,6 +64,20 @@ func plannedProjectStylePromptTests() -> TestSuite {
         try expectTrue(text.lowercased().contains("hard constraint"))
     }
 
+    s.test("with both a genre and a register, the register is given precedence for sentence construction") {
+        let text = StylePrompt.render([genre("Noir"), register("Minimalist")]).lowercased()
+        try expectTrue(text.contains("the register decides how the sentence is built"),
+                       "the register section must claim precedence over the genre")
+        try expectTrue(text.contains("the register wins"),
+                       "the genre section must cede sentence construction to the register")
+    }
+
+    s.test("a register on its own keeps the plain lead, with no precedence cross-reference") {
+        let text = StylePrompt.render([register("Minimalist")]).lowercased()
+        try expectFalse(text.contains("the register decides how the sentence is built"))
+        try expectTrue(text.contains("hard constraint"))
+    }
+
     s.test("exemplar passages are included when a style has them") {
         var st = genre("Noir")
         st.exemplars = ["The rain hadn't stopped since Tuesday."]

@@ -8,6 +8,12 @@ import Foundation
 /// research found that putting the two signals on distinct channels,
 /// register last and most concrete, stops a vivid genre exemplar from
 /// drowning the register (LOOM_PLANNED_PROJECT.md §3.2, §6).
+///
+/// When both a genre and a register are assigned the two can pull
+/// apart (an atmospheric genre vs. a spare register). The leads then
+/// carry an explicit precedence rule — genre owns mood and content,
+/// register owns sentence construction and wins the overlap — so the
+/// genre doesn't quietly override the register.
 public enum StylePrompt {
 
     /// Render assigned styles into a prompt block. Returns an empty
@@ -16,18 +22,23 @@ public enum StylePrompt {
     public static func render(_ styles: [Style]) -> String {
         let genres = styles.filter { $0.type == .genre }
         let registers = styles.filter { $0.type == .register }
+        let bothPresent = !genres.isEmpty && !registers.isEmpty
         var sections: [String] = []
         if !genres.isEmpty {
             sections.append(section(
                 header: "GENRE",
-                lead: "Write in the following genre:",
+                lead: bothPresent
+                    ? "Write in the following genre. The genre sets mood, atmosphere, content, and subject matter — it does not govern how a sentence is built. Where the genre and the prose register below pull apart, the register wins:"
+                    : "Write in the following genre:",
                 styles: genres
             ))
         }
         if !registers.isEmpty {
             sections.append(section(
                 header: "PROSE REGISTER",
-                lead: "Apply the following prose register — treat these as hard constraints on every sentence:",
+                lead: bothPresent
+                    ? "Apply the following prose register. The register governs sentence-level construction — sentence length, rhythm, diction, and image density. Wherever it pulls against the genre above, the register decides how the sentence is built. Treat these as hard constraints on every sentence:"
+                    : "Apply the following prose register — treat these as hard constraints on every sentence:",
                 styles: registers
             ))
         }
