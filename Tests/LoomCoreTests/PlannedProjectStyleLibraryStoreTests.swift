@@ -52,5 +52,20 @@ func plannedProjectStyleLibraryStoreTests() -> TestSuite {
         }
     }
 
+    s.test("the built-in library is a broad, well-formed selection") {
+        let starters = StyleLibrary.builtInStarters
+        let genres = starters.filter { $0.type == .genre }
+        let registers = starters.filter { $0.type == .register }
+        try expectTrue(genres.count >= 10, "expected a broad genre selection, got \(genres.count)")
+        try expectTrue(registers.count >= 8, "expected a broad register selection, got \(registers.count)")
+        // Names are unique (case-insensitively).
+        let names = starters.map { $0.name.lowercased() }
+        try expectEqual(Set(names).count, names.count)
+        // Every starter carries at least one concrete constraint.
+        for style in starters {
+            try expectTrue(!style.constraints.isEmpty, "\(style.name) needs constraints")
+        }
+    }
+
     return s
 }
