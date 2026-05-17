@@ -1,0 +1,118 @@
+{
+  "_description": "Continuity Audit (L10) Phase A spike fixture. A 6-scene mini-story, 'The Lighthouse at Greystone', with deliberately planted continuity errors across all four audited classes plus precision-control non-errors (a lie in dialogue, a legitimate evolution, paraphrases). gold_claims scores per-scene typed-claim extraction (recall of the planted facts). gold_pairs scores pairwise adjudication — each pair is a hand-authored claim pair with a gold verdict, decoupling adjudication scoring from extraction noise.",
+  "schema_version": 1,
+  "scenes": [
+    {
+      "id": "s1",
+      "title": "The Village",
+      "prose": "Mara stepped off the morning ferry into a wind that smelled of salt and woodsmoke. Greystone was a small village, a scatter of slate roofs above a working harbour, and the autumn light lay thin and pale across the water. She pushed a strand of hair from her face; her green eyes moved over the boats, the nets, the shuttered fish-market, taking the measure of the place. North of the village, on a finger of black rock, the lighthouse stood watch — a white tower gone grey with weather. They had told her in the city that the keeper, a man named Cole, had not answered a letter in three months. Mara shouldered her bag and started up the harbour road. Whatever had gone wrong here, it had been going wrong for a while."
+    },
+    {
+      "id": "s2",
+      "title": "The Keeper",
+      "prose": "The lighthouse door was unlatched. Cole was a broad man with a grey beard and hands scarred by rope, and he did not seem surprised to see her. 'You'll be the one they sent,' he said, and put a kettle on. Mara sat. Her green eyes followed him around the cramped room while he talked. He spoke of the lamp, the log, the long winters — and then, unprompted, of his brother. 'Drowned,' Cole said. 'Two winters ago, off the north reef. We never found him.' He said it flatly, the way men say a thing they have worn smooth. Mara filed it away: the keeper had lost a brother to the sea. It explained the quiet in him. She asked about the unanswered letters, and Cole's face closed like a door."
+    },
+    {
+      "id": "s3",
+      "title": "The Doctor",
+      "prose": "Dr. Innes kept her surgery in a narrow house behind the chapel. She was brisk and tired and glad of company. 'Cole,' she said, when Mara asked. 'He lost his brother to the sea — you'll have heard. It broke something in him.' Mara nodded; she had heard it from Cole himself. The storm the week before had stripped half the slates from the harbour office, and the village still wore the raw look of it. Innes poured tea and studied her visitor over the cup, taking in the travel-creased coat, the steady brown eyes. 'You're looking for what everyone here is too polite to say,' she said. 'Ask at the inn. Tomas hears everything.'"
+    },
+    {
+      "id": "s4",
+      "title": "The Inn",
+      "prose": "The inn was loud and low-ceilinged. Tomas the innkeeper drew her a glass without being asked. Mara leaned on the bar. 'I know money has been going missing from the harbour fund,' she said quietly. 'I want to know who counts it.' Tomas's face did not move, but his eyes did. Across the room, Cole sat alone. When Mara crossed to him he looked up without warmth. She asked, on impulse, whether he ever went up to the old church on the headland. 'I have never set foot in that church,' Cole said. 'Not once in forty years.' He turned back to his drink. Later, Tomas walked her to the door. 'The lighthouse,' he said, nodding into the dark. 'Short walk up the north road, if you mean to see it by morning.'"
+    },
+    {
+      "id": "s5",
+      "title": "The Ledger",
+      "prose": "Dr. Innes was waiting at the surgery, a ledger open on the table. 'I shouldn't show you this,' she said, 'but someone should.' The pages were columns of figures, and the figures did not agree. 'Money has been going missing from the harbour fund,' Innes said. 'For two years. Small amounts, then larger.' Mara bent over the book. The storm a month ago had wrecked the records room, Innes explained, and in the clearing-up a second ledger had surfaced — one nobody was meant to find. 'Whoever did this,' the doctor said, 'counted on the old book staying lost.' Mara turned a page and felt the shape of the thing settle into place at last."
+    },
+    {
+      "id": "s6",
+      "title": "The Church",
+      "prose": "At dawn Mara climbed the headland. The old church stood roofless against a white sky, and as she reached it Cole stepped out from the doorway, blinking, a clean-shaven man with the look of someone who had not slept. The beard was gone. 'I thought I'd find you here,' Mara said. He did not deny being there. Below them the village was waking, and beyond it, south of the village on its spit of rock, the lighthouse caught the first light. Cole followed her gaze. 'I kept that lamp lit for thirty years,' he said. 'I kept everything lit.' It was, Mara thought, as close to a confession as he would come."
+    }
+  ],
+  "gold_claims": [
+    {"scene": "s1", "type": "attribute", "subject": "Mara", "value": "Mara has green eyes"},
+    {"scene": "s1", "type": "temporal", "subject": "the village", "value": "it is autumn"},
+    {"scene": "s1", "type": "spatial", "subject": "the lighthouse", "value": "the lighthouse is north of the village"},
+    {"scene": "s1", "type": "attribute", "subject": "Cole", "value": "Cole is the lighthouse keeper"},
+    {"scene": "s2", "type": "attribute", "subject": "Cole", "value": "Cole has a grey beard"},
+    {"scene": "s2", "type": "event", "subject": "Cole", "value": "Cole's brother drowned two winters ago"},
+    {"scene": "s2", "type": "attribute", "subject": "Mara", "value": "Mara has green eyes"},
+    {"scene": "s3", "type": "attribute", "subject": "Mara", "value": "Mara has brown eyes"},
+    {"scene": "s3", "type": "temporal", "subject": "the storm", "value": "the storm happened the week before"},
+    {"scene": "s3", "type": "knowledge_state", "subject": "Mara", "value": "Mara knows Cole's brother drowned"},
+    {"scene": "s4", "type": "knowledge_state", "subject": "Mara", "value": "Mara knows money is missing from the harbour fund"},
+    {"scene": "s4", "type": "event", "subject": "Cole", "value": "Cole says he has never entered the old church"},
+    {"scene": "s4", "type": "spatial", "subject": "the lighthouse", "value": "the lighthouse is up the north road"},
+    {"scene": "s5", "type": "event", "subject": "the harbour fund", "value": "money has been going missing from the harbour fund"},
+    {"scene": "s5", "type": "temporal", "subject": "the storm", "value": "the storm happened a month ago"},
+    {"scene": "s6", "type": "event", "subject": "Cole", "value": "Cole was inside the old church"},
+    {"scene": "s6", "type": "spatial", "subject": "the lighthouse", "value": "the lighthouse is south of the village"},
+    {"scene": "s6", "type": "attribute", "subject": "Cole", "value": "Cole is clean-shaven, the beard gone"}
+  ],
+  "gold_pairs": [
+    {
+      "id": "p1", "class": "attribute", "verdict": "contradiction",
+      "note": "Mara's eye colour drifts green -> brown.",
+      "earlier": {"type": "attribute", "subject": "Mara", "attribute_key": "eye colour", "value": "Mara has green eyes", "scene": "s1", "source": "narration", "evidence_quote": "her green eyes moved over the boats"},
+      "later": {"type": "attribute", "subject": "Mara", "attribute_key": "eye colour", "value": "Mara has brown eyes", "scene": "s3", "source": "narration", "evidence_quote": "taking in the travel-creased coat, the steady brown eyes"}
+    },
+    {
+      "id": "p2", "class": "attribute", "verdict": "consistent",
+      "note": "Eye colour stated the same twice — control.",
+      "earlier": {"type": "attribute", "subject": "Mara", "attribute_key": "eye colour", "value": "Mara has green eyes", "scene": "s1", "source": "narration", "evidence_quote": "her green eyes moved over the boats"},
+      "later": {"type": "attribute", "subject": "Mara", "attribute_key": "eye colour", "value": "Mara has green eyes", "scene": "s2", "source": "narration", "evidence_quote": "Her green eyes followed him around the cramped room"}
+    },
+    {
+      "id": "p3", "class": "knowledge_state", "verdict": "contradiction",
+      "note": "Mara references the missing harbour money in s4, but it is only revealed to her in s5.",
+      "earlier": {"type": "knowledge_state", "subject": "Mara", "attribute_key": "", "value": "Mara knows money has been going missing from the harbour fund", "scene": "s4", "source": "dialogue", "evidence_quote": "I know money has been going missing from the harbour fund"},
+      "later": {"type": "event", "subject": "the harbour fund", "attribute_key": "", "value": "It is revealed for the first time that money has been going missing from the harbour fund", "scene": "s5", "source": "narration", "evidence_quote": "Money has been going missing from the harbour fund"}
+    },
+    {
+      "id": "p4", "class": "knowledge_state", "verdict": "consistent",
+      "note": "Mara learns of the drowning in s2, knows it in s3 — knowledge after the reveal, no error.",
+      "earlier": {"type": "event", "subject": "Cole", "attribute_key": "", "value": "Cole tells Mara his brother drowned two winters ago", "scene": "s2", "source": "dialogue", "evidence_quote": "Drowned... Two winters ago, off the north reef"},
+      "later": {"type": "knowledge_state", "subject": "Mara", "attribute_key": "", "value": "Mara knows Cole's brother drowned", "scene": "s3", "source": "narration", "evidence_quote": "she had heard it from Cole himself"}
+    },
+    {
+      "id": "p5", "class": "temporal", "verdict": "contradiction",
+      "note": "The same storm is dated 'the week before' and 'a month ago'.",
+      "earlier": {"type": "temporal", "subject": "the storm", "attribute_key": "", "value": "the storm happened the week before Mara arrived", "scene": "s3", "source": "narration", "evidence_quote": "The storm the week before had stripped half the slates"},
+      "later": {"type": "temporal", "subject": "the storm", "attribute_key": "", "value": "the storm happened a month ago", "scene": "s5", "source": "narration", "evidence_quote": "The storm a month ago had wrecked the records room"}
+    },
+    {
+      "id": "p6", "class": "spatial", "verdict": "contradiction",
+      "note": "The lighthouse is placed north of the village, then south.",
+      "earlier": {"type": "spatial", "subject": "the lighthouse", "attribute_key": "position", "value": "the lighthouse is north of the village", "scene": "s1", "source": "narration", "evidence_quote": "North of the village, on a finger of black rock, the lighthouse stood watch"},
+      "later": {"type": "spatial", "subject": "the lighthouse", "attribute_key": "position", "value": "the lighthouse is south of the village", "scene": "s6", "source": "narration", "evidence_quote": "south of the village on its spit of rock, the lighthouse caught the first light"}
+    },
+    {
+      "id": "p7", "class": "spatial", "verdict": "consistent",
+      "note": "'north of the village' and 'up the north road' agree — paraphrase, not a conflict.",
+      "earlier": {"type": "spatial", "subject": "the lighthouse", "attribute_key": "position", "value": "the lighthouse is north of the village", "scene": "s1", "source": "narration", "evidence_quote": "North of the village, on a finger of black rock, the lighthouse stood watch"},
+      "later": {"type": "spatial", "subject": "the lighthouse", "attribute_key": "position", "value": "the lighthouse is a short walk up the north road", "scene": "s4", "source": "dialogue", "evidence_quote": "Short walk up the north road, if you mean to see it by morning"}
+    },
+    {
+      "id": "p8", "class": "attribute", "verdict": "consistent",
+      "note": "Cole lies in dialogue ('never set foot in that church'); narration shows he was there. A lie is the character's assertion, not a world-fact conflict.",
+      "earlier": {"type": "event", "subject": "Cole", "attribute_key": "", "value": "Cole says he has never set foot in the old church", "scene": "s4", "source": "dialogue", "evidence_quote": "I have never set foot in that church"},
+      "later": {"type": "event", "subject": "Cole", "attribute_key": "", "value": "Cole steps out of the doorway of the old church", "scene": "s6", "source": "narration", "evidence_quote": "Cole stepped out from the doorway"}
+    },
+    {
+      "id": "p9", "class": "event", "verdict": "consistent",
+      "note": "The same drowning, reworded — synonym robustness control.",
+      "earlier": {"type": "event", "subject": "Cole", "attribute_key": "", "value": "Cole's brother drowned two winters ago", "scene": "s2", "source": "dialogue", "evidence_quote": "Drowned... Two winters ago, off the north reef"},
+      "later": {"type": "event", "subject": "Cole", "attribute_key": "", "value": "Cole lost his brother to the sea", "scene": "s3", "source": "dialogue", "evidence_quote": "He lost his brother to the sea"}
+    },
+    {
+      "id": "p10", "class": "attribute", "verdict": "evolution",
+      "note": "Cole has a grey beard early, is clean-shaven weeks later — he shaved. Legitimate in-story change.",
+      "earlier": {"type": "attribute", "subject": "Cole", "attribute_key": "facial hair", "value": "Cole has a grey beard", "scene": "s2", "source": "narration", "evidence_quote": "Cole was a broad man with a grey beard"},
+      "later": {"type": "attribute", "subject": "Cole", "attribute_key": "facial hair", "value": "Cole is clean-shaven, the beard gone", "scene": "s6", "source": "narration", "evidence_quote": "a clean-shaven man... The beard was gone"}
+    }
+  ]
+}
