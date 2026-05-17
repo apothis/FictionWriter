@@ -2,19 +2,27 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
 
-// Vite config for the Bible Workspace WKWebView bundle.
+// Vite config for Loom's two WKWebView bundles — the Bible Workspace
+// (`index.html`) and the Planned Project wizard (`plannedProject.html`).
 //
 // `base: ""` produces relative asset paths — required because the
-// bundle is loaded via `file://...` URL from the Loom.app bundle,
-// not served from a host. Absolute paths like `/assets/...` would
-// resolve to the filesystem root.
+// bundles load via `file://...` URLs from the Loom.app bundle, not
+// from a host. Absolute paths like `/assets/...` would resolve to the
+// filesystem root.
 //
 // `build.assetsInlineLimit: 0` keeps assets as separate files so
-// SPM's `.copy()` resource processor handles them cleanly. The
-// trade-off is more files in the bundle; for a Bible Workspace
-// scoped pilot that's fine.
+// SPM's `.copy()` resource processor handles them cleanly.
 //
 // `build.target: "es2022"` matches macOS 14+ WKWebView's JS engine.
+//
+// IIFE output can't code-split across multiple inputs, so each bundle
+// is a separate `vite build` invocation selected by the `LOOM_BUNDLE`
+// env var (see scripts/build-bible-workspace.sh). `vite dev` serves
+// both HTML files natively — the split only matters for the build.
+
+const isWizard = process.env.LOOM_BUNDLE === "plannedProject";
+const entryHTML = isWizard ? "plannedProject.html" : "index.html";
+const entryName = isWizard ? "plannedProject" : "index";
 
 export default defineConfig({
   plugins: [react()],
@@ -26,29 +34,28 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
-    outDir: "dist",
+    outDir: isWizard ? "dist-planned" : "dist",
     emptyOutDir: true,
     assetsInlineLimit: 0,
     // file:// loading: ES modules don't reliably execute under
     // file:// in WebKit (CORS rules apply differently; module fetch
-    // can silently fail with no error event). The Bible Workspace
-    // bundle is loaded via `webView.loadFileURL` so we have to
-    // sidestep the module path entirely. IIFE output produces one
-    // classic <script> tag; no module loading, no CORS, no async
-    // import quirks. The post-build sed in
-    // scripts/build-bible-workspace.sh strips type="module" from
-    // the emitted script tag (Vite still writes it even for IIFE
-    // builds).
+    // can silently fail with no error event). The bundles load via
+    // `webView.loadFileURL` so we sidestep the module path entirely.
+    // IIFE output produces one classic <script> tag; no module
+    // loading, no CORS, no async import quirks. The post-build sed in
+    // scripts/build-bible-workspace.sh strips type="module" from the
+    // emitted script tag (Vite still writes it even for IIFE builds).
     modulePreload: false,
     rollupOptions: {
+      input: entryHTML,
       // IIFE format requires a single chunk — code splitting needs
-      // dynamic import / module loading. Loom's workspace bundle is
-      // small enough (~170KB) that single-chunk is fine.
+      // dynamic import / module loading. Each bundle is small enough
+      // (~170KB) that single-chunk is fine.
       output: {
         format: "iife",
         inlineDynamicImports: true,
-        entryFileNames: "assets/[name].js",
-        chunkFileNames: "assets/[name].js",
+        entryFileNames: `assets/${entryName}.js`,
+        chunkFileNames: `assets/${entryName}.js`,
         assetFileNames: "assets/[name].[ext]",
       },
     },

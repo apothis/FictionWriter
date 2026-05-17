@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# Builds the Bible Workspace WKWebView bundle (Phase 4.5).
+# Builds Loom's two WKWebView bundles (Phase 4.5 + Planned Project):
+#   - the Bible Workspace        -> Sources/LoomCore/Resources/BibleWorkspace/
+#   - the Planned Project wizard -> Sources/LoomCore/Resources/PlannedProject/
 #
-# Output: web/bible-workspace/dist/ — bundled by SPM as a LoomCore
-# resource (see Package.swift). build.sh calls this as a pre-step
-# before `swift build`.
+# Both are bundled by SPM as LoomCore resources (see Package.swift).
+# build.sh calls this as a pre-step before `swift build`.
+#
+# IIFE output can't code-split across multiple inputs, so each bundle
+# is a separate `vite build` invocation selected by the LOOM_BUNDLE
+# env var (see vite.config.ts).
 #
 # Dependencies: bun (install via `brew install oven-sh/bun/bun` or
 # `curl -fsSL https://bun.sh/install | bash`). The script bails
@@ -28,50 +33,55 @@ fi
 cd "$BUNDLE_DIR"
 
 # Install only when node_modules is missing or lockfile has changed.
-# This keeps the common case (rebuild after a TS edit) fast — ~0.5s
-# build vs ~5s+ if `bun install` runs unnecessarily.
 if [ ! -d node_modules ] || [ "bun.lockb" -nt "node_modules" ]; then
   echo "[bible-workspace] installing deps (bun install)..."
   bun install --frozen-lockfile
 fi
 
-echo "[bible-workspace] building..."
-bun run build
-
 # Post-build HTML transform — strip attributes that break WebKit
 # under file:// loading:
 #   - `crossorigin`: CORS enforced even on file:// URLs, marked
-#     scripts silently fail to execute → blank page.
+#     scripts silently fail to execute -> blank page.
 #   - `type="module"`: ES modules don't reliably execute under
 #     file:// (no error event, just silent no-op). The Vite config
 #     emits IIFE-format JS so the module attribute is wrong anyway.
-#
-# Belt-and-braces — these stripping passes guarantee the output
-# loads in WKWebView regardless of future Vite/Rollup default
-# changes.
-DIST_HTML="$BUNDLE_DIR/dist/index.html"
-if [ -f "$DIST_HTML" ]; then
-  # Strip crossorigin + type="module"; add `defer` so the classic
-  # script (now in <head>) waits for the body to parse before
-  # executing — otherwise main.tsx's `document.getElementById("root")`
-  # runs before `<div id="root">` exists. Module scripts had defer
-  # semantics implicitly; classic scripts don't.
-  sed -i '' \
-    -e 's/ crossorigin//g' \
-    -e 's/ type="module"//g' \
-    -e 's|<script src="\./assets/index.js"></script>|<script src="./assets/index.js" defer></script>|' \
-    "$DIST_HTML"
-fi
+# Adds `defer` so the classic script waits for the body to parse
+# (module scripts had defer semantics implicitly; classic don't).
+# Args: <html-path> <js-name>
+postprocess_html() {
+  local html="$1" js="$2"
+  if [ -f "$html" ]; then
+    sed -i '' \
+      -e 's/ crossorigin//g' \
+      -e 's/ type="module"//g' \
+      -e "s|<script src=\"\./assets/${js}.js\"></script>|<script src=\"./assets/${js}.js\" defer></script>|" \
+      "$html"
+  fi
+}
 
-# Sync dist/ into Sources/LoomCore/Resources/BibleWorkspace/ where
-# SPM picks it up as a target resource. SPM requires resources to
-# live within the target's source tree; web/bible-workspace/dist/
-# is outside that tree, so we copy. The copy is gitignored (see
-# Sources/LoomCore/.gitignore-resources via the top-level .gitignore).
-RESOURCES_DIR="$REPO_ROOT/Sources/LoomCore/Resources/BibleWorkspace"
-echo "[bible-workspace] syncing dist/ -> Sources/LoomCore/Resources/BibleWorkspace/"
-rm -rf "$RESOURCES_DIR"
-mkdir -p "$RESOURCES_DIR"
-cp -R "$BUNDLE_DIR/dist/." "$RESOURCES_DIR/"
+# Sync a built dist/ into the SPM resource tree. SPM requires
+# resources to live within the target's source tree; the dist dirs
+# are outside it, so we copy. The copies are gitignored.
+# Args: <dist-dir> <resource-subdir>
+sync_resources() {
+  local dist="$1" subdir="$2"
+  local dest="$REPO_ROOT/Sources/LoomCore/Resources/$subdir"
+  echo "[bible-workspace] syncing $dist -> Sources/LoomCore/Resources/$subdir/"
+  rm -rf "$dest"
+  mkdir -p "$dest"
+  cp -R "$BUNDLE_DIR/$dist/." "$dest/"
+}
+
+# --- Bible Workspace bundle ---
+echo "[bible-workspace] building Bible Workspace..."
+bun run build
+postprocess_html "$BUNDLE_DIR/dist/index.html" "index"
+sync_resources "dist" "BibleWorkspace"
+
+# --- Planned Project wizard bundle ---
+echo "[bible-workspace] building Planned Project wizard..."
+LOOM_BUNDLE=plannedProject bun run build
+postprocess_html "$BUNDLE_DIR/dist-planned/plannedProject.html" "plannedProject"
+sync_resources "dist-planned" "PlannedProject"
 
 echo "[bible-workspace] ready"
