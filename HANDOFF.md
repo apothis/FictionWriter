@@ -1967,3 +1967,59 @@ sampler family, so the switch needed no code change.
 
 **1627/1627 tests green.** (1618 → 1627: +1 threshold pin, +2 Stage D
 unconstrained, +6 generic-label.)
+
+### 15.29 Session ledger — 2026-05-17 (Planned Project mode — design + Phase 1)
+
+A new major feature was scoped, researched, designed, and its first
+phase built. Tests 1627 → 1665.
+
+#### Design
+
+**Planned Project mode** — a guided project-creation path: a character
+sketch + plot premise → an editable manuscript outline (named
+chapters/scenes), sized by a length scenario, with assignable, mixable
+genre/register "styles" threaded into all generation. Full design in
+[`LOOM_PLANNED_PROJECT.md`](LOOM_PLANNED_PROJECT.md) — five phases,
+locked decisions, the staged outline pipeline, data model, reuse map.
+Two research passes informed it (internal codebase audit + external
+best-practice); a third verified the style-corpus claim (§3.4 of the
+doc). Key reuse finding: the `Manuscript → Part → Chapter → Scene`
+hierarchy and a stubbed `PromptBuilder` style slot already exist.
+
+#### Phase 1 — Foundations (shipped, 8 commits)
+
+Pure-data spine, fully TDD, no UI and no LLM:
+
+- `LengthScenario` — five format presets with word-count bands.
+- `OutlineSizing` — deterministic scene/chapter allocator + 25/50/25
+  act split (counts computed in code, never asked of the LLM).
+- `StoryFramework` protocol + registry + `SaveTheCatFramework` (15
+  beats) — extensible for more frameworks later.
+- `Style` / `StyleType` — typed (genre/register) style record,
+  forward-load tolerant.
+- `StyleLibraryStore` — app-level `styles.json`, seeded on first run,
+  writer-owned after; mirrors `AppSettingsStore`.
+- `StyleLibrary.builtInStarters` — 12 genres + 10 registers; constraint
+  lists cross-checked against EQ-Bench criteria (MIT) + SillyTavern
+  explicit-writing craft patterns.
+- `PlannedProjectConfig` — guided-planning record, additive-optional
+  on `Project` (forward-load contract pinned).
+
+#### Process note
+
+One claim ("no downloadable style corpus exists") was asserted without
+research, caught by the user, then verified by a focused pass — it
+held, but two adaptable open sources were folded into the starter
+constraints. `feedback_verify_research_claims` applies: verify negative
+gap claims *before* scoping work around them.
+
+#### Open follow-ups
+
+- Phase 2 — the outline-generation pipeline (premise → beats → chapter
+  map → scenes); likely wants a probe/spike to tune prompts on the
+  small model first.
+- Phases 3–5 — style wiring, the guided-creation UI, outline-driven
+  writing.
+
+**1665/1665 tests green.** (1627 → 1665: +33 across the seven Phase 1
+work items.)
