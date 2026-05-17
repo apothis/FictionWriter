@@ -112,6 +112,26 @@ suggestion-gated; the user may not have accepted everything). The audit runs
 its own complete extraction pass covering settings, objects, temporal and
 spatial claims, and treats accepted ledger facts as a high-confidence subset.
 
+**Claim-filter pass — reuse the proven `LedgerFilters` infrastructure.**
+Raw extraction is noisy (the spike saw 11–24 claims/scene, many redundant).
+Before claims enter the fact-base, run a filter pass mirroring
+[`LedgerFilters`](Sources/LoomCore/Generation/LedgerFilters.swift) /
+[`LedgerFilterPipeline`](Sources/LoomCore/Generation/LedgerFilterPipeline.swift) —
+already built, tested, and live for the knowledge ledger:
+
+- **Dedup** — cosine paraphrase-cluster collapse (`KoboldEmbedding` +
+  `LedgerExtraction.cosineSimilarity`), so the same fact stated twice in a
+  scene yields one claim.
+- **Evidence-quote validation** — drop a claim whose `evidenceQuote` has no
+  scene sentence within cosine threshold. This *is* §4 defense #4
+  (evidence-grounding) and kills claims with hallucinated/editorialised
+  quotes — a precision lever for free.
+
+`LedgerFilters` is typed to `LedgerSuggestion`, so the audit gets a sibling
+`ContinuityClaimFilter` over `Claim` (the same per-pipeline pattern entity
+discovery already follows), reusing the cosine helper and embedder rather than
+the literal functions.
+
 ### 3.2 Typed fact-base (deterministic)
 
 Claims accumulate into a store keyed by `(subjectEntityId, type, attributeKey)`.
@@ -359,7 +379,12 @@ heavier prompt language.
 1. Source-routing must be deterministic and upstream of adjudication — a
    `dialogue`/`thought` claim never adjudicated as a world-fact (kills the p8
    class of false positive).
-2. Tune the extraction prompt toward the ledger extractor's recall; add the
-   retry-on-empty guard for the schema empty-content case.
+2. Production extraction must mirror `OllamaLedgerExtractor` — `callWithRetry`
+   (retry-on-empty with doubled `num_predict`) + `budgetForSceneWords`. The
+   spike runner skipped both, which is why gemma4_4b returned zero claims for
+   one scene and extraction recall read low; the proven guards recover that
+   case. Then add a `ContinuityClaimFilter` pass — dedup + evidence-quote
+   validation — reusing the `LedgerFilters` / `LedgerFilterPipeline` pattern
+   (§3.1).
 3. Goetia adjudication is ~one call per candidate pair — fold into the §8 cost
    model (background, progress indicator).
