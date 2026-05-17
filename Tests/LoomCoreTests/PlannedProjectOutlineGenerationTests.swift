@@ -7,6 +7,27 @@ func plannedProjectOutlineGenerationTests() -> TestSuite {
     let s = TestSuite("PlannedProjectOutlineGeneration")
     let framework = SaveTheCatFramework()
 
+    /// Deferred-stub provider (per feedback_tdd_async_callbacks): the
+    /// stub queues completions; the test flushes them in waves so the
+    /// Stage 1 → Stage 3 hand-off happens as it would over real HTTP.
+    final class OutlineStubProvider: OllamaCallProvider {
+        var queued: [(Result<String, OllamaError>) -> Void] = []
+        var canned: [Result<String, OllamaError>] = []
+        var callCount = 0
+        func call(
+            prompt: String, schema: [String: Any], options: OllamaChatOptions,
+            completion: @escaping (Result<String, OllamaError>) -> Void
+        ) {
+            callCount += 1
+            queued.append(completion)
+        }
+        func flushAll() {
+            while !queued.isEmpty, !canned.isEmpty {
+                queued.removeFirst()(canned.removeFirst())
+            }
+        }
+    }
+
     s.test("beat prompt includes the premise, the sketch, and every beat name") {
         let prompt = OutlineGeneration.buildBeatGenerationPrompt(
             premise: "A courier smuggles a memory across a divided city.",
@@ -172,6 +193,112 @@ func plannedProjectOutlineGenerationTests() -> TestSuite {
         let scenes = OutlineGeneration.parseGeneratedScenes(raw)
         try expectEqual(scenes.count, 1)
         try expectEqual(scenes[0].title, "The Real Scene")
+    }
+
+    // MARK: - Stage 4: assembly + orchestrator
+
+    s.test("reconcileScenes pads short, truncates long, keeps exact") {
+        let two = [
+            OutlineGeneration.SceneOutline(title: "A", summary: "a"),
+            OutlineGeneration.SceneOutline(title: "B", summary: "b"),
+        ]
+        try expectEqual(OutlineGeneration.reconcileScenes(two, target: 2).count, 2)
+        try expectEqual(OutlineGeneration.reconcileScenes(two, target: 4).count, 4)
+        try expectEqual(OutlineGeneration.reconcileScenes(two, target: 1).count, 1)
+    }
+
+    s.test("a flat outline puts every scene in orphanedSceneIds, status todo") {
+        let sizing = OutlineSizing.plan(for: .shortStory)
+        let plan = OutlineGeneration.ChapterPlan(
+            beats: allBeats(), sceneCount: sizing.sceneCount
+        )
+        let scenes = (0..<sizing.sceneCount).map {
+            OutlineGeneration.SceneOutline(title: "S\($0)", summary: "x")
+        }
+        let outline = OutlineGeneration.assembleOutline(
+            plans: [plan], scenesPerChapter: [scenes], sizing: sizing
+        )
+        try expectEqual(outline.manuscript.parts.count, 0)
+        try expectEqual(outline.manuscript.orphanedSceneIds.count, sizing.sceneCount)
+        try expectEqual(outline.scenes.count, sizing.sceneCount)
+        try expectTrue(outline.scenes.allSatisfy { $0.status == .todo })
+    }
+
+    s.test("a chaptered outline builds one Part of chapters with the right scene total") {
+        let sizing = OutlineSizing.plan(for: .novella)
+        let plans = OutlineGeneration.planChapters(beats: allBeats(), sizing: sizing)
+        let scenesPerChapter = plans.map { plan in
+            (0..<plan.sceneCount).map {
+                OutlineGeneration.SceneOutline(title: "S\($0)", summary: "x")
+            }
+        }
+        let outline = OutlineGeneration.assembleOutline(
+            plans: plans, scenesPerChapter: scenesPerChapter, sizing: sizing
+        )
+        try expectEqual(outline.manuscript.parts.count, 1)
+        try expectEqual(outline.manuscript.parts[0].chapters.count, sizing.chapterCount)
+        try expectEqual(outline.scenes.count, sizing.sceneCount)
+    }
+
+    func beatResponse() -> String {
+        framework.beatSlots.map { "\($0.name): \($0.name) happens" }
+            .joined(separator: "\n")
+    }
+
+    s.test("OutlineGenerator runs Stage 1 then per-chapter Stage 3 to an outline") {
+        let stub = OutlineStubProvider()
+        let gen = OutlineGenerator(provider: stub)
+        var captured: Result<OutlineGeneration.GeneratedOutline, Error>?
+        gen.generate(
+            premise: "A courier smuggles a memory.",
+            characterSketch: "Vesna, a courier.",
+            lengthScenario: .shortStory,
+            framework: framework
+        ) { captured = $0 }
+
+        try expectEqual(stub.queued.count, 1)  // Stage 1 only, so far
+        stub.canned = [
+            .success(beatResponse()),
+            .success("A | a\nB | b\nC | c"),
+        ]
+        stub.flushAll()
+
+        let result = try expectNotNil(captured)
+        guard case .success(let outline) = result else {
+            throw TestFailure(message: "expected success", file: #file, line: #line)
+        }
+        try expectEqual(outline.scenes.count, 3)
+        try expectEqual(stub.callCount, 2)
+    }
+
+    s.test("OutlineGenerator surfaces a Stage 1 failure") {
+        let stub = OutlineStubProvider()
+        let gen = OutlineGenerator(provider: stub)
+        var captured: Result<OutlineGeneration.GeneratedOutline, Error>?
+        gen.generate(
+            premise: "x", characterSketch: "y",
+            lengthScenario: .shortStory, framework: framework
+        ) { captured = $0 }
+        stub.canned = [.failure(OllamaError.unexpectedShape)]
+        stub.flushAll()
+        let result = try expectNotNil(captured)
+        if case .success = result {
+            throw TestFailure(message: "expected failure", file: #file, line: #line)
+        }
+    }
+
+    s.test("OutlineGenerator fans out one Stage 3 call per chapter") {
+        let stub = OutlineStubProvider()
+        let gen = OutlineGenerator(provider: stub)
+        gen.generate(
+            premise: "x", characterSketch: "y",
+            lengthScenario: .novella, framework: framework
+        ) { _ in }
+        try expectEqual(stub.queued.count, 1)
+        stub.canned = [.success(beatResponse())]
+            + Array(repeating: .success("S | s"), count: 5)
+        stub.flushAll()
+        try expectEqual(stub.callCount, 6)  // 1 beat + 5 chapter calls
     }
 
     return s

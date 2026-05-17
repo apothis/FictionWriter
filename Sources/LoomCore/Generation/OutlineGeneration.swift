@@ -203,4 +203,71 @@ public enum OutlineGeneration {
         }
         return out
     }
+
+    // MARK: - Stage 4: assembly
+
+    /// The assembled outline — a `Manuscript` structure plus the
+    /// `Scene` objects it references. The caller persists both.
+    public struct GeneratedOutline: Equatable {
+        public let manuscript: Manuscript
+        public let scenes: [Scene]
+
+        public init(manuscript: Manuscript, scenes: [Scene]) {
+            self.manuscript = manuscript
+            self.scenes = scenes
+        }
+    }
+
+    /// Reconcile a chapter's parsed scenes to its planned count: the
+    /// deterministic count is authoritative, so a model that returned
+    /// too many is truncated and too few is padded with empty
+    /// placeholder scenes for the writer to fill.
+    public static func reconcileScenes(
+        _ parsed: [SceneOutline], target: Int
+    ) -> [SceneOutline] {
+        guard target > 0 else { return [] }
+        if parsed.count == target { return parsed }
+        if parsed.count > target { return Array(parsed.prefix(target)) }
+        var out = parsed
+        for n in (parsed.count + 1)...target {
+            out.append(SceneOutline(title: "Scene \(n)", summary: ""))
+        }
+        return out
+    }
+
+    /// Stage 4: turn the per-chapter scene outlines into a populated
+    /// `Manuscript` + its `Scene` objects (status `.todo`, empty
+    /// prose). A flat scenario (`chapterCount == 0`) puts every scene
+    /// in `orphanedSceneIds`; a chaptered one builds a single `Part`.
+    public static func assembleOutline(
+        plans: [ChapterPlan],
+        scenesPerChapter: [[SceneOutline]],
+        sizing: OutlineSizing
+    ) -> GeneratedOutline {
+        var allScenes: [Scene] = []
+        var chapters: [Chapter] = []
+        for (index, pair) in zip(plans, scenesPerChapter).enumerated() {
+            let (plan, parsedScenes) = pair
+            let reconciled = reconcileScenes(parsedScenes, target: plan.sceneCount)
+            let sceneObjs = reconciled.map { o in
+                Scene(
+                    id: UUID(), title: o.title, status: .todo,
+                    summary: o.summary, targetWordCount: sizing.perSceneWords
+                )
+            }
+            allScenes.append(contentsOf: sceneObjs)
+            chapters.append(Chapter(
+                title: "Chapter \(index + 1)",
+                sceneIds: sceneObjs.map(\.id),
+                targetWordCount: plan.sceneCount * sizing.perSceneWords
+            ))
+        }
+        let manuscript: Manuscript
+        if sizing.chapterCount == 0 {
+            manuscript = Manuscript(orphanedSceneIds: allScenes.map(\.id))
+        } else {
+            manuscript = Manuscript(parts: [Part(title: "Manuscript", chapters: chapters)])
+        }
+        return GeneratedOutline(manuscript: manuscript, scenes: allScenes)
+    }
 }
