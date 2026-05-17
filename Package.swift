@@ -147,5 +147,14 @@ let package = Package(
             dependencies: ["LoomCore"],
             path: "Tools/EntityDetectionProbe"
         ),
+        // LOOM_PLANNED_PROJECT Phase 2 — outline-generation probe.
+        // Runs OutlineGenerator against Ollama and prints the
+        // resulting manuscript outline, for tuning the prompts.
+        //   swift run OutlineGenerationProbe
+        .executableTarget(
+            name: "OutlineGenerationProbe",
+            dependencies: ["LoomCore"],
+            path: "Tools/OutlineGenerationProbe"
+        ),
     ]
 )
