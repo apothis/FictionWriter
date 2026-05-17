@@ -200,6 +200,110 @@ public enum ContinuityAudit {
         return collected
     }
 
+    // MARK: - Adjudication types
+
+    /// The judgment on a candidate-conflict claim pair.
+    public enum Verdict: String, Codable, Equatable, CaseIterable {
+        /// A genuine continuity error — the two claims cannot both hold.
+        case contradiction
+        /// No conflict (includes a character lying, a paraphrase, or
+        /// claims that simply do not bear on each other).
+        case consistent
+        /// A legitimate change over story time — growth, a haircut, a
+        /// promotion. Not an error.
+        case evolution
+    }
+
+    public struct Adjudication: Codable, Equatable {
+        public var verdict: Verdict
+        /// 0…1 — the model's confidence in the verdict.
+        public var confidence: Double
+        public var explanation: String
+
+        public init(verdict: Verdict, confidence: Double, explanation: String) {
+            self.verdict = verdict
+            self.confidence = confidence
+            self.explanation = explanation
+        }
+    }
+
+    // MARK: - Adjudication prompt
+
+    /// Build the pairwise-adjudication prompt. The model sees exactly
+    /// two same-subject claims — a localized judgment, far easier for a
+    /// small model than whole-document reasoning (the ContraDoc
+    /// lesson). Positive framing; the precision rules (dialogue =
+    /// character's assertion, evolution = legitimate change) are stated
+    /// as how to *classify*, not as a blacklist.
+    public static func buildAdjudicationPrompt(earlier: Claim, later: Claim) -> String {
+        func render(_ c: Claim, label: String) -> String {
+            """
+            \(label) (scene \(c.sourceSceneId), \(c.type.rawValue), spoken/written as \(c.source.rawValue)):
+            \(c.value)
+            Evidence: "\(c.evidenceQuote)"
+            """
+        }
+        return """
+        You are auditing a novel for continuity. Below are two claims about the same subject, the EARLIER from a scene that comes first in the story and the LATER from a scene that comes after it. Decide how they relate.
+
+        \(render(earlier, label: "EARLIER"))
+
+        \(render(later, label: "LATER"))
+
+        Choose one verdict:
+        - contradiction: the two claims genuinely cannot both be true of the story world. A real continuity error.
+        - consistent: there is no error. The claims agree, restate the same thing, are about different things, or one of them is spoken in dialogue or held as a private thought — a character may lie or be wrong, and that is the character's assertion, not a fact about the story world.
+        - evolution: the claim changed for a legitimate in-story reason over the time between the scenes — a haircut, an injury healing, a promotion, a character learning or growing.
+
+        Judge only what the two claims say. Reply with one JSON object: verdict, confidence (0 to 1), and a one-sentence explanation.
+        """
+    }
+
+    public static func adjudicationJSONSchema() -> [String: Any] {
+        return [
+            "type": "object",
+            "properties": [
+                "verdict": ["type": "string", "enum": Verdict.allCases.map(\.rawValue)],
+                "confidence": ["type": "number"],
+                "explanation": ["type": "string"],
+            ],
+            "required": ["verdict", "confidence", "explanation"],
+        ]
+    }
+
+    // MARK: - Adjudication parser
+
+    private struct RawAdjudication: Decodable {
+        let verdict: String?
+        let confidence: Double?
+        let explanation: String?
+    }
+
+    /// Parse the model's adjudication object. Tolerates preamble /
+    /// postamble; clamps `confidence` into 0…1; throws on an unknown
+    /// verdict or a missing object.
+    public static func parseAdjudication(_ raw: String) throws -> Adjudication {
+        guard let first = raw.firstIndex(of: "{") else {
+            throw ParseError.noJSONObjectFound
+        }
+        let blocks = topLevelObjects(in: raw, from: first)
+        guard let objText = blocks.first,
+              let data = objText.data(using: .utf8),
+              let item = try? JSONDecoder().decode(RawAdjudication.self, from: data)
+        else {
+            throw ParseError.malformedJSON
+        }
+        guard let v = item.verdict, let verdict = Verdict(rawValue: v) else {
+            throw ParseError.malformedJSON
+        }
+        let confidence = min(1.0, max(0.0, item.confidence ?? 0.0))
+        return Adjudication(
+            verdict: verdict,
+            confidence: confidence,
+            explanation: item.explanation ?? ""
+        )
+    }
+
     /// Extract each top-level `{...}` block starting at `from`. A
     /// brace-depth counter that ignores braces inside JSON strings.
     static func topLevelObjects(in raw: String, from: String.Index) -> [String] {
