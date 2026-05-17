@@ -2216,3 +2216,62 @@ built-in library). The whole AppKit↔WKWebView↔writer-model chain works.
 
 **1727/1727 tests green.** (1708 → 1727: +7 bridge intents, +1 AppState,
 +3 snapshot, +6 style editor, +2 Phase 3 end-to-end.)
+
+### 15.33 Session ledger — 2026-05-17 (Planned Project mode — Phase 5)
+
+The final phase — outline-driven writing. Tests 1727 → 1747. 9 commits.
+
+#### Approach
+
+Per the locked decision, a scene is drafted with the per-beat loop:
+its one-paragraph outline `summary` is decomposed into beats, then
+each beat is drafted in its own writer call. The design doc named
+`TemplateGenerationCoordinator` for the loop, but that coordinator is
+template-imitation machinery (template body, cast mapping, D4
+content-stripping); an outline scene has no template. So Phase 5 ships
+its own thin per-beat coordinator instead.
+
+#### The pieces (all TDD)
+
+- **`SceneBeatPlanning`** (5.1) — the beat count and per-beat word
+  split are deterministic (one beat per ~300 words, clamped 2…8;
+  remainder to the early beats). A prompt builder + tolerant parser
+  for the one LLM pass that supplies the beat intents.
+- **`SceneBeatPlanner`** (5.1) — the async planning pass over an
+  `OllamaCallProvider`, mirroring `OutlineGenerator`.
+- **`SceneDraftPrompt`** (5.2) — the per-beat writer prompt: SYSTEM
+  framing, the project's assigned styles, the scene summary, the beat
+  plan with the current beat marked, the prose so far, instruction at
+  recency.
+- **`OutlineDraftCoordinator`** (5.2) — drafts a scene end-to-end: plan
+  pass → one writer call per beat → prose committed to the scene with
+  status advanced `todo → draft`. Background generation (no editor
+  token streaming); one injected `OllamaCallProvider`.
+- **UI** (5.3) — `AppState.draftSceneFromOutline` + two triggers: a
+  "Draft Scene From Outline" Bible-menu item and a Plan-view card
+  right-click menu (draft + a Status submenu cycling todo/draft/
+  revised/final).
+- **`OutlineDraftProbe`** (5.4) — live exercise of the engine.
+
+#### Two bugs caught by the in-app smoke
+
+- **Threading.** The writer provider's completion fires off-main, so
+  the coordinator's session mutation + debounced auto-save Timer ran
+  on a runloop-less background thread — the status flipped in memory
+  but never persisted. Fixed by marshalling the completions to main.
+- **Seed character.** `createPlannedProject`'s seeded Bible character
+  got its name + one-line from the sketch but an empty `description`;
+  the sketch now seeds the description too.
+
+#### Live verification (2026-05-17, Goetia)
+
+`OutlineDraftProbe`: a 900-word/3-beat scene drafted in 37s, coherent
+and on-summary. In-app: opened a planned project, fired Bible → Draft
+Scene From Outline — a 1,319-word/4-beat scene drafted (~50s), prose
+and `draft` status persisted to disk. Residual: the final beat
+sometimes lightly echoes the prior beat's closing lines despite the
+"do not repeat" instruction — a small-model artifact, mitigated by the
+draft being editable; not chased (n=1).
+
+**1747/1747 tests green.** (1727 → 1747: +10 beat planning, +6 scene
+draft prompt, +3 draft coordinator, +1 Plan context menu.)
