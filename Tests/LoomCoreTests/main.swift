@@ -239,6 +239,7 @@ let suites: [TestSuite] = [
     continuitySubjectResolverTests(),
     continuityKnowledgeCheckTests(),
     continuityFindingTests(),
+    continuityClaimFilterTests(),
 ]
 
 // `TestRunner.run` is `@MainActor`-isolated so test bodies can drive
