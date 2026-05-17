@@ -66,8 +66,22 @@ let summary = env["LOOM_PROBE_SUMMARY"]
     ?? "Vesna, holed up in her hideout, finally inserts the stolen memory chip and lives a stranger's life — a love story across the city's divide — as enforcers close in on the door."
 let targetWords = Int(env["LOOM_PROBE_TARGET"] ?? "900") ?? 900
 
-// An in-memory session with one outline scene to draft.
-let session = ProjectSession(project: Project(title: "DraftProbe"))
+// An in-memory session with one outline scene to draft. A
+// plannedConfig with two assigned built-in styles (Noir + Minimalist)
+// so the draft is style-conditioned — the prompt's style block is
+// exercised and the prose can be judged against the descriptors.
+var project = Project(title: "DraftProbe")
+let noirID = StyleLibrary.stableStyleID(name: "Noir", type: .genre)
+let minimalistID = StyleLibrary.stableStyleID(name: "Minimalist", type: .register)
+project.plannedConfig = PlannedProjectConfig(
+    premise: "A courier smuggles a stolen memory across a divided city.",
+    characterSketch: "Vesna, a courier who never reads what she carries.",
+    assignedStyleIds: [noirID, minimalistID]
+)
+let session = ProjectSession(project: project)
+let appliedStyles = StyleLibrary.resolve(
+    project.plannedConfig!.assignedStyleIds, in: StyleLibraryStore().load()
+)
 let scene = session.addScene(title: "The Memory Unfolds")
 session.setSceneSummary(id: scene.id, to: summary)
 session.setSceneTargetWordCount(id: scene.id, to: targetWords)
@@ -82,30 +96,48 @@ log("  writer:   Goetia @ \(kbURL)")
 log("  scene:    \(targetWords)w → \(beatCount) beats")
 log("running outline draft (1 plan call + \(beatCount) beat calls) ...")
 
+// `OutlineDraftCoordinator` marshals its provider completions onto
+// the main queue, so this CLI tool must SERVICE the main queue —
+// `dispatchMain()` does that and never returns. Blocking the main
+// thread on a semaphore would deadlock (the coordinator's main-queue
+// blocks could never run).
+//
+// The didFinish observer uses `queue: nil` deliberately: a non-nil
+// `OperationQueue.main` delivers via the main RUN LOOP, which
+// `dispatchMain()` does not run — only the main DISPATCH QUEUE. With
+// `queue: nil` the block runs synchronously on the posting thread
+// (the coordinator posts from its main-queue context), prints the
+// report, and `exit()`s.
 let started = Date()
-let sem = DispatchSemaphore(value: 0)
-let obs = NotificationCenter.default.addObserver(
+NotificationCenter.default.addObserver(
     forName: OutlineDraftCoordinator.didFinishNotification,
     object: coordinator, queue: nil
-) { _ in sem.signal() }
+) { _ in
+    let elapsed = Date().timeIntervalSince(started)
+    let drafted = session.scenes[scene.id]
+    let prose = drafted?.prose ?? ""
+    let status = drafted?.status ?? .todo
+    let words = prose.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
+
+    print("# OutlineDraftProbe\n")
+    print("- **Writer**: Goetia (KoboldCpp)")
+    print("- **Scene summary**: \(summary)")
+    print("- **Target / actual words**: \(targetWords) / \(words)")
+    print("- **Beats**: \(beatCount)")
+    print("- **Final status**: \(status.rawValue)")
+    print("- **Elapsed**: \(String(format: "%.0fs", elapsed))\n")
+    print("## Assigned styles\n")
+    if appliedStyles.isEmpty {
+        print("_(none resolved — style block was empty)_\n")
+    } else {
+        for st in appliedStyles {
+            print("- **\(st.name)** (\(st.type.rawValue)) — \(st.descriptor)")
+        }
+        print("")
+    }
+    print("## Drafted prose\n")
+    print(prose.isEmpty ? "_(empty — draft failed)_" : prose)
+    exit(prose.isEmpty ? 1 : 0)
+}
 coordinator.start(sceneId: scene.id)
-sem.wait()
-NotificationCenter.default.removeObserver(obs)
-let elapsed = Date().timeIntervalSince(started)
-
-let drafted = session.scenes[scene.id]
-let prose = drafted?.prose ?? ""
-let status = drafted?.status ?? .todo
-let words = prose.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count
-
-print("# OutlineDraftProbe\n")
-print("- **Writer**: Goetia (KoboldCpp)")
-print("- **Scene summary**: \(summary)")
-print("- **Target / actual words**: \(targetWords) / \(words)")
-print("- **Beats**: \(beatCount)")
-print("- **Final status**: \(status.rawValue)")
-print("- **Elapsed**: \(String(format: "%.0fs", elapsed))\n")
-print("## Drafted prose\n")
-print(prose.isEmpty ? "_(empty — draft failed)_" : prose)
-
-exit(prose.isEmpty ? 1 : 0)
+dispatchMain()
