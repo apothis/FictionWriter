@@ -132,6 +132,30 @@ already built, tested, and live for the knowledge ledger:
 discovery already follows), reusing the cosine helper and embedder rather than
 the literal functions.
 
+**Subject grounding — reuse GLiNER + the bible/alias index.** A claim's
+`subject` is free text as the LLM wrote it ("Mara", "she", "the investigator",
+"the Lighthouse"). Conflict retrieval (§3.3) groups claims by subject, so
+ungrounded subject strings fragment a single entity across several groups and
+silently lose real conflicts. The audit resolves each claim's `subject` to a
+stable entity id *before* retrieval, reusing infrastructure already in the
+project:
+
+- The **bible entity + alias index** — `Character` / `Setting` / `BibleObject`
+  names and `aliases` — resolves the common case.
+- [`GLiNERDetector`](Sources/LoomCore/Generation/GLiNERDetector.swift) — the
+  project's native bidirectional NER encoder (ONNX / DeBERTa-v3), already the
+  production entity detector for Phase 9 discovery
+  ([`GLiNERCandidateDetector`](Sources/LoomCore/Generation/GLiNERCandidateDetector.swift)).
+  It is **deterministic and, unlike a generative pass, cannot refuse or derail
+  on explicit prose** — load-bearing for a heavy-NSFW app. GLiNER gives the
+  audit a reliable per-scene list of the entities actually present, which
+  subject-resolution anchors to (and which surfaces entities the bible has not
+  yet captured).
+
+Resolution writes a canonical subject onto each claim; `ContinuityConflictRetrieval`
+then groups by that. Claims whose subject cannot be resolved fall back to the
+normalised surface string.
+
 ### 3.2 Typed fact-base (deterministic)
 
 Claims accumulate into a store keyed by `(subjectEntityId, type, attributeKey)`.
@@ -143,10 +167,12 @@ deciding whether the two values are genuinely incompatible (§3.4).
 ### 3.3 Candidate-conflict retrieval
 
 Never compare all O(n²) scene pairs. For each claim, retrieve only **prior
-claims about the same subject and same dimension** as conflict candidates,
-using the entity name/alias index and the existing CoreML Wegmann embedder for
-fuzzy subject/attribute matching. This bounds the number of LLM adjudication
-calls to roughly the number of genuinely-overlapping claim pairs.
+claims about the same subject and same dimension** as conflict candidates. The
+subject is the **grounded entity** from the §3.1 subject-resolution step
+(bible/alias index + GLiNER), so "Mara" / "she" / "the investigator" collapse
+to one entity instead of fragmenting into three groups; the CoreML Wegmann
+embedder handles fuzzy attribute-key matching. This bounds the number of LLM
+adjudication calls to roughly the number of genuinely-overlapping claim pairs.
 
 ### 3.4 Pairwise NLI adjudication
 
@@ -386,5 +412,10 @@ heavier prompt language.
    case. Then add a `ContinuityClaimFilter` pass — dedup + evidence-quote
    validation — reusing the `LedgerFilters` / `LedgerFilterPipeline` pattern
    (§3.1).
-3. Goetia adjudication is ~one call per candidate pair — fold into the §8 cost
+3. Subject grounding (§3.1) — resolve each claim's `subject` to a stable
+   entity before retrieval, reusing the bible/alias index and `GLiNERDetector`
+   (the NSFW-robust deterministic NER tagger already used for Phase 9
+   discovery). Without it, retrieval groups by raw surface string and loses
+   conflicts across "Mara" / "she" / "the investigator".
+4. Goetia adjudication is ~one call per candidate pair — fold into the §8 cost
    model (background, progress indicator).
