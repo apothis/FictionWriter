@@ -10,6 +10,14 @@ import Foundation
 func glinerDetectorTests() -> TestSuite {
     let s = TestSuite("GLiNERDetector")
 
+    s.test("default detection threshold is 0.45") {
+        // Lowered from GLiNER's Python default of 0.5: real character
+        // names land just under 0.5 on some prose — "Della" scored
+        // 0.492 on both mentions in a live scene (§15.27), missing the
+        // cutoff by 0.008 while pronoun noise sat far below at ~0.31.
+        try expectEqual(GLiNERDetector.defaultThreshold, 0.45)
+    }
+
     s.test("detects the fixture entities end-to-end through the ONNX session") {
         let fixtureURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

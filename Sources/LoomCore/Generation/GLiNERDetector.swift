@@ -16,8 +16,13 @@ public final class GLiNERDetector {
     private let tokenizer: GLiNERTokenizer
 
     /// Default detection threshold — a span is kept iff its sigmoid
-    /// probability exceeds this. Matches GLiNER's Python default.
-    public static let defaultThreshold = 0.5
+    /// probability exceeds this. Lowered from GLiNER's Python default
+    /// of 0.5: GLiNER scores a name differently per mention, and real
+    /// character names land just under 0.5 on some prose — "Della"
+    /// scored 0.492 on both mentions of a live scene (§15.27), missing
+    /// the cutoff by 0.008 while pronoun noise sat far below (~0.31),
+    /// leaving a clean gap to drop into.
+    public static let defaultThreshold = 0.45
 
     /// Max words per inference window. GLiNER's `max_len` is 384 words;
     /// 300 leaves headroom for the label prompt and subword expansion.
