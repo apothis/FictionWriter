@@ -2130,3 +2130,73 @@ rather than faked — the user confirmed this is the right call.
   exercise once Phase 4 can create a planned project with styles.
 
 **1708/1708 tests green.** (1693 → 1708: +9 Phase 3, +6 Phase 4 item 1.)
+
+### 15.32 Session ledger — 2026-05-17 (Planned Project mode — Phase 4 items 2–5)
+
+The rest of Phase 4 — the guided-creation UI and its wiring.
+Tests 1708 → 1726. 8 commits.
+
+#### Bridge intents (item 2)
+
+The wizard runs two operations the fire-and-forget intent system
+can't express, so `BibleWorkspaceIntent` gains two request/reply
+cases — `generateOutline` (its `GeneratedOutline` result returns to
+JS) and `createPlannedProject` (carries the edited outline forward).
+Both ride a `requestId`. `GeneratedOutline` is now `Codable` for the
+wire; `BibleWorkspaceBridge.encodeReply`/`encodeReplyError` are the
+Swift→JS reply leg. `AppState.createPlannedProject` writes the bundle
+and swaps the session (the `createProject` counterpart).
+
+#### The wizard (item 3) + the style editor (item 4)
+
+A **separate webview bundle** (`plannedProject.html`) — per the
+locked decision, a standalone React app. Six steps: premise+sketch →
+length → style assignment → generate → review/edit the outline →
+create. Its bridge namespaces the Swift→JS surface under
+`window.loomWizard` (apart from the Bible Workspace bundle's
+`window.loom` — the two never co-load but tsc compiles both trees
+together) and adds the `postRequest`/`resolveReply` request/reply
+channel. The **style-library editor** is a view in the same bundle
+(reached via "Manage library" on the style step): create/edit/mix/
+delete app-level styles via fire-and-forget `upsertStyle`/`deleteStyle`
+intents; the wizard window applies them to `styles.json` and re-pushes
+its snapshot. A dev-mock harness drives the whole flow under `bun run
+dev`; the full 6-step wizard + the style editor were browser-verified.
+
+IIFE output can't code-split across inputs, so each bundle is a
+separate `vite build` invocation selected by `LOOM_BUNDLE`; the build
+script builds both and syncs each into its own SPM resource dir.
+
+#### AppKit entry (item 5)
+
+`PlannedProjectWindowController` — a standalone webview-hosting
+NSWindow, pre-project (owns no `ProjectSession`). Pushes a
+`PlannedProjectSnapshot` (style library + frameworks) on load and
+dispatches the wizard intents: `generateOutline` runs `OutlineGenerator`
+over a `KoboldCallProvider` (the writer model) and replies with the
+outline; `createPlannedProject` picks a `.loom` location via
+`NSSavePanel`, writes the bundle, closes itself. Wired into the File
+menu as "New Planned Project…". New AppKit surface but **clean — no
+macOS-26 layout fights** (logged against the pivot-pressure memory as
+a positive data point).
+
+#### Phase 3 glue — end-to-end at last
+
+The carried-forward smoke: a real `.loom` bundle created by
+`createPlannedProject` with assigned styles, loaded from disk, its
+`assignedStyleIds` resolved and assembled into a prompt — the exact
+resolution `GenerationCoordinator.start()` runs. The style descriptors
+and constraints reach `fullPrompt`; the `styleSheet` chiclet appears.
+No stubs.
+
+#### Open follow-ups
+
+- **In-app smoke** — the AppKit wizard window opening, the live
+  `generateOutline` round-trip (needs the KoboldCpp writer server up),
+  and `createPlannedProject` through the real WKWebView are not yet
+  exercised in `Loom.app`. The pieces are unit-tested + browser-tested;
+  the AppKit↔WKWebView round-trip is in-app smoke territory.
+- Phase 5 — outline-driven writing.
+
+**1726/1726 tests green.** (1708 → 1726: +7 bridge intents, +1 AppState,
++3 snapshot, +5 style editor, +2 Phase 3 end-to-end.)
