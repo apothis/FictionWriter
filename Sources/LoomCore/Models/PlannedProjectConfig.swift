@@ -41,4 +41,19 @@ public struct PlannedProjectConfig: Codable, Equatable {
         self.frameworkId = try c.decodeIfPresent(String.self, forKey: .frameworkId) ?? StoryFrameworks.default.id
         self.assignedStyleIds = try c.decodeIfPresent([UUID].self, forKey: .assignedStyleIds) ?? []
     }
+
+    /// A Bible character seeded from the character sketch — the name
+    /// is the leading token before the first comma / dash, the full
+    /// sketch becomes the one-line. Nil when the sketch is empty.
+    /// The writer renames/edits it in the bible afterwards.
+    public func seedCharacter() -> Character? {
+        let sketch = characterSketch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sketch.isEmpty else { return nil }
+        let separators = CharacterSet(charactersIn: ",—–\n")
+        let lead = sketch.components(separatedBy: separators).first?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        // A very long leading run is a description, not a name.
+        let name = (lead.isEmpty || lead.count > 40) ? "Protagonist" : lead
+        return Character(name: name, oneLine: sketch)
+    }
 }

@@ -46,6 +46,44 @@ public final class ProjectStorage {
         return project
     }
 
+    /// Create a `.loom/` directory seeded from a generated outline —
+    /// Planned Project mode (LOOM_PLANNED_PROJECT.md §6). The project
+    /// carries the outline's `Manuscript`, the `PlannedProjectConfig`,
+    /// and a Bible character seeded from the character sketch; every
+    /// outline `Scene` is written to `scenes/<id>.md`. Throws on a
+    /// directory collision, like `createNewProject`.
+    @discardableResult
+    public func createPlannedProject(
+        at url: URL,
+        title: String,
+        config: PlannedProjectConfig,
+        outline: OutlineGeneration.GeneratedOutline
+    ) throws -> Project {
+        if fm.fileExists(atPath: url.path) {
+            throw ProjectStorageError.directoryAlreadyExists(url)
+        }
+        try fm.createDirectory(at: url, withIntermediateDirectories: true)
+        try fm.createDirectory(at: url.appendingPathComponent("scenes"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: url.appendingPathComponent("generation-log"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: url.appendingPathComponent("references"), withIntermediateDirectories: true)
+
+        var project = Project(title: title)
+        project.manuscript = outline.manuscript
+        project.plannedConfig = config
+        if let seed = config.seedCharacter() {
+            project.bible.characters = [seed]
+        }
+
+        try saveProject(project, at: url)
+        for scene in outline.scenes {
+            try saveScene(scene, in: url)
+        }
+        DebugLog.shared.write(
+            "[project] created planned: \(url.lastPathComponent) scenes=\(outline.scenes.count)"
+        )
+        return project
+    }
+
     // MARK: - Project metadata
 
     public func saveProject(_ project: Project, at url: URL) throws {
