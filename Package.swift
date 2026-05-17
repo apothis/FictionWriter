@@ -138,5 +138,14 @@ let package = Package(
             dependencies: ["LoomCore"],
             path: "Tools/RelationshipDiscoveryProbe"
         ),
+        // GLiNER entity-detection probe — runs the detector on a scene
+        // file at a low threshold and prints every span's sigmoid
+        // score, for diagnosing missed entities.
+        //   swift run EntityDetectionProbe <scene.md>
+        .executableTarget(
+            name: "EntityDetectionProbe",
+            dependencies: ["LoomCore"],
+            path: "Tools/EntityDetectionProbe"
+        ),
     ]
 )
