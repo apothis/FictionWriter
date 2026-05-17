@@ -118,6 +118,28 @@ external best-practice pass. Full sources in §9.
 
 Sizing rule: scenes run ~1,500 words; chapters hold 3–5 scenes.
 
+### §3.4 Verification — the style-corpus claim (2026-05-17)
+
+An initial assertion that "no downloadable corpus of structured style
+records exists, so hand-authoring is the right call" was made without
+research and then verified by a focused pass. Verdict: the claim
+holds — there is no licence-clean bulk source of style records in the
+needed shape (name + type + descriptor + constraints), and descriptors
+are inherently bespoke — but "no source at all" was an overstatement.
+Two open sources were folded into the built-in starter library's
+**constraint lists** (descriptors stayed bespoke):
+
+- **EQ-Bench `creative-writing-bench`** (MIT) — its writing-quality
+  criteria, especially the failure patterns (tell-don't-show, purple
+  prose, meandering, weak dialogue, amateurish, unearned
+  transformations), informed the constraint vocabulary.
+- **SillyTavern community explicit-writing presets** (Sukino, ashuotaku,
+  SpicyMarinara — licences unclear, so paraphrased not copied) — their
+  recurring craft patterns (plain direct language over euphemism,
+  show-don't-tell carried into explicit scenes, anti-repetition,
+  dynamic sentence rhythm) informed the explicit-register styles
+  (Explicit / Erotic, Hardcore, Sensual / Suggestive).
+
 ---
 
 ## §4 Architecture — the outline pipeline

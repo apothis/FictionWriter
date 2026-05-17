@@ -7,9 +7,16 @@ import Foundation
 /// added to freely (the `isBuiltIn` flag is provenance only, never a
 /// lock). LOOM_PLANNED_PROJECT.md §2, §5.
 ///
-/// The descriptors and constraints are written as positive, concrete,
-/// structural guidance — never negative blacklists, which models
-/// paraphrase around.
+/// Descriptors are bespoke. The constraint lists were cross-checked
+/// against two open sources (LOOM_PLANNED_PROJECT §3.4): the
+/// EQ-Bench `creative-writing-bench` quality criteria (MIT) — its
+/// failure patterns (tell-don't-show, purple prose, meandering,
+/// amateurish, unearned transformations) — and the recurring craft
+/// patterns of the SillyTavern community explicit-writing presets
+/// (plain direct language over euphemism, show-don't-tell carried
+/// into explicit scenes, anti-repetition, dynamic sentence rhythm),
+/// paraphrased rather than copied. Constraints are written as
+/// positive, concrete, structural guidance — never blacklists.
 public enum StyleLibrary {
 
     /// A built-in style — `isBuiltIn` is forced true via this helper.
@@ -34,27 +41,27 @@ public enum StyleLibrary {
             "Science Fiction", .genre,
             descriptor: "Speculative fiction grounded in technology, science, and their consequences for people and society. Ideas drive the plot, and the unfamiliar is rendered concrete and lived-in. Wonder and unease sit side by side.",
             constraints: [
-                "Introduce invented technology and terminology through use, not exposition dumps.",
-                "Keep the speculative elements internally consistent.",
-                "Anchor the strange in concrete sensory detail.",
+                "Introduce invented technology and terminology through use and consequence, never exposition dumps.",
+                "Keep the speculative premise internally consistent and follow its implications honestly.",
+                "Anchor the unfamiliar in concrete sensory detail; avoid generic sci-fi cliché.",
             ]
         ),
         builtIn(
             "Fantasy", .genre,
             descriptor: "Fiction set in a world shaped by magic, myth, or the supernatural, where the impossible operates by rules the reader can feel. Atmosphere and a sense of the numinous matter as much as plot.",
             constraints: [
-                "Reveal how magic and the supernatural work through consequences, not lectures.",
-                "Let the setting feel old and lived-in.",
-                "Favour concrete, grounded imagery over generic high-fantasy diction.",
+                "Reveal how magic and the supernatural work through consequence, not lore lectures.",
+                "Let the setting feel old and lived-in through specific, telling detail.",
+                "Favour concrete, grounded imagery over generic high-fantasy diction and cliché.",
             ]
         ),
         builtIn(
             "Dark Fantasy / Grimdark", .genre,
             descriptor: "Fantasy stripped of comfort — a world where power corrupts, victory costs, and morality is grey. The supernatural threatens rather than delights. Bleak, but not without flickers of meaning.",
             constraints: [
-                "Let consequences land hard and stay landed.",
+                "Let consequences land hard and stay landed; reversals and transformations must be earned.",
                 "Render violence and hardship with weight, not relish.",
-                "Keep characters morally compromised but comprehensible.",
+                "Keep characters morally compromised but comprehensible and consistent.",
             ]
         ),
         builtIn(
@@ -62,8 +69,8 @@ public enum StyleLibrary {
             descriptor: "The supernatural hidden inside the modern world — magic in cities, monsters behind ordinary doors. The mundane and the uncanny rub against each other constantly.",
             constraints: [
                 "Ground the supernatural in a recognisable contemporary setting.",
-                "Treat magic as an open secret with its own rules and politics.",
-                "Keep the city itself a presence in the prose.",
+                "Treat magic as an open secret with its own rules, costs, and politics.",
+                "Keep the city itself a present, specific character in the prose.",
             ]
         ),
         builtIn(
@@ -71,15 +78,15 @@ public enum StyleLibrary {
             descriptor: "Fiction built to unsettle and frighten. Dread is constructed slowly through atmosphere and implication, and the worst is often what the reader supplies. Fear of the body, the unknown, and the wrong-made-familiar.",
             constraints: [
                 "Build dread through pacing and restraint before any reveal.",
-                "Make the ordinary turn wrong rather than relying on spectacle.",
-                "Anchor fear in concrete bodily and sensory detail.",
+                "Make the ordinary turn wrong rather than relying on spectacle or gore alone.",
+                "Anchor fear in concrete bodily and sensory detail; show it, do not summarise it.",
             ]
         ),
         builtIn(
             "Thriller", .genre,
             descriptor: "Propulsive, high-stakes fiction driven by tension and momentum. The protagonist is under pressure and time is short. Every scene tightens the screw.",
             constraints: [
-                "End scenes on tension or a turn that pulls the reader forward.",
+                "End scenes on tension or a turn that pulls the reader forward; never let the plot meander.",
                 "Keep stakes concrete and personal to the protagonist.",
                 "Favour forward momentum over digression.",
             ]
@@ -88,9 +95,9 @@ public enum StyleLibrary {
             "Mystery / Crime", .genre,
             descriptor: "Fiction organised around a crime and its unravelling. Information is revealed, withheld, and misdirected with care, and the reader is invited to piece things together. Logic and consequence matter.",
             constraints: [
-                "Plant clues fairly and track what the reader knows.",
+                "Plant clues fairly and track exactly what the reader knows.",
                 "Let the investigation drive scene structure.",
-                "Make every revelation recontextualise what came before.",
+                "Make every revelation recontextualise what came before, not merely add to it.",
             ]
         ),
         builtIn(
@@ -98,8 +105,8 @@ public enum StyleLibrary {
             descriptor: "Crime fiction in a morally shadowed key — compromised protagonists, corruption that reaches everywhere, a fatalistic mood. Cynical, terse, and atmospheric. Nobody comes out clean.",
             constraints: [
                 "Keep the prose terse and the mood fatalistic.",
-                "Let setting and weather carry the atmosphere.",
-                "Give every character an angle.",
+                "Let setting and weather carry the atmosphere; resist purple description.",
+                "Give every character an angle and a credible, lived-in voice.",
             ]
         ),
         builtIn(
@@ -107,8 +114,8 @@ public enum StyleLibrary {
             descriptor: "Fiction centred on the development of a relationship, with the emotional connection as the spine of the plot. Longing, obstacle, and intimacy drive every beat, and the arc bends toward emotional payoff.",
             constraints: [
                 "Keep the relationship the engine of the plot, not a subplot.",
-                "Build intimacy through specific, earned moments.",
-                "Let obstacles test the connection rather than merely delay it.",
+                "Build intimacy through specific, earned moments; show attraction rather than declaring it.",
+                "Let obstacles genuinely test the connection rather than merely delay it.",
             ]
         ),
         builtIn(
@@ -116,17 +123,17 @@ public enum StyleLibrary {
             descriptor: "Fiction in which sexual desire and relationships are the central subject and engine of the story, written for adult readers. The erotic content is the plot, not an ornament to it.",
             constraints: [
                 "Make sexual desire the story's central engine, not a digression.",
-                "Give the characters specific wants, histories, and stakes.",
-                "Let tension build and release across the arc, not only within scenes.",
+                "Give the characters specific wants, histories, and stakes so the eroticism carries weight.",
+                "Let tension build and release across the whole arc, not only within scenes.",
             ]
         ),
         builtIn(
             "Historical Fiction", .genre,
             descriptor: "Fiction set in a realised past, where period detail, social texture, and the constraints of the era shape character and plot. The world feels researched and lived-in without lecturing.",
             constraints: [
-                "Render period detail through daily life and objects, not exposition.",
+                "Render period detail through daily life, objects, and speech, not exposition.",
                 "Let the era's social constraints bear on the characters' choices.",
-                "Keep diction evocative of the period without becoming archaic.",
+                "Keep diction evocative of the period without tipping into archaic pastiche.",
             ]
         ),
         builtIn(
@@ -134,8 +141,8 @@ public enum StyleLibrary {
             descriptor: "Fiction of movement, danger, and discovery — journeys, escapes, and physical stakes. The protagonist is tested against the world, and pace and place carry the reader forward.",
             constraints: [
                 "Keep the plot in motion through physical stakes and changing locations.",
-                "Render action clearly and concretely.",
-                "Make the landscape itself an obstacle and a character.",
+                "Render action clearly and concretely, beat by beat.",
+                "Make the landscape itself an obstacle and a presence.",
             ]
         ),
     ]
@@ -148,8 +155,9 @@ public enum StyleLibrary {
             descriptor: "A precise, controlled prose register that prizes the exact word and the telling image. Sentence rhythm varies deliberately. Subtext carries the weight; emotion is implied through detail rather than named.",
             constraints: [
                 "Prefer concrete specific nouns and strong verbs over adjectives and adverbs.",
-                "Vary sentence length deliberately for rhythm.",
-                "Imply emotion through action and detail rather than stating it outright.",
+                "Vary sentence length and rhythm deliberately so the prose flows naturally.",
+                "Imply emotion through action and telling detail rather than naming it — show, don't tell.",
+                "Avoid purple prose, show-off vocabulary, and gratuitous metaphor.",
             ]
         ),
         builtIn(
@@ -157,8 +165,8 @@ public enum StyleLibrary {
             descriptor: "A sparse, pared-back prose register. Short sentences, plain words, white space. Meaning sits in what is left unsaid, and the reader does the emotional work.",
             constraints: [
                 "Cut every word that does not earn its place.",
-                "Favour short, declarative sentences.",
-                "State events plainly and let subtext carry feeling.",
+                "Favour short, declarative sentences and plain words.",
+                "State events plainly and let subtext carry the feeling.",
             ]
         ),
         builtIn(
@@ -166,8 +174,8 @@ public enum StyleLibrary {
             descriptor: "A rich, dense prose register — long sentences, layered imagery, a sensuous attention to texture and light. The prose itself is part of the pleasure. Maximalist but controlled.",
             constraints: [
                 "Build long sentences with deliberate rhythm and clear architecture.",
-                "Layer concrete sensory imagery — light, texture, sound.",
-                "Let the prose linger without losing forward motion.",
+                "Layer concrete sensory imagery — light, texture, sound — that does real work.",
+                "Stay rich without tipping into purple prose or overwrought phrasing.",
             ]
         ),
         builtIn(
@@ -176,16 +184,16 @@ public enum StyleLibrary {
             constraints: [
                 "Keep sentences quick and verbs vivid.",
                 "Cut hard between beats and trust the reader to keep up.",
-                "Favour momentum over decoration.",
+                "Favour momentum over decoration; never meander.",
             ]
         ),
         builtIn(
             "Wry / Comic", .register,
             descriptor: "A light, ironic narrative register. Humour comes from observation, timing, and understatement rather than jokes. The narration has a knowing, amused intelligence.",
             constraints: [
-                "Land humour through timing and understatement, not punchlines.",
+                "Land humour through timing and understatement, not signposted punchlines.",
                 "Keep the comic voice consistent even in serious moments.",
-                "Let irony reveal character, not just decorate.",
+                "Let irony reveal character rather than merely decorate the prose.",
             ]
         ),
         builtIn(
@@ -194,7 +202,7 @@ public enum StyleLibrary {
             constraints: [
                 "Render physical sensation directly and immediately.",
                 "Do not soften discomfort, violence, or bodily detail.",
-                "Keep the prose grounded in the senses.",
+                "Keep the prose grounded in the senses; show the body, do not summarise it.",
             ]
         ),
         builtIn(
@@ -203,25 +211,30 @@ public enum StyleLibrary {
             constraints: [
                 "Build erotic tension through anticipation, touch, and charged restraint.",
                 "Let scenes crest and then cut or soften rather than depicting the act in full.",
-                "Keep desire vivid in subtext and sensation.",
+                "Keep desire vivid in subtext, sensation, and what is left unsaid.",
+                "Use plain, precise language; avoid euphemism that turns coy or purple.",
             ]
         ),
         builtIn(
             "Explicit / Erotic", .register,
             descriptor: "An explicit register for adult sexual content — direct, sensory, and physically specific, written for adult readers. Desire and bodies are rendered plainly rather than through euphemism, while staying anchored in the characters' emotional reality.",
             constraints: [
-                "Render sexual content directly and physically; avoid coy euphemism and fade-to-black.",
-                "Keep both characters' interiority present through the explicit passages — desire, not just mechanics.",
-                "Pace escalation credibly rather than rushing to the act.",
+                "Render sexual content directly and physically — plain, specific language, not coy euphemism or fade-to-black.",
+                "Keep both characters' interiority and voice present throughout: show what they feel and do, not just the mechanics.",
+                "Pace escalation credibly, varying paragraph and sentence length to the rhythm of the scene.",
+                "Vary sensory detail and phrasing — do not repeat the same words, descriptors, or cadences.",
+                "Avoid purple prose and negation-padding; describe plainly what is happening.",
             ]
         ),
         builtIn(
             "Hardcore", .register,
             descriptor: "An intense, fully explicit register for adult sexual content — graphic, unrestrained, and physically detailed, written for adult readers. Nothing fades to black; the prose stays with the act in full sensory detail.",
             constraints: [
-                "Depict sexual content fully and graphically, in direct physical detail.",
-                "Stay in the scene through escalation and climax — no cutaways.",
-                "Keep sensory specificity high throughout.",
+                "Depict sexual content fully and graphically, in direct physical detail; nothing fades to black.",
+                "Stay in the scene through escalation and climax — no cutaways or summary.",
+                "Keep sensory specificity high and concrete throughout.",
+                "Vary vocabulary, sensory beats, and sentence structure so intensity never becomes repetitive.",
+                "Keep the characters' wants and reactions present even at peak intensity — show, don't tell.",
             ]
         ),
         builtIn(
@@ -230,7 +243,7 @@ public enum StyleLibrary {
             constraints: [
                 "Keep sexual content off the page; imply rather than depict.",
                 "Close the scene before explicit intimacy begins.",
-                "Convey attraction through emotion and gesture.",
+                "Convey attraction through emotion, gesture, and subtext.",
             ]
         ),
     ]
