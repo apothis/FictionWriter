@@ -592,6 +592,14 @@ public enum EntityDiscovery {
         Scene:
         \(scenePose)
 
+        Respond with ONLY a JSON object with exactly these five keys:
+          "kind" — one of "character", "place", "object"
+          "canonical_name" — the entity's most complete/formal name
+          "aliases" — a JSON array of other surface forms (may be empty)
+          "one_line" — one short sentence, at most 20 words
+          "evidence_quote" — a short verbatim span from the scene
+        Example: {"kind": "character", "canonical_name": "Jane Doe", "aliases": ["Jane"], "one_line": "A nurse who lives next door.", "evidence_quote": "Jane Doe knocked twice."}
+
         Emit the JSON object.
         """
     }

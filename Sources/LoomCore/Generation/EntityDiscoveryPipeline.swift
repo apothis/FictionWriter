@@ -63,7 +63,13 @@ public enum EntityDiscoveryPipeline {
         sceneId: UUID,
         completion: @escaping (Result<[EntityDiscovery.ProposedEntity], Error>) -> Void
     ) {
-        let schema = EntityDiscovery.normalisationJSONSchema()
+        // No `format` schema: Ollama's constrained sampling
+        // intermittently degenerates on gemma4_2b — it runs past the
+        // object's close, truncates at num_predict, and the result
+        // won't parse, silently dropping the survivor. Stage D opts
+        // out (matching Stage A2, §15.19) and pins the JSON shape
+        // in-prompt via `buildNormalisationPrompt` instead.
+        let schema: [String: Any] = [:]
         // num_predict 2048 — load-bearing (see Stage A2 note). 512
         // capped before the normalisation object closed → empty
         // content → every survivor failed to normalise.

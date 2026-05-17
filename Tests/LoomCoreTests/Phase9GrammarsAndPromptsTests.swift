@@ -264,6 +264,22 @@ func phase9GrammarsAndPromptsTests() -> TestSuite {
         try expectTrue(lower.contains("canonical") || lower.contains("most complete"))
     }
 
+    s.test("Stage D prompt pins the JSON object shape for unconstrained generation") {
+        // Stage D runs with no format schema (the constraint degenerates
+        // on gemma4_2b) — the prompt itself must pin the exact keys and
+        // show a worked example so the model emits parseable JSON.
+        let prompt = EntityDiscovery.buildNormalisationPrompt(
+            candidateSurface: "Marius",
+            candidateKind: .character,
+            firstSeenQuote: "x",
+            scenePose: "x"
+        )
+        for key in ["kind", "canonical_name", "aliases", "one_line", "evidence_quote"] {
+            try expectTrue(prompt.contains("\"\(key)\""))
+        }
+        try expectTrue(prompt.contains("Example:"))
+    }
+
     s.test("Stage D prompt: constrains one_line length to curb rambling") {
         // gemma emits paragraph-long one_lines on dense prose, which
         // is most of Stage D's generation latency — the instruction

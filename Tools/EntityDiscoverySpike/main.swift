@@ -132,7 +132,7 @@ func ollamaExtractSync(prompt: String, schema: [String: Any], temperature: Doubl
     guard let url = URL(string: "api/chat", relativeTo: URL(string: ollamaURLString))?.absoluteURL else {
         return .failure(NSError(domain: "Spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "bad ollama url"]))
     }
-    let body: [String: Any] = [
+    var body: [String: Any] = [
         "model": ollamaModel,
         "messages": [["role": "user", "content": prompt]],
         "stream": false,
@@ -140,9 +140,14 @@ func ollamaExtractSync(prompt: String, schema: [String: Any], temperature: Doubl
             "temperature": temperature,
             "num_predict": 1024,
         ],
-        "format": schema,
         "keep_alive": "30m",
     ]
+    // An empty schema means unconstrained generation — omit `format`
+    // entirely, mirroring OllamaClient.makeChatRequestBody (a literal
+    // `format: {}` is not the same as omitting the key).
+    if !schema.isEmpty {
+        body["format"] = schema
+    }
     var req = URLRequest(url: url)
     req.httpMethod = "POST"
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -459,7 +464,9 @@ func runScene(_ scene: FixtureScene, embedder: EmbeddingClient?) -> PipelineScen
     // load slot, but the wall-clock win is still real for the
     // multi-candidate scenes (eds-07 with 4 candidates drops from
     // ~45s sequential to ~13s parallel in observed runs).
-    let dSchema = EntityDiscovery.normalisationJSONSchema()
+    // Stage D runs unconstrained — production dropped the `format`
+    // schema (it degenerates on gemma4_2b); the prompt pins the shape.
+    let dSchema: [String: Any] = [:]
     let group = DispatchGroup()
     let lock = NSLock()
     enum StageDOutcome { case ok(EntityDiscovery.NormalisedEntity); case err(String) }
