@@ -128,5 +128,15 @@ let package = Package(
             path: "Tools/SceneExemplarSpike",
             exclude: ["fixtures", "last-run"]
         ),
+        // HANDOFF §15.27 relationship-discovery precision probe.
+        // Drives the two-stage pairwise classifier against Ollama and
+        // compares self-consistency voting (rounds 3) to the un-voted
+        // baseline (rounds 1) on test2 Scene 2.
+        //   swift run RelationshipDiscoveryProbe
+        .executableTarget(
+            name: "RelationshipDiscoveryProbe",
+            dependencies: ["LoomCore"],
+            path: "Tools/RelationshipDiscoveryProbe"
+        ),
     ]
 )
