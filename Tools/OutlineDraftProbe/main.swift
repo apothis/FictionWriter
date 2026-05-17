@@ -67,16 +67,25 @@ let summary = env["LOOM_PROBE_SUMMARY"]
 let targetWords = Int(env["LOOM_PROBE_TARGET"] ?? "900") ?? 900
 
 // An in-memory session with one outline scene to draft. A
-// plannedConfig with two assigned built-in styles (Noir + Minimalist)
-// so the draft is style-conditioned — the prompt's style block is
-// exercised and the prose can be judged against the descriptors.
+// plannedConfig with assigned built-in styles so the draft is
+// style-conditioned — the prompt's style block is exercised and the
+// prose can be judged against the descriptors. The genre and register
+// are selectable by name (LOOM_PROBE_GENRE / LOOM_PROBE_REGISTER) so a
+// matrix of style pairs can be swept; an empty value drops that slot.
 var project = Project(title: "DraftProbe")
-let noirID = StyleLibrary.stableStyleID(name: "Noir", type: .genre)
-let minimalistID = StyleLibrary.stableStyleID(name: "Minimalist", type: .register)
+let genreName = env["LOOM_PROBE_GENRE"] ?? "Noir"
+let registerName = env["LOOM_PROBE_REGISTER"] ?? "Minimalist"
+var assignedStyleIds: [UUID] = []
+if !genreName.isEmpty {
+    assignedStyleIds.append(StyleLibrary.stableStyleID(name: genreName, type: .genre))
+}
+if !registerName.isEmpty {
+    assignedStyleIds.append(StyleLibrary.stableStyleID(name: registerName, type: .register))
+}
 project.plannedConfig = PlannedProjectConfig(
     premise: "A courier smuggles a stolen memory across a divided city.",
     characterSketch: "Vesna, a courier who never reads what she carries.",
-    assignedStyleIds: [noirID, minimalistID]
+    assignedStyleIds: assignedStyleIds
 )
 let session = ProjectSession(project: project)
 let appliedStyles = StyleLibrary.resolve(
