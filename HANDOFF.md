@@ -2083,3 +2083,50 @@ critical for this stage, detail quality is.
   soft-resolution tendency.
 
 **1693/1693 tests green.** (1665 → 1693: +28 across Phase 2.)
+
+### 15.31 Session ledger — 2026-05-17 (Planned Project mode — Phase 3 + Phase 4 start)
+
+Tests 1693 → 1708. 5 commits.
+
+#### Phase 3 — style wiring (3 work items, done)
+
+A project's assigned genre/register styles now thread into every
+writer prompt:
+- `StyleLibrary.resolve` — `assignedStyleIds` → `[Style]`
+  (order-preserving, drops deleted ids). `StylePrompt.render` —
+  styles → a prompt block, genre and register in separate labelled
+  sections with the register section last and framed as hard
+  constraints (keeps the two signals on distinct channels).
+- `PromptContext.assignedStyles` → `PromptBuilder` renders it into the
+  long-reserved above-cache `styleSheet` slot (cache-stable).
+- `GenerationCoordinator` resolves a project's
+  `plannedConfig.assignedStyleIds` against the app style library
+  (`styleLibraryProvider`, an injectable closure) into every prompt.
+
+Independently valuable — assignable styles improve generation for any
+project, planned or not. The `GenerationCoordinator` glue is
+component-tested (resolve / render / the PromptBuilder layer each have
+unit tests) but not end-to-end: there is no prompt-capturing harness
+for that coordinator, and nothing can *carry* assigned styles until
+Phase 4 creates planned projects. Flagged honestly in the commit
+rather than faked — the user confirmed this is the right call.
+
+#### Phase 4 — guided-creation UI (item 1 of 5, done)
+
+- **`ProjectStorage.createPlannedProject`** — a `GeneratedOutline` +
+  `PlannedProjectConfig` → a `.loom` bundle on disk: the project
+  carries the outline's `Manuscript`, the config, and a Bible
+  character seeded from the sketch (`PlannedProjectConfig.seedCharacter`).
+  Full disk round-trip tested.
+
+#### Open follow-ups
+
+- Phase 4 items 2–5 — bridge intents (`generateOutline` /
+  `createPlannedProject`), the React wizard (`web/bible-workspace/`),
+  the React style-library editor, the AppKit "New Planned Project"
+  entry. Webview-heavy per §2; browser-verify via the dev-mock harness.
+- Phase 5 — outline-driven writing.
+- The `GenerationCoordinator` style glue gets its real end-to-end
+  exercise once Phase 4 can create a planned project with styles.
+
+**1708/1708 tests green.** (1693 → 1708: +9 Phase 3, +6 Phase 4 item 1.)
