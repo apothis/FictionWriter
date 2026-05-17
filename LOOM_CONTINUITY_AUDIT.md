@@ -100,10 +100,18 @@ A `Claim`:
 | `evidenceQuote` | verbatim span — every claim must be grounded |
 | `certainty` | `asserted` / `suspected` / `mistaken` (reuse `Certainty`) |
 
-Reuses the `OllamaLedgerExtractor` / `LedgerExtraction` JSON-Schema + GBNF +
-tolerant-parser pattern ([`OllamaLedgerExtractor.swift:57`](Sources/LoomCore/Generation/OllamaLedgerExtractor.swift),
-[`LedgerExtraction.swift:31`](Sources/LoomCore/Generation/LedgerExtraction.swift)),
-including the scene-word-aware `num_predict` budget and retry-on-empty.
+**Constrained-decoding posture — apply the accumulated gemma lesson.**
+Extraction does **not** use Ollama's `format` schema. The project learned
+(HANDOFF §15.19, commits `b6c7a97` / `d4df07e`) that Ollama's
+schema-constrained sampling flakes ~50% on gemma4_2b — a degenerate
+non-terminating buffer that hits `num_predict` and returns empty content.
+The newer discovery extractors abandoned the schema; continuity extraction
+follows that path: **unconstrained generation, field names pinned in the
+prompt, JSONL output** (a small model emits one flat object per line far
+more reliably than a nested array), a **tolerant parser**, and a **re-roll**
+on any degenerate result (empty / unparseable / zero claims). It keeps the
+scene-word-aware `num_predict` budget (`OllamaLedgerExtractor.budgetForSceneWords`).
+The claim extractor is `OllamaContinuityExtractor`.
 
 **Reuse vs. fresh extraction.** Loom already extracts character facts into
 `Character.knownFactsBySceneId` ([`Character.swift:23`](Sources/LoomCore/Models/Character.swift)).

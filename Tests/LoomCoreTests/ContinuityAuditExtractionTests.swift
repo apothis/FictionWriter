@@ -116,12 +116,32 @@ func continuityAuditExtractionTests() -> TestSuite {
         try expectEqual(claims[0].type, .event)
     }
 
-    s.test("parseClaims throws when there is no JSON array at all") {
+    s.test("parseClaims decodes JSONL — one object per line, no array") {
+        let raw = """
+        {"type":"attribute","subject":"Mara","attribute_key":"eye colour","value":"green","source":"narration","evidence_quote":"green eyes"}
+        {"type":"event","subject":"Cole","attribute_key":"","value":"Cole left","source":"narration","evidence_quote":"he left"}
+        """
+        let claims = try ContinuityAudit.parseClaims(raw, sourceSceneId: "s4")
+        try expectEqual(claims.count, 2)
+        try expectEqual(claims[0].type, .attribute)
+        try expectEqual(claims[1].type, .event)
+        try expectTrue(claims.allSatisfy { $0.sourceSceneId == "s4" })
+    }
+
+    s.test("parseClaims throws when there is no JSON object at all") {
         do {
             _ = try ContinuityAudit.parseClaims("no json here", sourceSceneId: "s1")
             try expectTrue(false, "expected a throw")
         } catch {
             // expected
+        }
+    }
+
+    s.test("the extraction prompt pins the JSONL format and the six field names") {
+        let prompt = ContinuityAudit.buildExtractionPrompt(scenePose: "A scene.")
+        try expectTrue(prompt.lowercased().contains("one json object per line"))
+        for field in ["type", "subject", "attribute_key", "value", "source", "evidence_quote"] {
+            try expectTrue(prompt.contains("\"\(field)\""), "prompt must pin the \(field) key")
         }
     }
 

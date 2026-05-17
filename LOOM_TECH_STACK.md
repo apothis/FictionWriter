@@ -41,10 +41,10 @@
 **Check here before building any new "extract structured data from a scene" pass.**
 | Problem | Solution | Files |
 |---|---|---|
-| Constrain JSON output (KoboldCpp) | GBNF grammar — `LedgerExtraction.gbnfGrammar` | `Generation/LedgerExtraction.swift` |
-| Constrain JSON output (Ollama) | JSON Schema — `LedgerExtraction.jsonSchema` / `ContinuityAudit.extractionJSONSchema` | `Generation/` |
-| Parse messy model JSON | Tolerant parser pattern — preamble/postamble tolerant, per-object recovery on an unclosed array (`parseExtractedFacts`, `parseClaims`) | `LedgerExtraction.swift`, `ContinuityAudit.swift` |
-| Schema call returns empty content | **Retry-on-empty** with doubled `num_predict` — `OllamaLedgerExtractor.callWithRetry` | `Generation/OllamaLedgerExtractor.swift` |
+| Constrain JSON output (KoboldCpp) | GBNF grammar — `LedgerExtraction.gbnfGrammar` (reliable structural constraint) | `Generation/LedgerExtraction.swift` |
+| Structured output from a small gemma on Ollama | **Do NOT use the `format` schema** — it flakes ~50% on gemma4_2b (degenerate buffer → empty content; HANDOFF §15.19). Run **unconstrained**, pin field names in the prompt, prefer JSONL / delimited lines, tolerant-parse, re-roll on degenerate output. Used by `OllamaContinuityExtractor`, entity/relationship discovery extractors | `Generation/OllamaContinuityExtractor.swift`, `OllamaRelationshipDiscoveryExtractor.swift` |
+| Parse messy model JSON | Tolerant parser pattern — preamble/postamble tolerant, JSONL/array-agnostic, per-object recovery (`parseExtractedFacts`, `ContinuityAudit.parseClaims`) | `LedgerExtraction.swift`, `ContinuityAudit.swift` |
+| Schema/length call returns empty content | **Retry-on-empty** with doubled `num_predict` — `OllamaLedgerExtractor.callWithRetry`, `OllamaContinuityExtractor` re-rolls on any degenerate result | `Generation/OllamaLedgerExtractor.swift`, `OllamaContinuityExtractor.swift` |
 | Size the output token budget per scene | `OllamaLedgerExtractor.budgetForSceneWords` (8× words, 2048–8192) | same |
 | Transient JSON parse-fail on NSFW prose | retry on `noJSONObjectFound` / `noJSONArrayFound` (Stage A2 / beat extractor) | `OllamaEntityDiscoveryExtractor.swift`, `OllamaBeatExtractor.swift` |
 | Post-extraction noise (paraphrase dupes, hallucinated quotes, prompt leakage) | **`LedgerFilters`** (cosine dedup, evidence-quote validation, prompt-leakage) + `LedgerFilterPipeline` (async, fail-soft) | `Generation/LedgerFilters.swift`, `LedgerFilterPipeline.swift` |

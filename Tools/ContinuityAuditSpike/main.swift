@@ -88,6 +88,22 @@ guard let fixtureData = FileManager.default.contents(atPath: fixturePath),
 let ollama = OllamaClient(baseURL: URL(string: ollamaURL)!, model: extractModel)
 let ollamaAdj = OllamaClient(baseURL: URL(string: ollamaURL)!, model: adjModel)
 
+// Extraction goes through the production OllamaContinuityExtractor —
+// unconstrained generation + re-roll, the corrected path (the Ollama
+// format-schema flakes ~50% on gemma4_2b).
+let continuityExtractor = OllamaContinuityExtractor(provider: ollama)
+
+func extractClaims(prose: String, sceneId: String) -> [ContinuityAudit.Claim] {
+    let sem = DispatchSemaphore(value: 0)
+    var out: [ContinuityAudit.Claim] = []
+    continuityExtractor.extract(scenePose: prose, sceneId: sceneId) { result in
+        out = (try? result.get()) ?? []
+        sem.signal()
+    }
+    sem.wait()
+    return out
+}
+
 func callOllama(_ client: OllamaClient, prompt: String, schema: [String: Any]) -> String? {
     let sem = DispatchSemaphore(value: 0)
     var out: String? = nil
@@ -166,9 +182,7 @@ if phase == "both" || phase == "extract" {
     for scene in fixture.scenes {
         let gold = fixture.gold_claims.filter { $0.scene == scene.id }
         log("  scene \(scene.id) (\(scene.title)) …")
-        let prompt = ContinuityAudit.buildExtractionPrompt(scenePose: scene.prose)
-        let raw = callOllama(ollama, prompt: prompt, schema: ContinuityAudit.extractionJSONSchema()) ?? ""
-        let claims = (try? ContinuityAudit.parseClaims(raw, sourceSceneId: scene.id)) ?? []
+        let claims = extractClaims(prose: scene.prose, sceneId: scene.id)
         var matched = 0
         for g in gold {
             let hit = claims.contains { c in

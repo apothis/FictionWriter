@@ -74,32 +74,40 @@ public enum ContinuityAudit {
     }
 
     public enum ParseError: Error {
-        case noJSONArrayFound
         case noJSONObjectFound
         case malformedJSON
     }
 
     // MARK: - Extraction prompt
 
-    /// Per-scene extraction instruction. Positive framing only — the
-    /// `feedback_prompt_blacklist_evasion` lesson: enumerate what to
-    /// produce, not what to avoid.
+    /// Per-scene extraction instruction.
+    ///
+    /// Output is **JSONL** — one flat JSON object per line, no array.
+    /// The instruction pins the six field names and the allowed enum
+    /// values *in the prompt* rather than relying on a `format` schema:
+    /// Ollama's schema-constrained sampling flakes ~50% on gemma4_2b
+    /// (degenerate non-terminating buffer → empty content; HANDOFF
+    /// §15.19, commits `b6c7a97` / `d4df07e`). The extractor therefore
+    /// runs unconstrained and `parseClaims` is tolerant.
+    ///
+    /// Positive framing only — the `feedback_prompt_blacklist_evasion`
+    /// lesson: enumerate what to produce, not what to avoid.
     public static let extractionInstruction = """
     You are auditing a novel for continuity. From the single scene below, extract every concrete, checkable claim — each as one atomic statement that stands on its own without the surrounding sentence.
 
-    Each claim has a type:
-    - attribute: a fixed trait of a person, place, or object (eye colour, a scar, a job, who owns what).
-    - event: something that happened or that a character did or learned.
-    - knowledge_state: a fact a character knows, believes, or refers to in this scene.
-    - temporal: a time marker — a date, season, time of day, age, or how long since something.
-    - spatial: a place fact — where something is, layout, distance, direction.
+    Output one JSON object per line (JSONL) — no surrounding array, no commentary, no blank lines. Each object has exactly these six keys:
 
-    Each claim has a source:
-    - narration: stated by the narrator as fact.
-    - dialogue: spoken aloud by a character.
-    - thought: a character's private thought.
-
-    Set subject to the person, place, or object the claim is about. For attribute claims set attribute_key to the dimension (for example "eye colour"); leave it empty otherwise. Set value to the claim itself. Set evidence_quote to a short verbatim span from the scene.
+    - "type": one of attribute, event, knowledge_state, temporal, spatial.
+        attribute = a fixed trait of a person, place, or object (eye colour, a scar, a job, who owns what).
+        event = something that happened or that a character did or learned.
+        knowledge_state = a fact a character knows, believes, or refers to in this scene.
+        temporal = a time marker (a date, season, time of day, age, or how long since something).
+        spatial = a place fact (where something is, layout, distance, direction).
+    - "subject": the person, place, or object the claim is about.
+    - "attribute_key": for an attribute claim, the dimension (for example "eye colour"); an empty string otherwise.
+    - "value": the claim itself, as one self-contained statement.
+    - "source": one of narration (stated by the narrator as fact), dialogue (spoken aloud by a character), thought (a character's private thought).
+    - "evidence_quote": a short verbatim span copied from the scene.
     """
 
     public static func buildExtractionPrompt(scenePose: String) -> String {
@@ -109,7 +117,7 @@ public enum ContinuityAudit {
         Scene:
         \(scenePose)
 
-        Claims (JSON array):
+        Claims (one JSON object per line):
         """
     }
 
@@ -145,57 +153,38 @@ public enum ContinuityAudit {
         let evidence_quote: String?
     }
 
-    /// Parse the model's claim array. Tolerates chatty preamble /
-    /// postamble and an unclosed array (per-object recovery), mirroring
-    /// `LedgerExtraction.parseExtractedFacts`. Each parsed claim gets a
-    /// fresh `id` and the supplied `sourceSceneId`; entries with an
-    /// unknown `type` or `source` are dropped, valid siblings kept.
+    /// Parse the model's claims. Format-agnostic: works on a JSON
+    /// array, on JSONL (one object per line — the production format),
+    /// and through chatty preamble / postamble, by walking every
+    /// top-level `{...}` block. Each parsed claim gets a fresh `id` and
+    /// the supplied `sourceSceneId`; entries with an unknown `type` or
+    /// `source` are dropped, valid siblings kept. Throws only when the
+    /// response contains no JSON object at all.
     public static func parseClaims(_ raw: String, sourceSceneId: String) throws -> [Claim] {
-        guard let first = raw.firstIndex(of: "[") else {
-            throw ParseError.noJSONArrayFound
+        guard let first = raw.firstIndex(of: "{") else {
+            throw ParseError.noJSONObjectFound
         }
-
-        func toClaims(_ items: [RawClaim]) -> [Claim] {
-            items.compactMap { r -> Claim? in
-                guard
-                    let t = r.type, let type = ClaimType(rawValue: t),
-                    let subject = r.subject,
-                    let value = r.value,
-                    let src = r.source, let source = ClaimSource(rawValue: src),
-                    let quote = r.evidence_quote
-                else { return nil }
-                return Claim(
-                    type: type,
-                    subject: subject,
-                    attributeKey: r.attribute_key ?? "",
-                    value: value,
-                    sourceSceneId: sourceSceneId,
-                    source: source,
-                    evidenceQuote: quote
-                )
-            }
-        }
-
-        // Strict path: a closed, well-formed array.
-        if let last = raw.lastIndex(of: "]"), first <= last {
-            let trimmed = String(raw[first...last])
-            if let data = trimmed.data(using: .utf8),
-               let items = try? JSONDecoder().decode([RawClaim].self, from: data) {
-                return toClaims(items)
-            }
-        }
-
-        // Fallback: walk top-level `{...}` blocks (brace depth, string-aware).
-        let objects = topLevelObjects(in: raw, from: first)
         var collected: [Claim] = []
-        for objText in objects {
+        for objText in topLevelObjects(in: raw, from: first) {
             guard let data = objText.data(using: .utf8),
-                  let item = try? JSONDecoder().decode(RawClaim.self, from: data)
+                  let r = try? JSONDecoder().decode(RawClaim.self, from: data)
             else { continue }
-            collected.append(contentsOf: toClaims([item]))
-        }
-        if collected.isEmpty && objects.isEmpty {
-            throw ParseError.malformedJSON
+            guard
+                let t = r.type, let type = ClaimType(rawValue: t),
+                let subject = r.subject,
+                let value = r.value,
+                let src = r.source, let source = ClaimSource(rawValue: src),
+                let quote = r.evidence_quote
+            else { continue }
+            collected.append(Claim(
+                type: type,
+                subject: subject,
+                attributeKey: r.attribute_key ?? "",
+                value: value,
+                sourceSceneId: sourceSceneId,
+                source: source,
+                evidenceQuote: quote
+            ))
         }
         return collected
     }

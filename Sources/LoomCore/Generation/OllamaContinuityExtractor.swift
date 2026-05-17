@@ -3,16 +3,21 @@ import Foundation
 /// Continuity Audit (L10) — Phase B, the production claim extractor.
 ///
 /// Wraps an `OllamaCallProvider` and turns one scene's prose into
-/// typed `ContinuityAudit.Claim`s. Deliberately mirrors
-/// `OllamaLedgerExtractor` rather than re-deriving the hard-won
-/// guards:
+/// typed `ContinuityAudit.Claim`s.
 ///
-/// - **Scene-aware token budget** — reuses
-///   `OllamaLedgerExtractor.budgetForSceneWords`.
-/// - **Retry-on-empty** — a schema-constrained call that returns empty
-///   content (`done_reason: length`) is retried once with a doubled
-///   `num_predict`. The Phase A spike runner skipped this, which is
-///   why one scene returned zero claims.
+/// **Runs unconstrained — no `format` schema.** Ollama's
+/// schema-constrained sampling flakes ~50% on gemma4_2b (a degenerate
+/// non-terminating buffer → empty content; HANDOFF §15.19, commits
+/// `b6c7a97` / `d4df07e`). The newer discovery extractors abandoned
+/// the schema for this reason; continuity extraction follows suit —
+/// the field names are pinned in the prompt and `parseClaims` is
+/// tolerant (JSONL, array, or chatty preamble all parse).
+///
+/// Guards, mirroring `OllamaLedgerExtractor` / `OllamaBeatExtractor`:
+///
+/// - **Scene-aware token budget** — `budgetForSceneWords`.
+/// - **Retry on a degenerate result** — empty content, an unparseable
+///   response, or zero claims is re-rolled once with a doubled budget.
 public final class OllamaContinuityExtractor {
     private let provider: OllamaCallProvider
 
@@ -32,11 +37,9 @@ public final class OllamaContinuityExtractor {
         completion: @escaping (Result<[ContinuityAudit.Claim], Error>) -> Void
     ) {
         let prompt = ContinuityAudit.buildExtractionPrompt(scenePose: scenePose)
-        let schema = ContinuityAudit.extractionJSONSchema()
         let budget = OllamaLedgerExtractor.budgetForSceneWords(WordCount.count(scenePose))
         callWithRetry(
             prompt: prompt,
-            schema: schema,
             options: OllamaChatOptions(numPredict: budget),
             sceneId: sceneId,
             attemptsRemaining: 1,
@@ -46,7 +49,6 @@ public final class OllamaContinuityExtractor {
 
     private func callWithRetry(
         prompt: String,
-        schema: [String: Any],
         options: OllamaChatOptions,
         sceneId: String,
         attemptsRemaining: Int,
@@ -54,14 +56,23 @@ public final class OllamaContinuityExtractor {
     ) {
         // Strong self-capture — the URLSession callback must keep the
         // extractor alive (the OllamaLedgerExtractor lifetime lesson).
-        provider.call(prompt: prompt, schema: schema, options: options) { result in
+        // Empty `schema` → unconstrained generation (see the type doc).
+        provider.call(prompt: prompt, schema: [:], options: options) { result in
             switch result {
+            case .failure(let e):
+                DebugLog.shared.write("[continuity] extraction transport failed: \(e)")
+                completion(.failure(e))
             case .success(let raw):
-                if raw.isEmpty, attemptsRemaining > 0 {
+                let claims = (try? ContinuityAudit.parseClaims(raw, sourceSceneId: sceneId)) ?? []
+                // Re-roll once on any degenerate result — empty
+                // content, unparseable text, or zero claims (a real
+                // scene yields some). The doubled budget also covers
+                // the length-cap case.
+                if claims.isEmpty, attemptsRemaining > 0 {
                     let bumped = min(8192, options.numPredict * 2)
-                    DebugLog.shared.write("[continuity] empty extraction — retry num_predict=\(bumped)")
+                    DebugLog.shared.write("[continuity] degenerate extraction — re-roll num_predict=\(bumped)")
                     self.callWithRetry(
-                        prompt: prompt, schema: schema,
+                        prompt: prompt,
                         options: OllamaChatOptions(
                             temperature: options.temperature,
                             numPredict: bumped,
@@ -71,15 +82,7 @@ public final class OllamaContinuityExtractor {
                         completion: completion)
                     return
                 }
-                do {
-                    completion(.success(try ContinuityAudit.parseClaims(raw, sourceSceneId: sceneId)))
-                } catch {
-                    DebugLog.shared.write("[continuity] claim parse failed: \(error)")
-                    completion(.failure(error))
-                }
-            case .failure(let e):
-                DebugLog.shared.write("[continuity] extraction transport failed: \(e)")
-                completion(.failure(e))
+                completion(.success(claims))
             }
         }
     }
