@@ -30,6 +30,10 @@ public struct Project: Codable, Equatable {
     /// Phase 5.b-c; the schema is here so the migration is one-time
     /// (HANDOFF §9.1 #2).
     public var fanficMetadata: FanficMetadata?
+    /// Planned Project mode — the guided-planning record. Nil for an
+    /// ordinary blank project; non-nil when the project was created
+    /// through the guided outline flow (LOOM_PLANNED_PROJECT.md §5).
+    public var plannedConfig: PlannedProjectConfig?
 
     public init(
         id: UUID = UUID(),
@@ -43,7 +47,8 @@ public struct Project: Codable, Equatable {
         bible: Bible = .empty,
         notes: String = "",
         selectedInspectorTab: InspectorTab? = nil,
-        fanficMetadata: FanficMetadata? = nil
+        fanficMetadata: FanficMetadata? = nil,
+        plannedConfig: PlannedProjectConfig? = nil
     ) {
         self.id = id
         self.title = title
@@ -59,6 +64,7 @@ public struct Project: Codable, Equatable {
         self.notes = notes
         self.selectedInspectorTab = selectedInspectorTab
         self.fanficMetadata = fanficMetadata
+        self.plannedConfig = plannedConfig
     }
 
     public static func empty(title: String, author: String? = nil) -> Project {
@@ -83,6 +89,7 @@ public struct Project: Codable, Equatable {
         self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         self.selectedInspectorTab = try c.decodeIfPresent(InspectorTab.self, forKey: .selectedInspectorTab)
         self.fanficMetadata = try c.decodeIfPresent(FanficMetadata.self, forKey: .fanficMetadata)
+        self.plannedConfig = try c.decodeIfPresent(PlannedProjectConfig.self, forKey: .plannedConfig)
     }
 }
 
