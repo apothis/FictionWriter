@@ -32,17 +32,17 @@ public final class OllamaRelationshipDiscoveryExtractor: RelationshipDiscoveryEx
 
     /// `votingRounds` — self-consistency: each pair is classified this
     /// many times independently and only an edge a strict majority of
-    /// rounds agree on survives. 3 is the production default; bounded
-    /// per-pair classification reduces but doesn't eliminate gemma's
-    /// edge invention, and what remains is unstable run-to-run, so a
-    /// majority vote drops most of it. Discovery is background work,
-    /// so the 3× call cost is tolerable.
-    public init(provider: OllamaCallProvider, votingRounds: Int = 3) {
+    /// rounds agree on survives. Default 1 (off): the §15.27 live probe
+    /// showed voting drops gemma's *unstable* edge invention but not
+    /// its *stable* mis-classifications, so at 3× the latency it buys
+    /// recall, not precision. The machinery is kept for pairing with a
+    /// precision lever; raise this to re-enable it.
+    public init(provider: OllamaCallProvider, votingRounds: Int = 1) {
         self.provider = provider
         self.votingRounds = max(1, votingRounds)
     }
 
-    public convenience init(client: OllamaClient, votingRounds: Int = 3) {
+    public convenience init(client: OllamaClient, votingRounds: Int = 1) {
         self.init(provider: client, votingRounds: votingRounds)
     }
 

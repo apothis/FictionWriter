@@ -214,5 +214,71 @@ func phase10RelationshipDiscoveryPromptTests() -> TestSuite {
         try expectEqual(RelationshipDiscovery.voteOnPair([[], [], []]).count, 0)
     }
 
+    // MARK: - relationship gate (binary evidence pre-filter)
+
+    let gateScene = "Judy was Allie's sister. They walked to the shop. Megan watched them go."
+
+    s.test("gate prompt names both characters, the scene, and the no escape") {
+        let prompt = RelationshipDiscovery.buildRelationshipGatePrompt(
+            characterA: "Judy", characterB: "Megan", scenePose: gateScene
+        )
+        try expectTrue(prompt.contains("Judy"))
+        try expectTrue(prompt.contains("Megan"))
+        try expectTrue(prompt.contains(gateScene))
+        try expectTrue(prompt.contains("RELATED"))
+        try expectTrue(prompt.lowercased().contains("no"))
+    }
+
+    s.test("gate parser returns a verbatim evidence quote on a grounded yes") {
+        let evidence = RelationshipDiscovery.parseGateResponse(
+            "RELATED: yes\nEVIDENCE: Judy was Allie's sister.",
+            scenePose: gateScene
+        )
+        try expectEqual(evidence, "Judy was Allie's sister.")
+    }
+
+    s.test("gate parser returns nil on a 'no'") {
+        try expectNil(RelationshipDiscovery.parseGateResponse(
+            "RELATED: no", scenePose: gateScene
+        ))
+    }
+
+    s.test("gate parser rejects a 'yes' whose evidence is not in the scene") {
+        // Ungrounded "yes" — the cited sentence was fabricated.
+        try expectNil(RelationshipDiscovery.parseGateResponse(
+            "RELATED: yes\nEVIDENCE: Judy married Allie last spring.",
+            scenePose: gateScene
+        ))
+    }
+
+    s.test("gate parser rejects a 'yes' with no evidence line at all") {
+        try expectNil(RelationshipDiscovery.parseGateResponse(
+            "RELATED: yes", scenePose: gateScene
+        ))
+    }
+
+    s.test("gate parser tolerates a reasoning preamble before RELATED") {
+        let evidence = RelationshipDiscovery.parseGateResponse(
+            "Let me check the scene.\n\nRELATED: yes\nEVIDENCE: Judy was Allie's sister.",
+            scenePose: gateScene
+        )
+        try expectEqual(evidence, "Judy was Allie's sister.")
+    }
+
+    s.test("gate parser matches evidence past whitespace and case differences") {
+        let evidence = RelationshipDiscovery.parseGateResponse(
+            "RELATED: yes\nEVIDENCE:   judy WAS   allie's SISTER.  ",
+            scenePose: gateScene
+        )
+        try expectNotNil(evidence)
+    }
+
+    s.test("gate parser rejects a too-short evidence fragment") {
+        // "Judy." is in the scene but too short to ground a claim.
+        try expectNil(RelationshipDiscovery.parseGateResponse(
+            "RELATED: yes\nEVIDENCE: Judy.", scenePose: gateScene
+        ))
+    }
+
     return s
 }

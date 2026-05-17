@@ -191,6 +191,80 @@ public enum RelationshipDiscovery {
         """
     }
 
+    // MARK: - Binary evidence gate (precision pre-filter)
+
+    /// Stage 1.5 prompt: a conservative binary "do these two characters
+    /// have a relationship?" gate, asked *before* the typed
+    /// classification. A `yes` must cite a sentence copied verbatim
+    /// from the scene; `parseGateResponse` then verifies that the
+    /// quote is genuinely in the scene. The framing — "appearing in
+    /// the same scene is NOT a relationship" — is a positive
+    /// structural definition, not a negative blacklist.
+    public static func buildRelationshipGatePrompt(
+        characterA: String,
+        characterB: String,
+        scenePose: String
+    ) -> String {
+        return """
+        You are an indexing tool that checks a manuscript for character relationships. You do not summarise or judge the text — you answer one question.
+
+        Question: does the scene below show that these two characters have a relationship with each other — family, romantic, or social?
+        \(characterA)
+        \(characterB)
+
+        A relationship means the text states or clearly implies how the two are connected — for example "her mother", "his wife", "the two friends had met at university". Two characters simply being present in the same scene, or interacting in passing, is NOT a relationship.
+
+        Reply in exactly this form and nothing else:
+        RELATED: yes
+        EVIDENCE: <one sentence copied word for word from the scene that shows the relationship>
+        Or, if the scene shows no relationship between \(characterA) and \(characterB), reply with exactly:
+        RELATED: no
+
+        Scene:
+        \(scenePose)
+        """
+    }
+
+    /// Parse the Stage 1.5 gate answer. Returns the verified evidence
+    /// quote when the pair passes — a `yes` whose `EVIDENCE` sentence
+    /// genuinely occurs in the scene (whitespace- and case-insensitive,
+    /// and long enough to ground a claim). A `no`, a missing evidence
+    /// line, or an ungrounded/fabricated quote all return nil: the
+    /// pair is gated out and never reaches typed classification.
+    public static func parseGateResponse(
+        _ raw: String,
+        scenePose: String
+    ) -> String? {
+        var related = false
+        var evidence: String?
+        for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: true) {
+            let line = rawLine.drop(while: { lineLeadingNoiseCharacters.contains($0) })
+            let lower = line.lowercased()
+            if lower.hasPrefix("related:") {
+                related = line
+                    .dropFirst("related:".count)
+                    .lowercased()
+                    .contains("yes")
+            } else if lower.hasPrefix("evidence:") {
+                evidence = String(line.dropFirst("evidence:".count))
+                    .trimmingCharacters(in: .whitespaces)
+            }
+        }
+        guard related, let quote = evidence else { return nil }
+
+        func normalised(_ s: String) -> String {
+            s.lowercased()
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+        let quoteNorm = normalised(quote)
+        guard quoteNorm.count >= 12,
+              normalised(scenePose).contains(quoteNorm)
+        else { return nil }
+        return quote.trimmingCharacters(in: .whitespaces)
+    }
+
     /// Self-consistency vote over K independent classifications of one
     /// character pair. Each element is one run's parsed (deduped)
     /// result; an empty array is that run's "none" vote.

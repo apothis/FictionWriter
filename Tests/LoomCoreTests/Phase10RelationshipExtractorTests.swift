@@ -214,14 +214,14 @@ func phase10RelationshipExtractorTests() -> TestSuite {
 
     // MARK: - self-consistency voting
 
-    s.test("default votingRounds fires three calls per pair") {
+    s.test("default votingRounds is 1 — one call per pair (voting off)") {
         let stub = StubProvider()
         let extractor = OllamaRelationshipDiscoveryExtractor(provider: stub)
         extractor.extract(
             scenePose: "Chantal and Muriel.", sceneId: sceneId,
             characterNames: ["Chantal", "Muriel"]
         ) { _ in }
-        try expectEqual(stub.queued.count, 3)
+        try expectEqual(stub.queued.count, 1)
     }
 
     s.test("an edge a majority of rounds agree on survives the vote") {
