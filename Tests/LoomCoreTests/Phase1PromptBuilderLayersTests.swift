@@ -308,6 +308,31 @@ func phase1PromptBuilderLayersTests() -> TestSuite {
         try expectTrue(result.stopSequences.contains("<|im_end|>"))
     }
 
+    s.test("assigned styles render into the above-cache style layer") {
+        let project = Project(title: "T")
+        let scene = Scene.empty(id: UUID(), title: "Scene 1")
+        var context = makeContinueContext(project: project, scene: scene, prose: "")
+        context.assignedStyles = [
+            Style(
+                name: "Noir", type: .genre,
+                descriptor: "Shadowed, fatalistic prose.",
+                constraints: ["Keep sentences terse."]
+            ),
+        ]
+        let result = PromptBuilder.build(context)
+        try expectTrue(result.systemBlock.contains("Noir"))
+        try expectTrue(result.systemBlock.contains("Shadowed, fatalistic prose."))
+        try expectNotNil(result.chiclets.first { $0.sourceKind == .styleSheet })
+    }
+
+    s.test("no assigned styles → no style layer") {
+        let project = Project(title: "T")
+        let scene = Scene.empty(id: UUID(), title: "Scene 1")
+        let context = makeContinueContext(project: project, scene: scene, prose: "")
+        let result = PromptBuilder.build(context)
+        try expectNil(result.chiclets.first { $0.sourceKind == .styleSheet })
+    }
+
     return s
 }
 

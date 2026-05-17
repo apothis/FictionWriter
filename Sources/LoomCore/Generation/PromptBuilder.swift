@@ -30,6 +30,12 @@ public struct PromptContext {
     /// prime the model's voice. Empty (default) → no layer added.
     public var styleExemplars: [StyleExemplar]
 
+    /// Planned Project mode (Phase 3) — the genre/register styles
+    /// assigned to this project, resolved from the app style library.
+    /// PromptBuilder renders them into the above-cache style layer.
+    /// Empty (default) → no layer added.
+    public var assignedStyles: [Style]
+
     public init(
         mode: GenerationMode,
         project: Project,
@@ -41,7 +47,8 @@ public struct PromptContext {
         contextBudgetTokens: Int,
         replyBudgetTokens: Int,
         perCallInstruction: String? = nil,
-        styleExemplars: [StyleExemplar] = []
+        styleExemplars: [StyleExemplar] = [],
+        assignedStyles: [Style] = []
     ) {
         self.mode = mode
         self.project = project
@@ -54,6 +61,7 @@ public struct PromptContext {
         self.replyBudgetTokens = replyBudgetTokens
         self.perCallInstruction = perCallInstruction
         self.styleExemplars = styleExemplars
+        self.assignedStyles = assignedStyles
     }
 }
 
@@ -259,7 +267,21 @@ public enum PromptBuilder {
             ))
         }
 
-        // Style guide — Phase 5; not wired yet.
+        // Style guide — Planned Project mode (Phase 3). The project's
+        // assigned genre/register styles; above-cache + cache-stable
+        // (the same for every call in the project).
+        let styleText = StylePrompt.render(context.assignedStyles)
+        if !styleText.isEmpty {
+            layers.append(Layer(
+                kind: .styleSheet,
+                label: "Style (\(context.assignedStyles.count))",
+                content: styleText,
+                tokens: TokenEstimator.estimate(styleText),
+                aboveCache: true,
+                sourceId: nil,
+                evictionPriority: .max
+            ))
+        }
 
         // Phase 2 #7 — split Bible into Constant (above-cache, always-on)
         // and Keyed (below-cache, activates only when the entity's
