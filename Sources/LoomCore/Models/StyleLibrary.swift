@@ -34,6 +34,16 @@ public enum StyleLibrary {
 
     public static let builtInStarters: [Style] = genres + registers
 
+    /// Resolve a project's `assignedStyleIds` against a style library
+    /// — id order is preserved, ids not in the library (a deleted
+    /// style) are dropped.
+    public static func resolve(_ ids: [UUID], in library: [Style]) -> [Style] {
+        let byId = Dictionary(
+            library.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }
+        )
+        return ids.compactMap { byId[$0] }
+    }
+
     // MARK: - Genre styles
 
     private static let genres: [Style] = [
