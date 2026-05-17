@@ -1945,8 +1945,11 @@ better fit as the writer model for this app's purpose (explicit fiction).**
   (it found a genuine emotional beat: "I don't want you to leave / I know.
   Me too."). Worth not losing if a register switch is ever wanted.
 
-Recommendation recorded, not yet actioned — switching the default writer
-model from gemma 4 31B to Goetia is the user's call.
+**Decision (2026-05-17): Goetia is now the default writer model**; gemma 4
+31B is the noted alternative. There is no Loom-side writer-model setting —
+the kobold "Default" server serves whatever GGUF is loaded in KoboldCpp, and
+`SamplerParams.familyOverride` already maps "goetia" to the Mistral-Small
+sampler family, so the switch needed no code change.
 
 #### Tooling added (committed)
 
@@ -1957,7 +1960,6 @@ model from gemma 4 31B to Goetia is the user's call.
 
 #### Open follow-ups carried forward
 
-- Decide whether to switch the default writer model to Goetia.
 - In-app smoke of relationship discovery + the mapper (§15.26 #2) — entity
   discovery is now the only one of the three exercised live.
 - Stage D latency (~52s, ~100s on the dense test2 scene); Phase 9/10
