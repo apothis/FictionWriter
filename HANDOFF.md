@@ -2401,3 +2401,55 @@ run.
 
 **1755/1755 tests green.** (1749 → 1755: +4 scene-draft-prompt tail,
 +2 style-prompt precedence.)
+
+### 15.36 Session ledger — 2026-05-17 (Continuity Audit — design + Phase A spike)
+
+New big-ticket feature (L10). Designed the whole-manuscript continuity
+audit and ran its de-risking spike. Tests 1755 → 1777. 8 commits.
+
+#### Design
+
+Two research streams (codebase-foundation map + prior-art web pass)
+fed `LOOM_CONTINUITY_AUDIT.md` — a verified market gap (no fiction
+tool ships cross-scene contradiction auditing), the pipeline
+architecture (per-scene typed-claim extraction → deterministic
+fact-base diffing → retrieval → pairwise NLI adjudication), the
+false-positive defenses, and a phased plan. L10 added to `LOOM_PLAN.md`.
+
+#### Phase A spike — GO
+
+Built the pure-data `ContinuityAudit` module (Claim/Verdict types,
+extraction + adjudication prompts/schemas/tolerant parsers, all TDD),
+a 6-scene fixture with planted errors across all four classes plus
+precision controls, and the `ContinuityAuditSpike` runner.
+
+Result — pairwise adjudication, the make-or-break gate:
+
+| adjudicator | precision | recall | F1 |
+|---|---|---|---|
+| gemma4_2b | 66% | 50% | 0.57 |
+| gemma4_4b | 100% | 25% | 0.40 |
+| **Goetia (24B)** | **80%** | **100%** | **0.89** |
+
+Goetia clears it decisively — far above the ~54% ContraDoc
+whole-document baseline; caught every planted contradiction including
+the subtle knowledge-before-reveal and storm-date pairs. The small
+models fail oppositely (2b under-precise, 4b under-recalls). Decision:
+**Goetia is the adjudicator.** One false positive (Cole's dialogue
+lie) — already covered by the §4 design's deterministic source-routing
+(a dialogue claim is never adjudicated as a world-fact). Extraction
+recall 61–66% untuned — a Phase B tuning gap, not a blocker. Full
+write-up: `LOOM_CONTINUITY_AUDIT.md` §13.
+
+#### Open follow-ups → Phase B
+
+1. Deterministic source-routing upstream of adjudication (kills the
+   dialogue-lie false-positive class).
+2. Tune the extraction prompt toward the ledger extractor's recall;
+   add the retry-on-empty guard for the schema empty-content case
+   (gemma4_4b returned zero claims for one scene).
+3. Build the production engine: fact-base, retrieval, deterministic
+   knowledge-state + timeline checks, `ContinuityAuditStore`.
+
+**1777/1777 tests green.** (1755 → 1777: +11 continuity-audit
+extraction, +11 continuity-audit adjudication.)

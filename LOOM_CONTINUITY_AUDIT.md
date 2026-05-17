@@ -1,9 +1,10 @@
 # Loom — Continuity Audit (design + plan)
 
-> **Status: design lock proposal (2026-05-17).** Research-grounded. Not yet
-> built. This document is the authoritative plan for the whole-manuscript
-> continuity audit feature; it follows the `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT`
-> pattern. Inventory pointer: **L10** in [`LOOM_PLAN.md`](LOOM_PLAN.md).
+> **Status: Phase A spike complete — GO (2026-05-17).** Research-grounded;
+> the pairwise-adjudication feasibility gate is cleared (§13). This document
+> is the authoritative plan for the whole-manuscript continuity audit feature;
+> it follows the `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT` pattern. Inventory
+> pointer: **L10** in [`LOOM_PLAN.md`](LOOM_PLAN.md).
 
 ## 0. What this is
 
@@ -307,3 +308,58 @@ re-extract the changed scene, re-adjudicate only affected entities.
   [NovelCrafter Codex](https://docs.novelcrafter.com/en/articles/8675743-the-codex),
   [AutoCrit](https://www.autocrit.com/editing/support/tense-consistency/),
   [Marlowe](https://authors.ai/marlowe/).
+
+## 13. Phase A spike results (2026-05-17) — GO
+
+The Phase A spike ran a 6-scene fixture ("The Lighthouse at Greystone",
+`Tests/LoomCoreTests/Fixtures/ContinuityAuditSpike/fixture.json`) with planted
+errors across all four classes plus precision controls (a lie in dialogue, a
+beard→clean-shaven evolution, two paraphrases). 18 gold claims scored
+extraction recall; 10 hand-authored gold claim pairs (4 contradiction / 5
+consistent / 1 evolution) scored pairwise adjudication. Runner:
+`Tools/ContinuityAuditSpike`.
+
+**Adjudication — the make-or-break gate** (contradiction precision / recall /
+F1; overall 3-way verdict accuracy):
+
+| adjudicator | precision | recall | F1 | accuracy | false positives |
+|---|---|---|---|---|---|
+| gemma4_2b | 66% | 50% | 0.57 | 60% | 1 (the dialogue lie) |
+| gemma4_4b | 100% | 25% | 0.40 | 70% | 0 |
+| **Goetia (24B writer)** | **80%** | **100%** | **0.89** | **90%** | 1 (the dialogue lie) |
+
+Goetia clears the bar decisively — F1 0.89 vs. the ~54%-precision ContraDoc
+whole-document baseline, and it caught *every* planted contradiction including
+the subtle knowledge-before-reveal pair and the storm-date conflict that both
+gemma models missed. The small models fail in opposite ways: gemma4_2b
+under-precise, gemma4_4b badly under-recalls (it labels real attribute drift as
+"evolution"). **Decision: Goetia is the adjudicator.** Open question §11.1
+resolved.
+
+**Extraction** (recall of planted gold claims, schema-constrained Ollama):
+gemma4_2b 61%, gemma4_4b 66%. Untuned and mediocre but not a feasibility
+blocker — extraction mirrors the proven ledger-extractor pattern (which reached
+~92% after tuning). gemma4_4b returned **zero claims for scene 2** — the
+known JSON-Schema empty-content failure (`OllamaClient` num_predict note);
+needs the retry-on-empty guard.
+
+**The one false positive — and why it is already designed for.** Both
+gemma4_2b and Goetia flagged pair p8 — Cole lying in dialogue ("never set foot
+in that church") against narration showing he was there. The prompt's
+source-attribution rule did not stop it. This is *exactly* the predicted
+intended-vs-unintended failure (§4) — and §4 defense #1 already handles it
+structurally: in the production pipeline a `dialogue`-sourced claim is not
+routed into the world-fact adjudicator at all (it conflicts only with the same
+speaker's other claims). The spike adjudicates every pair regardless of source,
+so p8 reaching the adjudicator is a spike artefact. Per the
+`feedback_prompt_blacklist_evasion` lesson, the fix is structural routing, not
+heavier prompt language.
+
+**Phase B follow-ups carried from the spike:**
+1. Source-routing must be deterministic and upstream of adjudication — a
+   `dialogue`/`thought` claim never adjudicated as a world-fact (kills the p8
+   class of false positive).
+2. Tune the extraction prompt toward the ledger extractor's recall; add the
+   retry-on-empty guard for the schema empty-content case.
+3. Goetia adjudication is ~one call per candidate pair — fold into the §8 cost
+   model (background, progress indicator).
