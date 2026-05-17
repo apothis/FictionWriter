@@ -32,5 +32,22 @@ func plannedProjectSnapshotTests() -> TestSuite {
         try expectEqual(back, snap)
     }
 
+    s.test("encodePlannedSnapshotPush wraps JSON in applyPlannedSnapshot(...)") {
+        let snap = PlannedProjectSnapshot.build(
+            styles: [Style(name: "Noir", type: .genre)]
+        )
+        let js = try BibleWorkspaceBridge.encodePlannedSnapshotPush(snap)
+        try expectTrue(js.hasPrefix("window.loomWizard.applyPlannedSnapshot("),
+            "must call applyPlannedSnapshot; got: \(js)")
+        try expectTrue(js.hasSuffix(");"), "must end with );; got: \(js)")
+        let middle = String(
+            js.dropFirst("window.loomWizard.applyPlannedSnapshot(".count).dropLast(2)
+        )
+        let back = try JSONDecoder().decode(
+            PlannedProjectSnapshot.self, from: middle.data(using: .utf8)!
+        )
+        try expectEqual(back, snap)
+    }
+
     return s
 }

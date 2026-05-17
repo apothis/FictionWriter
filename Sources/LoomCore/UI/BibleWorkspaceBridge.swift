@@ -52,6 +52,20 @@ public enum BibleWorkspaceBridge {
         try JSONDecoder().decode(BibleWorkspaceIntent.self, from: data)
     }
 
+    /// Planned Project mode — the Swift→JS snapshot push for the
+    /// guided-creation wizard bundle. Mirrors `encodeSnapshotPush`
+    /// (JSON inlined as a JS object literal) but targets the wizard's
+    /// namespaced global, `window.loomWizard.applyPlannedSnapshot`.
+    public static func encodePlannedSnapshotPush(
+        _ snapshot: PlannedProjectSnapshot
+    ) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let data = try encoder.encode(snapshot)
+        let json = String(data: data, encoding: .utf8) ?? "{}"
+        return "window.loomWizard.applyPlannedSnapshot(\(escapeSeparators(json)));"
+    }
+
     /// Phase 4 — the Swift→JS reply leg for request/reply intents
     /// (`generateOutline`, `createPlannedProject`). Produces a
     /// one-line `window.loomWizard.resolveReply(<envelope>)` call; the JS

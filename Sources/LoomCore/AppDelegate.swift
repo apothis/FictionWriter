@@ -202,6 +202,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         newProject.target = self
         fileMenu.addItem(newProject)
 
+        let newPlannedProject = NSMenuItem(
+            title: "New Planned Project…",
+            action: #selector(newPlannedProjectClicked),
+            keyEquivalent: "")
+        newPlannedProject.target = self
+        fileMenu.addItem(newPlannedProject)
+
         let openProject = NSMenuItem(
             title: "Open Project…",
             action: #selector(openProjectClicked),
@@ -709,6 +716,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     // MARK: - Bible Workspace window (Phase 4.5 — LOOM_BIBLE_WORKSPACE.md)
 
     private var bibleWorkspaceWindow: BibleWorkspaceWindowController?
+
+    // MARK: - Planned Project wizard window (LOOM_PLANNED_PROJECT.md §6)
+
+    private var plannedProjectWindow: PlannedProjectWindowController?
+
+    @objc private func newPlannedProjectClicked() {
+        // A fresh controller each time — the wizard is single-use and
+        // closes itself once the project is created.
+        plannedProjectWindow = PlannedProjectWindowController(appState: AppState.shared)
+        plannedProjectWindow?.showAndActivate()
+    }
 
     @objc private func openBibleWorkspaceClicked() {
         if bibleWorkspaceWindow == nil {
