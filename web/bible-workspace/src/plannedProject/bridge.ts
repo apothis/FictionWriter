@@ -1,4 +1,9 @@
-import type { GeneratedOutline, PlannedProjectConfig, PlannedProjectSnapshot } from "./types";
+import type {
+  GeneratedOutline,
+  PlannedProjectConfig,
+  PlannedProjectSnapshot,
+  Style,
+} from "./types";
 
 // JS↔Swift bridge for the Planned Project wizard webview.
 //
@@ -123,6 +128,29 @@ export function requestCreatePlannedProject(
   outline: GeneratedOutline,
 ): Promise<void> {
   return post("createPlannedProject", { title, config, outline }) as Promise<void>;
+}
+
+/// Fire-and-forget intent — the style-library CRUD. Swift applies the
+/// mutation to `styles.json` and re-pushes the snapshot. No reply.
+function postFireAndForget(kind: string, payload: Record<string, unknown>): void {
+  const handler = window.webkit?.messageHandlers?.loom;
+  if (!handler) {
+    if (import.meta.env.DEV) {
+      console.info("[loom-wizard] dev: fire-and-forget intent", kind, payload);
+    }
+    return;
+  }
+  handler.postMessage({ kind, ...payload });
+}
+
+/// Create or replace a style in the app library (matched by id).
+export function postUpsertStyle(style: Style): void {
+  postFireAndForget("upsertStyle", { style });
+}
+
+/// Delete a style from the app library.
+export function postDeleteStyle(id: string): void {
+  postFireAndForget("deleteStyle", { id });
 }
 
 // Dev-only browser-preview harness. In `vite dev` there is no Swift

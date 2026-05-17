@@ -44,6 +44,24 @@ public enum StyleLibrary {
         return ids.compactMap { byId[$0] }
     }
 
+    /// Insert or replace `style` in `library`, matched by id. A new id
+    /// is appended; an existing id is replaced in place (order kept).
+    /// The style-library editor's create + edit both route through this.
+    public static func upserting(_ style: Style, into library: [Style]) -> [Style] {
+        var out = library
+        if let idx = out.firstIndex(where: { $0.id == style.id }) {
+            out[idx] = style
+        } else {
+            out.append(style)
+        }
+        return out
+    }
+
+    /// Remove the style with `id` from `library`. A no-op if absent.
+    public static func removing(id: UUID, from library: [Style]) -> [Style] {
+        library.filter { $0.id != id }
+    }
+
     // MARK: - Genre styles
 
     private static let genres: [Style] = [

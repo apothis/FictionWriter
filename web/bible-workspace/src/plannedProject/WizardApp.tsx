@@ -8,6 +8,7 @@ import {
   requestGenerateOutline,
   subscribeToPlannedSnapshots,
 } from "./bridge";
+import { StyleEditor } from "./StyleEditor";
 import type {
   GeneratedOutline,
   LengthScenario,
@@ -42,6 +43,7 @@ const STEP_TITLES = [
 export function WizardApp() {
   const [snapshot, setSnapshot] = useState<PlannedProjectSnapshot | null>(null);
   const [step, setStep] = useState(0);
+  const [editingStyles, setEditingStyles] = useState(false);
 
   const [premise, setPremise] = useState("");
   const [characterSketch, setCharacterSketch] = useState("");
@@ -71,6 +73,15 @@ export function WizardApp() {
       <div className="flex h-screen items-center justify-center text-sm text-loom-fg-tertiary">
         Awaiting the style library…
       </div>
+    );
+  }
+
+  if (editingStyles) {
+    return (
+      <StyleEditor
+        initialStyles={snapshot.styles}
+        onClose={() => setEditingStyles(false)}
+      />
     );
   }
 
@@ -168,6 +179,7 @@ export function WizardApp() {
             styles={snapshot.styles}
             assigned={assignedStyleIds}
             onToggle={toggleStyle}
+            onManage={() => setEditingStyles(true)}
           />
         )}
 
@@ -284,19 +296,26 @@ function StyleStep({
   styles,
   assigned,
   onToggle,
+  onManage,
 }: {
   styles: Style[];
   assigned: string[];
   onToggle: (id: string) => void;
+  onManage: () => void;
 }) {
   const genres = styles.filter((s) => s.type === "genre");
   const registers = styles.filter((s) => s.type === "register");
   return (
     <div className="flex max-w-3xl flex-col gap-6">
-      <p className="text-xs text-loom-fg-tertiary">
-        Styles thread into every generation call. Mix freely — genre and
-        register are kept on separate prompt channels. Optional.
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-xs text-loom-fg-tertiary">
+          Styles thread into every generation call. Mix freely — genre and
+          register are kept on separate prompt channels. Optional.
+        </p>
+        <Button variant="ghost" className="shrink-0" onClick={onManage}>
+          Manage library
+        </Button>
+      </div>
       <StyleGroup title="Genre" styles={genres} assigned={assigned} onToggle={onToggle} />
       <StyleGroup
         title="Register"

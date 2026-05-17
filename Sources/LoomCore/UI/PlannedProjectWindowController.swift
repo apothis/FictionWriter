@@ -82,6 +82,13 @@ public final class PlannedProjectWindowController: NSWindowController,
     // MARK: - Snapshot push
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        pushSnapshot()
+    }
+
+    /// Push the current style library + frameworks to the wizard.
+    /// Called once on load and again after every style mutation so
+    /// the editor and the assignment step see fresh data.
+    private func pushSnapshot() {
         let snap = PlannedProjectSnapshot.build(styles: StyleLibraryStore().load())
         do {
             let js = try BibleWorkspaceBridge.encodePlannedSnapshotPush(snap)
@@ -93,6 +100,20 @@ public final class PlannedProjectWindowController: NSWindowController,
         } catch {
             DebugLog.shared.write("[planned] snapshot encode failed: \(error)")
         }
+    }
+
+    /// Load the app style library, apply `transform`, persist it, and
+    /// re-push the snapshot. A save failure is logged but not surfaced
+    /// — the style editor is a non-blocking side surface.
+    private func applyStyleMutation(_ transform: ([Style]) -> [Style]) {
+        let store = StyleLibraryStore()
+        let updated = transform(store.load())
+        do {
+            try store.save(updated)
+        } catch {
+            DebugLog.shared.write("[planned] style library save failed: \(error)")
+        }
+        pushSnapshot()
     }
 
     // MARK: - WKScriptMessageHandler (JS → Swift intent dispatch)
@@ -122,6 +143,12 @@ public final class PlannedProjectWindowController: NSWindowController,
             runCreatePlannedProject(
                 requestId: requestId, title: title, config: config, outline: outline
             )
+        case .upsertStyle(let style):
+            applyStyleMutation { StyleLibrary.upserting(style, into: $0) }
+            DebugLog.shared.write("[planned] upsertStyle id=\(style.id) name=\(style.name)")
+        case .deleteStyle(let id):
+            applyStyleMutation { StyleLibrary.removing(id: id, from: $0) }
+            DebugLog.shared.write("[planned] deleteStyle id=\(id)")
         default:
             // The wizard window only handles the planned-project
             // request/reply intents; anything else is misrouted.

@@ -191,6 +191,12 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         requestId: String, title: String,
         config: PlannedProjectConfig, outline: OutlineGeneration.GeneratedOutline
     )
+    // Planned Project mode Phase 4 item 4 — the style-library editor.
+    // Fire-and-forget CRUD against the app-level style library
+    // (`styles.json`); `upsertStyle` creates or replaces by id. The
+    // wizard window re-pushes its snapshot after applying.
+    case upsertStyle(style: Style)
+    case deleteStyle(id: UUID)
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
@@ -199,6 +205,7 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case x, y
         case fromCharacterId, toCharacterId, edgeKind, status, notes
         case requestId, config, title, outline
+        case style
     }
 
     private enum Kind: String {
@@ -230,6 +237,8 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case deleteRelationshipEdge
         case generateOutline
         case createPlannedProject
+        case upsertStyle
+        case deleteStyle
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -342,6 +351,12 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             try c.encode(title, forKey: .title)
             try c.encode(config, forKey: .config)
             try c.encode(outline, forKey: .outline)
+        case .upsertStyle(let style):
+            try c.encode(Kind.upsertStyle.rawValue, forKey: .kind)
+            try c.encode(style, forKey: .style)
+        case .deleteStyle(let id):
+            try c.encode(Kind.deleteStyle.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
         }
     }
 
@@ -475,6 +490,12 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             self = .createPlannedProject(
                 requestId: requestId, title: title, config: config, outline: outline
             )
+        case .upsertStyle:
+            let style = try c.decode(Style.self, forKey: .style)
+            self = .upsertStyle(style: style)
+        case .deleteStyle:
+            let id = try c.decode(UUID.self, forKey: .id)
+            self = .deleteStyle(id: id)
         }
     }
 }
