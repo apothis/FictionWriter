@@ -2373,10 +2373,31 @@ Goetia: 1055-word/3-beat draft, no verbatim seam echo.
 genre and a register are assigned: the genre owns mood/atmosphere/
 content, the register owns sentence construction and wins the
 overlap. Leads stay plain when only one type is assigned (no dangling
-cross-reference). Probe-validated (Noir + Minimalist): simile density
-dropped 12 → 3, sentence rhythm visibly clipped, Noir mood retained.
-Note: probe comparison is n=1; generation is stochastic, but the drop
-plus the rhythm shift is a clear signal.
+cross-reference).
+
+#### Style-matrix sweep — both fixes validated across 14 pairs
+
+`OutlineDraftProbe` gained `LOOM_PROBE_GENRE` / `LOOM_PROBE_REGISTER`
+(select built-in styles by name). Swept 14 genre+register pairs
+through Goetia on one genre-neutral 900-word summary — 9 conflicting
+pairs + 5 aligned. Metric per run: mean sentence length, % short
+sentences (≤8 words), simile count.
+
+- **Register precedence holds.** Sentence construction tracks the
+  *register*, not the genre, in every pair. Minimalist runs (paired
+  with Noir, Fantasy, Horror, Grimdark): mean sentence length
+  5.6–8.7 words, 62–90 % short. Lush runs (Noir, Thriller, Fantasy):
+  20.0–21.7 words, 7–20 % short. The direct-conflict cases — Noir
+  ("keep prose terse, resist purple description") + Lush, and Noir +
+  Minimalist — both resolved to the register; the genre kept only
+  mood.
+- **Per-beat echo gone.** 14/14 runs free of the echo signature
+  (a sentence repeated near-consecutively across a beat seam).
+- Aligned pairs showed no distortion from the precedence rule.
+
+Caveat: n=1 per cell (generation is stochastic), but 14 cells across
+the style space is a far stronger signal than the original single
+run.
 
 **1755/1755 tests green.** (1749 → 1755: +4 scene-draft-prompt tail,
 +2 style-prompt precedence.)
