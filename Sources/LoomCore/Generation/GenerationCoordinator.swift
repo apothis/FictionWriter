@@ -68,6 +68,11 @@ public final class GenerationCoordinator {
     /// scope for Phase 5 v1.
     public var styleRetriever: ((_ query: String, _ modality: NarrativeMode?) -> [StyleExemplar])?
 
+    /// Phase 3 (Planned Project) — supplies the app-level style
+    /// library used to resolve a project's assigned styles. Defaults
+    /// to loading `styles.json`; overridable for tests.
+    public var styleLibraryProvider: () -> [Style] = { StyleLibraryStore().load() }
+
     public init(
         session: ProjectSession,
         registry: KoboldClientRegistry,
@@ -140,6 +145,14 @@ public final class GenerationCoordinator {
             )
         }
         preliminaryContext.styleExemplars = styleExemplars
+        // Phase 3 (Planned Project) — resolve the project's assigned
+        // genre/register styles into the above-cache style layer.
+        // Non-planned projects carry no plannedConfig → no styles, and
+        // the style library is not even loaded.
+        let assignedStyleIds = session.project.plannedConfig?.assignedStyleIds ?? []
+        preliminaryContext.assignedStyles = assignedStyleIds.isEmpty
+            ? []
+            : StyleLibrary.resolve(assignedStyleIds, in: styleLibraryProvider())
         let context = preliminaryContext
         let assembled = PromptBuilder.build(context)
 
