@@ -44,6 +44,10 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// visible text view.
     private var templateGenSanitizeObserver: NSObjectProtocol?
     private var templateGenRequestObserver: NSObjectProtocol?
+    // Phase 5 — outline-draft coordinator (AppState-owned, created per
+    // draft). The editor only surfaces its start/finish for feedback.
+    private var outlineDraftStartObserver: NSObjectProtocol?
+    private var outlineDraftFinishObserver: NSObjectProtocol?
     private var insertAgainObserver: NSObjectProtocol?
     private var pushPastRefusalObserver: NSObjectProtocol?
     private var rolledOutcomeObserver: NSObjectProtocol?
@@ -108,6 +112,8 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let o = templateGenFinishObserver { NotificationCenter.default.removeObserver(o) }
         if let o = templateGenSanitizeObserver { NotificationCenter.default.removeObserver(o) }
         if let o = templateGenRequestObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = outlineDraftStartObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = outlineDraftFinishObserver { NotificationCenter.default.removeObserver(o) }
         if let o = insertAgainObserver { NotificationCenter.default.removeObserver(o) }
         if let o = pushPastRefusalObserver { NotificationCenter.default.removeObserver(o) }
         if let o = rolledOutcomeObserver { NotificationCenter.default.removeObserver(o) }
@@ -422,6 +428,30 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             self.reconcileTemplateGenEditorWithCoordinator()
             self.trayView.setGenerationState(.idle)
             self.handleGenerationFinish()
+        }
+        // Phase 5 — outline-draft feedback. The OutlineDraftCoordinator
+        // is AppState-owned and created per draft, so the editor
+        // observes by notification name (no `object:` filter). It does
+        // background generation (no token stream) — the editor shows
+        // the tray's working state for the run's duration and reloads
+        // the scene's prose once the draft lands.
+        outlineDraftStartObserver = NotificationCenter.default.addObserver(
+            forName: OutlineDraftCoordinator.didStartNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.trayView.setGenerationState(.thinking)
+        }
+        outlineDraftFinishObserver = NotificationCenter.default.addObserver(
+            forName: OutlineDraftCoordinator.didFinishNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            self.trayView.setGenerationState(.idle)
+            // The coordinator wrote the prose straight to the scene;
+            // reload so the text view shows it.
+            self.refreshFromSession()
         }
         // Trigger observer — AppDelegate's menu item posts this with
         // `templateId` + `castMapping` after the user picks via NSAlert.

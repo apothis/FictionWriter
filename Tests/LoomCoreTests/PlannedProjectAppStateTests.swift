@@ -44,6 +44,9 @@ func plannedProjectAppStateTests() -> TestSuite {
         try expectEqual(appState.currentSession.scenes.count, 2)
         try expectFalse(appState.currentSession.isDirty,
                         "freshly-created planned session should be clean")
+        // The first outline scene is selected — the writer lands
+        // somewhere rather than in an empty selection.
+        try expectEqual(appState.currentSession.currentSceneId, scenes.first?.id)
     }
 
     return s

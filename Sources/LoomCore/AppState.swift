@@ -854,6 +854,12 @@ public final class AppState {
             uniqueKeysWithValues: outline.scenes.map { ($0.id, $0) }
         )
         currentSession.replace(project: project, scenes: scenesById, url: url)
+        // Land the writer in the first scene — without this the new
+        // project opens with nothing selected and no sense of where
+        // the outline starts.
+        if let firstSceneId = outline.scenes.first?.id {
+            currentSession.selectScene(id: firstSceneId)
+        }
         try pushRecentAndSave(url)
         reconfigureRetrieval(for: url)
         DebugLog.shared.write(
@@ -873,6 +879,9 @@ public final class AppState {
             DebugLog.shared.write("[outline-draft] ignored — a draft is already running")
             return outlineDraftCoordinator
         }
+        // Select the scene being drafted so the editor is showing it —
+        // the writer can see the prose land rather than drafting blind.
+        currentSession.selectScene(id: sceneId)
         let provider = KoboldCallProvider(client: registry.clientForDefault())
         let coordinator = OutlineDraftCoordinator(session: currentSession, provider: provider)
         outlineDraftCoordinator = coordinator
