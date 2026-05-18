@@ -40,7 +40,10 @@ public final class ProjectStorage {
         // it without a directory-existence guard at every site.
         try fm.createDirectory(at: url.appendingPathComponent("references"), withIntermediateDirectories: true)
 
-        let project = Project(title: title, author: author)
+        var project = Project(title: title, author: author)
+        // LOOM_NSFW §2.3 — a new project is seeded with the Loom-default
+        // Project Memory so it ships anti-refusal framing from creation.
+        project.settings.memory = ProjectMemoryPresets.loomDefault.text
         try saveProject(project, at: url)
         DebugLog.shared.write("[project] created: \(url.lastPathComponent) at=\(url.path)")
         return project
@@ -68,6 +71,7 @@ public final class ProjectStorage {
         try fm.createDirectory(at: url.appendingPathComponent("references"), withIntermediateDirectories: true)
 
         var project = Project(title: title)
+        project.settings.memory = ProjectMemoryPresets.loomDefault.text
         project.manuscript = outline.manuscript
         project.plannedConfig = config
         if let seed = config.seedCharacter() {
