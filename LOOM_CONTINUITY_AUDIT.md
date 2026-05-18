@@ -2,14 +2,14 @@
 
 > **Status: Phase B complete + live-validated (2026-05-18).** Phase A spike
 > cleared the feasibility gate (§13); Phase B built the pipeline (§14), tuned
-> extraction (§15), ran end to end (§16), and wired the claim-filter embedder
-> (§17). The adjudicated classes (attribute / spatial / temporal) are clean;
-> validation surfaced that the **deterministic knowledge-state check is too
-> imprecise** (§17) — the recommended fix is to route knowledge candidates
-> through the adjudicator. Then extraction-recall tuning and Phase C (Bible
-> Workspace surface). This document is the authoritative plan; it follows the
-> `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT` pattern. Inventory pointer: **L10**
-> in [`LOOM_PLAN.md`](LOOM_PLAN.md).
+> extraction (§15), ran end to end (§16), wired the claim-filter embedder
+> (§17), and routed the knowledge check through the adjudicator (§18). The
+> end-to-end run lands **4 findings, zero false positives** — 3 of the 4
+> contradiction classes detected cleanly; the temporal miss is the documented
+> extraction-recall item. Remaining: extraction-recall tuning, then Phase C
+> (Bible Workspace surface). This document is the authoritative plan; it
+> follows the `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT` pattern. Inventory
+> pointer: **L10** in [`LOOM_PLAN.md`](LOOM_PLAN.md).
 
 ## 0. What this is
 
@@ -589,3 +589,36 @@ adjudicates, deterministic narrows" architecture and would reject both
 FPs. (b) is the robust fix and is the recommended next step. Attribute
 drift and adjudicated classes are unaffected — they already route
 through the adjudicator and stayed clean.
+
+## 18. Knowledge-adjudication routing — resolved (2026-05-18)
+
+The §17 false positives were fixed by routing knowledge-violation
+candidates through the adjudicator (the §3 "LLM adjudicates,
+deterministic narrows" architecture): the knowledge check now emits
+*candidates*, each judged by an LLM call before becoming a finding.
+
+The adjudication question matters. A first prompt asked "is this a
+genuine continuity error" with a "could plausibly already know it"
+escape hatch — too conservative: the end-to-end run rejected all three
+candidates including the genuine one (0 knowledge findings). Reframed
+to the narrow question the claim pair can actually answer — *does the
+LATER claim reveal the same fact the EARLIER claim refers to?* The
+ordering is already deterministic; an earlier reveal, if one exists,
+is extraction's job to surface.
+
+End-to-end re-run (Goetia + bge-large, reframed prompt) — **4 findings,
+zero false positives:**
+
+- attribute drift ×2 (eye colour green→brown) ✓
+- spatial conflict (lighthouse north vs south) ✓
+- knowledge violation (Mara knows the missing money before its reveal) ✓
+- both §17 false positives gone.
+
+**3 of the 4 planted contradiction classes now detected cleanly, no
+false positives.** The one remaining miss is the temporal class (the
+storm dated two ways) — extraction did not surface both temporal
+storm claims, so no candidate pair formed. That is the documented
+extraction-recall tuning item (§16), not a pipeline defect.
+
+Phase B is complete and validated. Remaining before Phase C:
+extraction-recall tuning (would close the temporal miss).

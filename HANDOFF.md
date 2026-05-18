@@ -2592,3 +2592,19 @@ narrows" architecture) — the knowledge check finds candidate
 (reference, reveal) pairs, the LLM judges each. Fixes both false
 positives. Then extraction-recall tuning, then Phase C.
 `LOOM_CONTINUITY_AUDIT.md` §17.
+
+#### Addendum 5 (2026-05-18) — knowledge-adjudication routing resolved
+
+Fixed the §17 false positives: knowledge-violation candidates now
+route through the adjudicator (`buildKnowledgeAdjudicationPrompt`),
+only a `contradiction` verdict becomes a finding. The prompt framing
+took one iteration — a first "is this a continuity error" version with
+a "could already know it" escape hatch was too conservative (rejected
+all 3 candidates incl. the genuine one). Reframed to the narrow
+question the pair can answer: does the LATER claim reveal the SAME
+fact the EARLIER refers to? End-to-end re-run: **4 findings, zero
+false positives** — attribute drift ×2, spatial conflict, the genuine
+knowledge violation; both prior FPs gone. 3 of 4 contradiction classes
+detected cleanly. Only miss: temporal (extraction didn't surface both
+storm claims — the extraction-recall item). Phase B complete +
+validated. `LOOM_CONTINUITY_AUDIT.md` §18.
