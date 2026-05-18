@@ -696,3 +696,84 @@ A proper **eval harness** (a larger hand-graded fixture than the current
 6-scene one, multi-run averaging, precision/recall tracked over runs) is a
 prerequisite for tuning any of this without dice-rolling — building it is
 likely the first concrete step after the research.
+
+## 21. §20 research findings + chosen approach (2026-05-18)
+
+A wide prior-art pass on the §20 open problems (four parallel research
+agents — claim-extraction recall, multi-sample ensembling, constrained
+decoding / fine-tuning, comparable systems + eval design). Findings:
+
+**Loom's numbers are field-normal.** ConStory-Checker (*Lost in Stories*,
+ACL 2026, [arXiv 2603.05890](https://arxiv.org/abs/2603.05890)) is
+architecturally identical to Loom's pipeline and reports precision 0.88 /
+**recall 0.55** / F1 0.68. Loom's ~83% extraction recall is *ahead* of the
+published norm — recall is the hard part for everyone. No published claim-
+extraction method even reports a true decomposition-recall figure against a
+human gold set, so the measured 83% is more honest than most of the
+literature.
+
+**Problem 1 (recall + run-to-run variance) — multi-sample union extraction.**
+Run extraction k times, union the claims. Reliably lifts recall; the
+recall-vs-k curve saturates log-linearly — predictable diminishing returns
+(*Large Language Monkeys* 2024; L3X "Recall Them All" 2024). Attacks the
+17% miss rate *and* its variance in one move. Cost: the unioned claim set's
+precision collapses (L3X saw ~10%), so union must be paired with a
+verification stage — Loom already has one (retrieval + pairwise
+adjudication filters junk claims downstream). Supporting single-pass lever:
+per-sentence windowed extraction (Claimify/VeriScore — walk the scene
+sentence-by-sentence with a ±context window). Do **not** chase finer/atomic
+claims — *Decomposition Dilemmas* (NAACL 2025) shows granular decomposition
+shifts from helpful to harmful; it fragments and lowers effective recall.
+
+**Problem 4 (single-audit trust) — capture-recapture / Chao1.** The Chao1
+estimator computes undetected items from the k runs themselves, no ground
+truth: `missing ≈ f₁²/(2·f₂)` (f₁ = claims seen in exactly one run, f₂ =
+in exactly two). Validated as a search-stopping rule by Kastner et al.
+(2009). Gives Loom a user-facing completeness estimate ("~92% complete;
+re-run for coverage") and a principled adaptive-stopping rule (k≈3–5
+typically saturates per scene). Requires good claim canonicalization —
+the same proposition phrased differently inflates f₁; Loom's embedder /
+cosine-dedup infrastructure covers this.
+
+**Problem 2 (type classification) — GBNF constrained decoding on KoboldCpp.**
+Constrain JSON *structure* + the 5-value `type` enum only, leave proposition
+values as free strings, with an optional free-text reasoning field *first*
+per record (the CRANE pattern — avoids the reasoning-degradation hit shown
+by *Let Me Speak Freely?*). Constrained classification genuinely improves
+accuracy (5–13 F1 points in IE studies) on the format-noise slice. Low-risk,
+independent change.
+
+**Deferred (researched, not now):** fine-tuning a small extraction model
+(feasible — cloud QLoRA, Xcode not needed — but a rabbit hole before a
+clean gold set exists; the off-the-shelf Propositionizer is wrong domain);
+a SCORE-style incremental world-state ledger as a deterministic second
+detector (promising, larger architectural change — revisit after step 2).
+
+**Chosen approach (user-confirmed 2026-05-18) — three-step sequence:**
+
+1. **Eval harness + medium fixture.** Extend the Lighthouse fixture to
+   ~3–4 manuscripts / ~40–60 contradiction instances (single grader).
+   Multi-run audits (k≥10), report mean±CI and **pass@k vs pass^k** (the
+   gap is the stochasticity tax). Stage-conditioned metrics — per-claim
+   extraction recall → retrieval recall@candidate → adjudication P/R →
+   end-to-end finding P/R — so a regression localizes to a stage.
+2. **Multi-sample union extraction + Chao1.** Extract k times, canonicalize
+   /dedup (existing embedder), union, Chao1 adaptive stopping + a
+   user-facing completeness estimate.
+3. **GBNF constrained decoding** for structure + type enum (CRANE pattern).
+
+Re-measure after each step; revisit fine-tuning / the state-ledger only if
+still short. Step 1 (the eval harness) is the prerequisite for tuning
+steps 2–3 without dice-rolling.
+
+**Key sources:** [Claimify, ACL 2025](https://aclanthology.org/2025.acl-long.348.pdf) ·
+[VeriScore, EMNLP 2024](https://arxiv.org/html/2406.19276v1) ·
+[Decomposition Dilemmas, NAACL 2025](https://arxiv.org/abs/2411.02400) ·
+[Large Language Monkeys, 2024](https://arxiv.org/abs/2407.21787) ·
+[L3X "Recall Them All", 2024](https://arxiv.org/html/2405.02732v1) ·
+[Chao1 / capture-recapture stopping rule, Kastner et al. 2009](https://www.sciencedirect.com/science/article/abs/pii/S0895435608001509) ·
+[Let Me Speak Freely?, EMNLP 2024](https://arxiv.org/html/2408.02442v1) ·
+[CRANE, 2025](https://arxiv.org/html/2502.09061v3) ·
+[Lost in Stories / ConStory-Bench, ACL 2026](https://arxiv.org/abs/2603.05890) ·
+[SCORE, 2025](https://arxiv.org/abs/2503.23512) ·
+[Stochasticity in Agentic Evaluations, 2025](https://arxiv.org/html/2512.06710v1).
