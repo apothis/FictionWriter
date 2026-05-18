@@ -2553,3 +2553,17 @@ focused typing). Decision: **claim extraction runs on Goetia 24B,
 two-stage** — the continuity audit is now entirely a KoboldCpp/Goetia
 feature, no Ollama dependency. Full write-up: `LOOM_CONTINUITY_AUDIT.md`
 §15.
+
+#### Addendum 3 (2026-05-18) — engine end-to-end validation
+
+`ContinuityAuditSpike` gained an `engine` phase driving the full
+`ContinuityAuditEngine`. First live run (`e67fef9`): 6 scenes audited
+in 183s on Goetia, **3 findings, zero false positives** — caught the
+planted attribute drift (eye colour) and spatial conflict (lighthouse
+N/S); the precision controls (dialogue lie, evolution, paraphrases)
+produced nothing spurious. Two planted contradictions missed: temporal
+(extraction didn't surface both storm claims) and knowledge-state (the
+engine ran on the crude tokenJaccard similarity — the embedder wire-up
+will fix it). Pipeline is sound end to end; the misses map to the two
+known Phase-B-tail tuning items, not correctness defects.
+`LOOM_CONTINUITY_AUDIT.md` §16.

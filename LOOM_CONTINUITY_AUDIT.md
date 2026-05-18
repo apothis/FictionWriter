@@ -1,11 +1,13 @@
 # Loom — Continuity Audit (design + plan)
 
-> **Status: Phase B engine complete (2026-05-18).** Phase A spike cleared the
-> feasibility gate (§13); Phase B built the production pipeline end to end
-> (§14). Remaining: a live end-to-end run of the engine, the `ClaimFilter`
-> embedder wire-up, then Phase C (Bible Workspace surface). This document is
-> the authoritative plan; it follows the `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT`
-> pattern. Inventory pointer: **L10** in [`LOOM_PLAN.md`](LOOM_PLAN.md).
+> **Status: Phase B complete + live-validated (2026-05-18).** Phase A spike
+> cleared the feasibility gate (§13); Phase B built the pipeline (§14), tuned
+> extraction (§15), and the full engine ran end to end against the live models
+> (§16) — 3 findings, zero false positives. Remaining: the `ClaimFilter`
+> embedder wire-up + extraction-recall tuning (would lift class coverage), then
+> Phase C (Bible Workspace surface). This document is the authoritative plan;
+> it follows the `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT` pattern. Inventory
+> pointer: **L10** in [`LOOM_PLAN.md`](LOOM_PLAN.md).
 
 ## 0. What this is
 
@@ -520,3 +522,34 @@ The two-stage typing pass lifts typed recall **+17 points on Goetia**
 focused typing call. **Decision: claim extraction runs on Goetia 24B,
 two-stage.** n=1 per cell (generation is stochastic); a few more runs
 would firm the numbers, but the direction is consistent with the research.
+
+## 16. Engine end-to-end validation (2026-05-18)
+
+`ContinuityAuditSpike` gained an `engine` phase that drives the full
+`ContinuityAuditEngine` (extraction + adjudication on Goetia) over the
+6-scene fixture. First live run:
+
+- **6 scenes audited in 183s; 3 findings; zero false positives.**
+- Caught the planted **attribute drift** (Mara's eyes green s1/s2 → brown
+  s3 — two findings, conf 0.95) and the **spatial conflict** (lighthouse
+  north s1 vs south s6 — conf 1.00).
+- The precision controls held — the dialogue lie, the beard→clean-shaven
+  evolution, and the paraphrases produced **no spurious findings**.
+
+This validates the pipeline end to end — the architecture and plumbing
+are sound, not just stub-tested.
+
+**Two planted contradictions were missed**, both explained and both
+mapping to known tuning items:
+- **Temporal** (the storm dated two ways) — extraction did not surface
+  both temporal claims about the storm, or did not type them `temporal`;
+  a retrieval pair never formed. → extraction-recall tuning.
+- **Knowledge-state** (Mara references the missing money before its
+  reveal) — the engine's knowledge check ran on the crude `tokenJaccard`
+  fallback similarity, which fell just short of the match threshold. →
+  the `ContinuityClaimFilter` embedder wire-up gives the knowledge check
+  an embedding-backed similarity, which should close this.
+
+So Phase B is live-validated. The remaining Phase-B-tail items — the
+embedder wire-up and extraction-recall tuning — are exactly what would
+lift the 2/4 class coverage; neither is a correctness defect.
