@@ -281,30 +281,37 @@ public enum ContinuityAudit {
         """
     }
 
-    /// Build the knowledge-violation adjudication prompt. The
-    /// deterministic knowledge check (`ContinuityKnowledgeCheck`) finds
-    /// *candidate* (reference, reveal) pairs by similarity — loose by
-    /// design. This routes each candidate through the LLM so a loose
-    /// similarity match is not a finding on its own (the §3 "LLM
-    /// adjudicates, deterministic narrows" architecture). Conservative
-    /// framing — flag only a clear dependency.
+    /// Build the knowledge-violation adjudication prompt.
+    ///
+    /// The deterministic knowledge check (`ContinuityKnowledgeCheck`)
+    /// already established the ordering — the LATER claim is the
+    /// *earliest* scene found that might reveal what the EARLIER claim
+    /// refers to. The adjudicator's one job is to **validate the
+    /// match**: do the two claims genuinely concern the same revealed
+    /// fact? It deliberately does NOT re-litigate "could the character
+    /// already know it" — that needs whole-story knowledge the pair
+    /// does not carry, and an earlier reveal, if one exists, is the
+    /// extraction's job to surface (it would then be the candidate
+    /// reveal instead). Narrowing the question this way fixed both the
+    /// §17 false positive *and* the over-conservative rejection of the
+    /// genuine violation.
     public static func buildKnowledgeAdjudicationPrompt(reference: Claim, reveal: Claim) -> String {
         return """
-        You are auditing a novel for continuity. A character refers to or knows something in an EARLIER scene; a LATER scene appears to be where the story first establishes that information. Decide whether this is a genuine continuity error — a character knowing something before the story has revealed it.
+        You are auditing a novel for continuity. A character refers to or knows a fact in an EARLIER scene. A LATER scene has been identified as the place that fact appears to be revealed. The ordering is already established — your one job is to decide whether the LATER claim genuinely reveals the SAME fact the EARLIER claim refers to.
 
         EARLIER — what the character knows or refers to (scene \(reference.sourceSceneId), \(reference.source.rawValue)):
         \(reference.value)
         Evidence: "\(reference.evidenceQuote)"
 
-        LATER — where the information appears to be revealed (scene \(reveal.sourceSceneId), \(reveal.source.rawValue)):
+        LATER — the candidate reveal (scene \(reveal.sourceSceneId), \(reveal.source.rawValue)):
         \(reveal.value)
         Evidence: "\(reveal.evidenceQuote)"
 
         Choose one verdict:
-        - contradiction: the earlier claim genuinely depends on information the later scene is the first to establish — the character could not yet know it.
-        - consistent: not an error. The later claim does not actually establish what the earlier one refers to, the two are about different things, or the character could plausibly already know it (told earlier, present at the events, or it is common knowledge).
+        - contradiction: the LATER claim establishes the very fact the EARLIER claim refers to — so the character refers to it before the story reveals it. A genuine continuity error.
+        - consistent: not an error — the LATER claim does not establish what the EARLIER one refers to; the two claims are about different things, or the LATER claim is unrelated.
 
-        Be conservative — choose contradiction only when the dependency is clear. Reply with one JSON object: verdict, confidence (0 to 1), and a one-sentence explanation.
+        Judge only whether the two claims concern the same revealed fact. Reply with one JSON object: verdict, confidence (0 to 1), and a one-sentence explanation.
         """
     }
 
