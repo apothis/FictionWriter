@@ -131,6 +131,7 @@ public enum ChicletKind: String, Codable, Equatable, CaseIterable {
     case directionDirective
     case sceneFraming
     case dynamicSheet
+    case intimateAnatomy
 }
 
 // MARK: - Builder
@@ -596,6 +597,40 @@ public enum PromptBuilder {
                     aboveCache: false,
                     sourceId: sceneId,
                     evictionPriority: 60
+                ))
+            }
+        }
+
+        // Intimate anatomy — gated per character: injected only when
+        // the scene is depicted (effective explicitness ≥ onScreen)
+        // AND the character is shown undressed in the scene so far.
+        // Deliberately separate from the always-on Cast block so it
+        // never leaks into clothed, non-explicit prose.
+        if let sceneId = context.currentSceneId,
+           let scene = context.scenes[sceneId] {
+            let nsProse = scene.prose as NSString
+            let cut = min(max(0, context.cursorOffset), nsProse.length)
+            let proseSoFar = nsProse.substring(to: cut)
+            let unlocked = context.project.bible.characters.filter {
+                AnatomyGate.shouldInject(
+                    character: $0,
+                    sceneProseSoFar: proseSoFar,
+                    explicitnessLevel: direction.explicitnessLevel
+                )
+            }
+            if !unlocked.isEmpty {
+                let body = unlocked
+                    .map { "\($0.name): \($0.intimateAnatomy.trimmingCharacters(in: .whitespacesAndNewlines))" }
+                    .joined(separator: " ")
+                let block = "[ Anatomy — \(body) ]"
+                layers.append(Layer(
+                    kind: .intimateAnatomy,
+                    label: "Anatomy (\(unlocked.count))",
+                    content: block,
+                    tokens: TokenEstimator.estimate(block),
+                    aboveCache: false,
+                    sourceId: nil,
+                    evictionPriority: 65
                 ))
             }
         }

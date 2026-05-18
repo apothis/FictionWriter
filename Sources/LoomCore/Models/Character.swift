@@ -39,6 +39,12 @@ public struct Character: Codable, Equatable {
     /// limit). Free-form names (no rigid taxonomy); rendered into the
     /// character's bible entry so the model writes them consistently.
     public var kinks: [CharacterKink]
+    /// Intimate / sexual anatomy detail. Deliberately NOT part of the
+    /// always-on bible description — it leaks into clothed,
+    /// non-explicit prose if always in context. Injected only when
+    /// the scene is depicted AND this character is shown undressed
+    /// (see `AnatomyGate`).
+    public var intimateAnatomy: String
 
     public init(
         id: UUID = UUID(),
@@ -57,7 +63,8 @@ public struct Character: Codable, Equatable {
         canonBrief: String? = nil,
         customFields: [CharacterCustomField] = [],
         injectionMode: InjectionMode = .constant,
-        kinks: [CharacterKink] = []
+        kinks: [CharacterKink] = [],
+        intimateAnatomy: String = ""
     ) {
         self.id = id
         self.name = name
@@ -76,6 +83,7 @@ public struct Character: Codable, Equatable {
         self.customFields = customFields
         self.injectionMode = injectionMode
         self.kinks = kinks
+        self.intimateAnatomy = intimateAnatomy
     }
 
     public init(from decoder: Decoder) throws {
@@ -97,6 +105,7 @@ public struct Character: Codable, Equatable {
         self.customFields = try c.decodeIfPresent([CharacterCustomField].self, forKey: .customFields) ?? []
         self.injectionMode = try c.decodeIfPresent(InjectionMode.self, forKey: .injectionMode) ?? .constant
         self.kinks = try c.decodeIfPresent([CharacterKink].self, forKey: .kinks) ?? []
+        self.intimateAnatomy = try c.decodeIfPresent(String.self, forKey: .intimateAnatomy) ?? ""
     }
 
     public static func empty(name: String) -> Character {
