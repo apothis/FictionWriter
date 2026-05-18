@@ -58,7 +58,14 @@ public final class ContinuityAuditEngine {
     private let extractor: ContinuityClaimExtracting
     private let adjudicationProvider: OllamaCallProvider
     private let entities: [ContinuitySubjectResolver.KnownEntity]
-    private let similarity: (String, String) -> Double
+    /// Fallback proposition similarity (token Jaccard). When an
+    /// `embedder` is supplied the run uses an embedding-backed cosine
+    /// instead, falling back to this for any text not embedded.
+    private let baseSimilarity: (String, String) -> Double
+    /// Optional. When present, extracted claims are run through
+    /// `ContinuityClaimFilterPipeline` (dedup + evidence validation)
+    /// and the knowledge check gets an embedding-backed similarity.
+    private let embedder: KoboldEmbedding?
 
     public private(set) var isRunning = false
 
@@ -69,17 +76,22 @@ public final class ContinuityAuditEngine {
     private var claims: [ContinuityAudit.Claim] = []
     private var pairs: [ContinuityConflictRetrieval.CandidatePair] = []
     private var findings: [ContinuityFinding] = []
+    /// The similarity in force for this run — embedding-backed when an
+    /// embedder ran, else `baseSimilarity`.
+    private var activeSimilarity: (String, String) -> Double = ContinuityAuditEngine.tokenJaccard
 
     public init(
         extractor: ContinuityClaimExtracting,
         adjudicationProvider: OllamaCallProvider,
         entities: [ContinuitySubjectResolver.KnownEntity],
+        embedder: KoboldEmbedding? = nil,
         similarity: @escaping (String, String) -> Double = ContinuityAuditEngine.tokenJaccard
     ) {
         self.extractor = extractor
         self.adjudicationProvider = adjudicationProvider
         self.entities = entities
-        self.similarity = similarity
+        self.embedder = embedder
+        self.baseSimilarity = similarity
     }
 
     /// Run a whole-manuscript audit. `scenes` must be in narrative
@@ -101,6 +113,7 @@ public final class ContinuityAuditEngine {
         self.claims = []
         self.pairs = []
         self.findings = []
+        self.activeSimilarity = baseSimilarity
 
         NotificationCenter.default.post(
             name: Self.didStartNotification, object: self,
@@ -133,10 +146,42 @@ public final class ContinuityAuditEngine {
         }
     }
 
-    // MARK: - Stage 2-3: ground + retrieve
+    // MARK: - Stage 2-3: ground + filter + retrieve
 
     private func extractionDone() {
         claims = ContinuitySubjectResolver.ground(claims: claims, entities: entities)
+        guard let embedder = embedder, !claims.isEmpty else {
+            retrieveAndAdjudicate()
+            return
+        }
+        // Filter pass — dedup + evidence validation — and reuse the
+        // embeddings for an embedding-backed knowledge-check similarity.
+        var sentences: [String: [String]] = [:]
+        for scene in scenes { sentences[scene.id] = SentenceSplitter.split(scene.prose) }
+        ContinuityClaimFilterPipeline.apply(
+            embedder: embedder, claims: claims, sceneSentencesByScene: sentences
+        ) { [weak self] result in
+            guard let self = self else { return }
+            self.onMain {
+                self.claims = result.claims
+                if !result.embeddings.isEmpty {
+                    let emb = result.embeddings
+                    let base = self.baseSimilarity
+                    self.activeSimilarity = { a, b in
+                        if let va = emb[a], let vb = emb[b] {
+                            return LedgerExtraction.cosineSimilarity(va, vb)
+                        }
+                        return base(a, b)
+                    }
+                }
+                DebugLog.shared.write(
+                    "[continuity-audit] claim-filter: -\(result.dedupDropped) dedup, -\(result.evidenceDropped) evidence")
+                self.retrieveAndAdjudicate()
+            }
+        }
+    }
+
+    private func retrieveAndAdjudicate() {
         let sceneOrder = scenes.map(\.id)
         pairs = ContinuityConflictRetrieval.candidatePairs(claims: claims, sceneOrder: sceneOrder)
         DebugLog.shared.write("[continuity-audit] \(claims.count) claims → \(pairs.count) candidate pairs")
@@ -178,7 +223,7 @@ public final class ContinuityAuditEngine {
     private func adjudicationDone() {
         let sceneOrder = scenes.map(\.id)
         let violations = ContinuityKnowledgeCheck.violations(
-            claims: claims, sceneOrder: sceneOrder, similarity: similarity)
+            claims: claims, sceneOrder: sceneOrder, similarity: activeSimilarity)
         findings.append(contentsOf: violations.map(ContinuityFindingAssembly.finding(knowledgeViolation:)))
 
         var storeError: Error? = nil
