@@ -21,17 +21,34 @@ public enum ContinuityEvalMetrics {
         "to", "for", "and", "or", "it", "has", "have", "had", "s",
     ]
 
+    /// A light suffix-stripping stemmer — collapses inflectional variants
+    /// (`knows`/`knew`-less `know`, `poisoned`/`poisoning` → `poison`,
+    /// `days` → `day`) so a gold claim and a paraphrased model claim still
+    /// match. Not a full Porter stemmer; irregular forms (`rode`/`ride`)
+    /// are an accepted long-tail miss.
+    static func stem(_ word: String) -> String {
+        var s = Substring(word)
+        if s.count > 4 {
+            if s.hasSuffix("ing") { s = s.dropLast(3) }
+            else if s.hasSuffix("ed") { s = s.dropLast(2) }
+            else if s.hasSuffix("ly") { s = s.dropLast(2) }
+        }
+        if s.count > 4, s.hasSuffix("ies") { return s.dropLast(3) + "y" }
+        if s.count > 3, s.hasSuffix("s"), !s.hasSuffix("ss") { s = s.dropLast() }
+        return String(s)
+    }
+
     private static func contentWords(_ s: String) -> Set<String> {
         Set(s.lowercased()
             .split { !$0.isLetter && !$0.isNumber }
-            .map(String.init)
+            .map { stem(String($0)) }
             .filter { !stopwords.contains($0) })
     }
 
     /// Content-word Jaccard overlap — the fuzzy matcher used to compare a
-    /// model claim against a gold claim. Stopwords are dropped so phrasing
-    /// differences ("Mara has green eyes" / "Mara's eyes are green") still
-    /// score as a match.
+    /// model claim against a gold claim. Stopwords are dropped and words
+    /// are stemmed so phrasing and inflectional differences ("Mara has
+    /// green eyes" / "Mara's eyes are green") still score as a match.
     public static func wordJaccard(_ a: String, _ b: String) -> Double {
         let x = contentWords(a), y = contentWords(b)
         if x.isEmpty && y.isEmpty { return 1.0 }

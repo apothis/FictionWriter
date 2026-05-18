@@ -38,6 +38,27 @@ func continuityEvalMetricsTests() -> TestSuite {
         try expectTrue(j > 0.0 && j < 1.0)
     }
 
+    s.test("wordJaccard treats inflected verb forms as the same word") {
+        // -ed / -ing / 3rd-person -s should not break a match
+        let j = ContinuityEvalMetrics.wordJaccard(
+            "Lirien knows the King was poisoned",
+            "Lirien know the King poisoning")
+        try expectEqual(j, 1.0)
+    }
+
+    s.test("wordJaccard collapses plurals to the singular stem") {
+        let j = ContinuityEvalMetrics.wordJaccard(
+            "the keeper lost a brother", "the keepers lost brothers")
+        try expectEqual(j, 1.0)
+    }
+
+    s.test("extractionRecall matches a gold claim despite inflectional drift") {
+        let g = [gold(.knowledgeState, value: "Lirien knows the King was poisoned")]
+        let e = [claim(.knowledgeState, value: "Lirien had no leave to know the King's poisoning")]
+        let r = ContinuityEvalMetrics.extractionRecall(gold: g, extracted: e)
+        try expectEqual(r.matchedContent, 1)
+    }
+
     // MARK: - Extraction recall
 
     s.test("extractionRecall matches a gold claim by type and value overlap") {
