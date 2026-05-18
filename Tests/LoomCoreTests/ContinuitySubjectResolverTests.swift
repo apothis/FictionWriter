@@ -57,19 +57,18 @@ func continuitySubjectResolverTests() -> TestSuite {
         try expectEqual(grounded[2].subject, "stranger")
     }
 
-    s.test("grounding makes retrieval group an entity referred to two ways") {
+    s.test("grounding rewrites a subject referred to two ways to one canonical form") {
         let grounded = ContinuitySubjectResolver.ground(
             claims: [
                 ContinuityAudit.Claim(type: .attribute, subject: "Mara", attributeKey: "eye colour",
-                                      value: "green", sourceSceneId: "s1", source: .narration, evidenceQuote: "q"),
+                                      value: "Mara has green eyes", sourceSceneId: "s1", source: .narration, evidenceQuote: "q"),
                 ContinuityAudit.Claim(type: .attribute, subject: "Mara Vance", attributeKey: "eye colour",
-                                      value: "brown", sourceSceneId: "s2", source: .narration, evidenceQuote: "q"),
+                                      value: "Mara has brown eyes", sourceSceneId: "s2", source: .narration, evidenceQuote: "q"),
             ],
             entities: entities
         )
-        let pairs = ContinuityConflictRetrieval.candidatePairs(
-            claims: grounded, sceneOrder: ["s1", "s2"])
-        try expectEqual(pairs.count, 1)
+        try expectEqual(grounded[0].subject, grounded[1].subject)
+        try expectEqual(grounded[0].subject, "Mara Vance")
     }
 
     return s
