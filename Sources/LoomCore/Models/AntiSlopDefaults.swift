@@ -8,13 +8,11 @@ import Foundation
 /// editable `ProjectSettings.antiSlopPhrases`; the author tunes the
 /// list per project.
 ///
-/// This is a data resource only. The transport path — feeding the
-/// list to KoboldCpp as `banned_strings` (phrase-level backtracking,
-/// the architecture the AntiSlop research validates) — is deliberately
-/// deferred until that server capability is confirmed.
+/// The list is fed to KoboldCpp as `banned_strings` (phrase-level
+/// backtracking — the architecture the AntiSlop research validates;
+/// verified on server 1.111.2) via `GenerateRequest.bannedStrings`.
 ///
-/// Phrases are stored verbatim, lowercase, as substrings; a future
-/// matcher decides word-boundary semantics.
+/// Phrases are stored verbatim, lowercase, as substrings.
 public enum AntiSlopDefaults {
 
     public static let phrases: [String] = [

@@ -83,7 +83,7 @@
 | Default Project Memory / anti-refusal presets | `ProjectMemoryPresets` (Loom-default / Heavy NSFW / Minimal) — seeded into new projects by `ProjectStorage` | `Models/ProjectMemoryPresets.swift` |
 | Per-relationship kink/dynamic spec for the model | `DynamicSheet` (on `Bible`), `DynamicSheetInjector` + `DynamicSheetPrompt` (alwaysOn / participant-keyed activation) | `Models/DynamicSheet.swift`, `Generation/DynamicSheetPrompt.swift` |
 | Per-scene framing block | `Scene.framing` — author scenario block, injected near the cursor | `Models/Scene.swift` |
-| Curated anti-slop phrase list | `ProjectSettings.antiSlopPhrases` seeded from `AntiSlopDefaults` — data only, transport wiring deferred | `Models/AntiSlopDefaults.swift` |
+| Curated anti-slop phrase list | `ProjectSettings.antiSlopPhrases` seeded from `AntiSlopDefaults`; fed to KoboldCpp as `banned_strings` (phrase-level backtracking sampler) via `GenerateRequest.bannedStrings` | `Models/AntiSlopDefaults.swift`, `Networking/KoboldClient.swift` |
 | Context-budget sizing | `ContextBudgetRecommendation`, `TokenEstimator` | `Generation/` |
 | Generation-mode orchestration | `GenerationCoordinator`, `TemplateGenerationCoordinator`, `OutlineDraftCoordinator`, `OutlineGenerator`, `SceneBeatPlanner` | `Generation/` |
 | Scene-template imitation | `BeatExtraction`/`Pipeline`, `BeatGeneration`, `VoiceDescriptor`, `SceneExemplar` | `Templates/` |
