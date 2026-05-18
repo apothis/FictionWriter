@@ -2710,5 +2710,28 @@ updated.
   `setAntiSlopPhrases` intents + `ProjectSession` mutators.
 
 All three verified live in the dev preview (render + no console
-errors). **1938 tests green. 14 commits on `main`.** The NSFW/craft
-tooling tranche (research → P0/P1/P2 → docs → UI) is complete.
+errors). The NSFW/craft tooling tranche (research → P0/P1/P2 → docs →
+UI) is complete.
+
+**Follow-ups (same session).** Further research items + cross-cutting
+hardening:
+- **Anti-slop transport wired** — `bannedStrings` on `SamplerParams` /
+  `OllamaChatOptions` → KoboldCpp `banned_strings` (verified on server
+  1.111.2). Reaches every prose path.
+- **Conditional lorebook activation** — `LorebookEntry.activateFrom/
+  UntilSceneId` + `LorebookSceneGate`; a scene-window gate so
+  plot-reveal lore doesn't leak into earlier scenes. Editable in the
+  lorebook webview.
+- **Per-scene explicitness override** — `Scene.explicitnessLevel`
+  (nil = project default). The effective explicitness is the master
+  dial; `.fadeToBlack` on a scene suppresses the explicit posture
+  even in a `.porn` project.
+- **Cross-path consistency** — the WritingDirection posture + anti-slop
+  now reach the template-gen and planned-beat-drafting paths, not just
+  the editor. Audited: no prompt-path conflicts; the gap was
+  inconsistency, now closed.
+- **Prefill-aware Continue** — a mid-sentence tail at the cursor is
+  routed into the assistant-turn prefill (anti-refusal); no new UI.
+  `PrefillSeed` splits head/seed. Validated against Goetia.
+
+**1970 tests green. 19 commits on `main`.**
