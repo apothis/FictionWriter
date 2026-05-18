@@ -239,6 +239,7 @@ let suites: [TestSuite] = [
     continuitySubjectResolverTests(),
     continuityKnowledgeCheckTests(),
     continuityFindingTests(),
+    continuityEvalMetricsTests(),
     continuityClaimFilterTests(),
     continuityAuditStoreTests(),
     ollamaContinuityExtractorTests(),
