@@ -2511,3 +2511,20 @@ table — so future work checks for existing solutions first.
 3. Phase C — the Bible Workspace surface + on-demand trigger.
 
 **1834/1834 tests green.**
+
+#### Addendum (2026-05-18) — extraction path corrected
+
+Mid-Phase-B the user flagged that the continuity extractor should
+apply the project's accumulated gemma knowledge. It did not — it used
+Ollama's `format` schema, which §15.19 (commits `b6c7a97`/`d4df07e`)
+established flakes ~50% on gemma4_2b (the spike's one zeroed scene was
+exactly this). Fixed (`3a8af1a`): `OllamaContinuityExtractor` now runs
+**unconstrained** — field names pinned in the prompt, JSONL output,
+JSONL/array-agnostic tolerant parser, re-roll on any degenerate
+result. Live re-run on gemma4_2b: no zeroed scenes, extraction recall
+**77% content / 61% typed** — the 16-point gap is the model labelling
+a claim's `type` differently from the gold (it extracts the fact, mis-
+types it). Type-classification accuracy matters because retrieval
+routes by type; sharpening it is the concrete extraction-tuning
+target. The spike now drives the production extractor and reports
+both recall figures.

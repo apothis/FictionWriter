@@ -177,25 +177,33 @@ report += "- **Fixture**: \(fixture.scenes.count) scenes, \(fixture.gold_claims.
 if phase == "both" || phase == "extract" {
     log("== EXTRACTION ==")
     report += "## Extraction — recall of planted gold claims\n\n"
-    report += "| scene | gold | extracted | matched | recall |\n|---|---|---|---|---|\n"
-    var totGold = 0, totMatched = 0
+    report += "| scene | gold | extracted | matched | recall | content-recall |\n|---|---|---|---|---|---|\n"
+    var totGold = 0, totMatched = 0, totContent = 0
     for scene in fixture.scenes {
         let gold = fixture.gold_claims.filter { $0.scene == scene.id }
         log("  scene \(scene.id) (\(scene.title)) …")
         let claims = extractClaims(prose: scene.prose, sceneId: scene.id)
-        var matched = 0
+        var matched = 0, content = 0
         for g in gold {
-            let hit = claims.contains { c in
-                c.type.rawValue == g.type && jaccard(c.value, g.value) >= 0.34
+            // typed match — same type AND value overlap
+            if claims.contains(where: { $0.type.rawValue == g.type && jaccard($0.value, g.value) >= 0.34 }) {
+                matched += 1
             }
-            if hit { matched += 1 }
+            // content match — value overlap regardless of type (isolates
+            // genuine extraction misses from type-classification disagreement)
+            if claims.contains(where: { jaccard($0.value, g.value) >= 0.34 }) {
+                content += 1
+            }
         }
-        totGold += gold.count; totMatched += matched
+        totGold += gold.count; totMatched += matched; totContent += content
         let recall = gold.isEmpty ? 1 : Double(matched) / Double(gold.count)
-        report += "| \(scene.id) \(scene.title) | \(gold.count) | \(claims.count) | \(matched) | \(Int(recall * 100))% |\n"
+        let cRecall = gold.isEmpty ? 1 : Double(content) / Double(gold.count)
+        report += "| \(scene.id) \(scene.title) | \(gold.count) | \(claims.count) | \(matched) | \(Int(recall * 100))% | \(Int(cRecall * 100))% |\n"
     }
     let aggRecall = totGold == 0 ? 1 : Double(totMatched) / Double(totGold)
-    report += "\n**Aggregate extraction recall: \(totMatched)/\(totGold) = \(Int(aggRecall * 100))%**\n\n"
+    let aggContent = totGold == 0 ? 1 : Double(totContent) / Double(totGold)
+    report += "\n**Aggregate extraction recall: \(totMatched)/\(totGold) = \(Int(aggRecall * 100))% typed; "
+    report += "\(totContent)/\(totGold) = \(Int(aggContent * 100))% content (type-agnostic)**\n\n"
 }
 
 // MARK: - Phase 2: adjudication
