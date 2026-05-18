@@ -34,6 +34,11 @@ public struct Character: Codable, Equatable {
     /// behaviour); user opts into `.keyed` to trigger injection
     /// only when the entity name/alias appears in recent prose.
     public var injectionMode: InjectionMode
+    /// Per-character kink profile — what this character brings to a
+    /// scene, with a stance per entry (into / curious / soft or hard
+    /// limit). Free-form names (no rigid taxonomy); rendered into the
+    /// character's bible entry so the model writes them consistently.
+    public var kinks: [CharacterKink]
 
     public init(
         id: UUID = UUID(),
@@ -51,7 +56,8 @@ public struct Character: Codable, Equatable {
         knownFactsBySceneId: [UUID: [KnownFact]] = [:],
         canonBrief: String? = nil,
         customFields: [CharacterCustomField] = [],
-        injectionMode: InjectionMode = .constant
+        injectionMode: InjectionMode = .constant,
+        kinks: [CharacterKink] = []
     ) {
         self.id = id
         self.name = name
@@ -69,6 +75,7 @@ public struct Character: Codable, Equatable {
         self.canonBrief = canonBrief
         self.customFields = customFields
         self.injectionMode = injectionMode
+        self.kinks = kinks
     }
 
     public init(from decoder: Decoder) throws {
@@ -89,6 +96,7 @@ public struct Character: Codable, Equatable {
         self.canonBrief = try c.decodeIfPresent(String.self, forKey: .canonBrief)
         self.customFields = try c.decodeIfPresent([CharacterCustomField].self, forKey: .customFields) ?? []
         self.injectionMode = try c.decodeIfPresent(InjectionMode.self, forKey: .injectionMode) ?? .constant
+        self.kinks = try c.decodeIfPresent([CharacterKink].self, forKey: .kinks) ?? []
     }
 
     public static func empty(name: String) -> Character {
@@ -195,4 +203,32 @@ public struct CharacterCustomField: Codable, Equatable {
 public enum CustomFieldKind: String, Codable, Equatable, CaseIterable {
     case text             // single-line value
     case multilineText    // multi-paragraph value
+}
+
+/// One entry in a character's kink profile. `name` is free-form (the
+/// research warned against a rigid taxonomy — the UI offers
+/// suggestions but accepts anything); `stance` is the character's
+/// relationship to it, borrowing the kink-negotiation framing
+/// (into / curious / soft limit / hard limit).
+public struct CharacterKink: Codable, Equatable {
+    public var name: String
+    public var stance: KinkStance
+
+    public init(name: String, stance: KinkStance = .into) {
+        self.name = name
+        self.stance = stance
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.stance = try c.decodeIfPresent(KinkStance.self, forKey: .stance) ?? .into
+    }
+}
+
+public enum KinkStance: String, Codable, Equatable, CaseIterable {
+    case into          // actively wants this
+    case curious       // open to exploring it
+    case softLimit     // conditional — negotiable, approached with care
+    case hardLimit     // never
 }

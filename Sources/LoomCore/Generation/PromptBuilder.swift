@@ -987,6 +987,10 @@ public enum PromptBuilder {
                 if !character.description.isEmpty {
                     out += "\n\(character.description)"
                 }
+                let kinkLine = formatKinks(character.kinks)
+                if !kinkLine.isEmpty {
+                    out += "\nKinks — \(kinkLine)."
+                }
             }
             blocks.append(out)
         }
@@ -1017,6 +1021,28 @@ public enum PromptBuilder {
             blocks.append(out)
         }
         return blocks.joined(separator: "\n\n")
+    }
+
+    /// Renders a character's kink profile into a one-line clause,
+    /// grouped by stance, empty groups omitted. Free-form names.
+    private static func formatKinks(_ kinks: [CharacterKink]) -> String {
+        let groups: [(KinkStance, String)] = [
+            (.into, "into"),
+            (.curious, "curious about"),
+            (.softLimit, "soft limit"),
+            (.hardLimit, "hard limit"),
+        ]
+        var parts: [String] = []
+        for (stance, label) in groups {
+            let names = kinks
+                .filter { $0.stance == stance }
+                .map { $0.name.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            if !names.isEmpty {
+                parts.append("\(label) \(names.joined(separator: ", "))")
+            }
+        }
+        return parts.joined(separator: "; ")
     }
 
     /// Phase 2 #8 — formats activated lorebook entries into a prose
