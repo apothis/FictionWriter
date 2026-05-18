@@ -121,27 +121,6 @@ public enum ContinuityAudit {
         """
     }
 
-    /// JSON Schema for the extraction array — Ollama `format` /
-    /// OpenAI strict mode. Constrains `type` and `source` to their
-    /// enums so the model cannot invent dimensions.
-    public static func extractionJSONSchema() -> [String: Any] {
-        return [
-            "type": "array",
-            "items": [
-                "type": "object",
-                "properties": [
-                    "type": ["type": "string", "enum": ClaimType.allCases.map(\.rawValue)],
-                    "subject": ["type": "string"],
-                    "attribute_key": ["type": "string"],
-                    "value": ["type": "string"],
-                    "source": ["type": "string", "enum": ClaimSource.allCases.map(\.rawValue)],
-                    "evidence_quote": ["type": "string"],
-                ],
-                "required": ["type", "subject", "attribute_key", "value", "source", "evidence_quote"],
-            ],
-        ]
-    }
-
     // MARK: - Extraction parser
 
     private struct RawClaim: Decodable {
@@ -187,6 +166,60 @@ public enum ContinuityAudit {
             ))
         }
         return collected
+    }
+
+    // MARK: - Type-classification stage
+
+    /// Re-classify extracted claims in a focused, scene-scoped pass.
+    ///
+    /// The Goetia/gemma A/B (HANDOFF §15.37 addendum) showed a bigger
+    /// model lifts *content* recall but not *type* accuracy — typing
+    /// is overloaded when one call also does recall, JSON shape, and
+    /// quoting (the Claimify finding). Extraction therefore emits a
+    /// best-effort type, and this stage re-decides it with a call that
+    /// does nothing else: scene + the claim list → one type per claim.
+    public static func buildTypingPrompt(scenePose: String, claims: [Claim]) -> String {
+        let numbered = claims.enumerated()
+            .map { "\($0.offset + 1). \($0.element.value)" }
+            .joined(separator: "\n")
+        return """
+        You are auditing a novel for continuity. Below is a scene and a numbered list of claims already extracted from it. Decide the single best type for each claim.
+
+        - attribute: a fixed trait of a person, place, or object (eye colour, a scar, a job, who owns what).
+        - event: something that happened or that a character did or learned.
+        - knowledge_state: a fact a character knows, believes, or refers to.
+        - temporal: a time marker (a date, season, time of day, age, or how long since something).
+        - spatial: a place fact (where something is, layout, distance, direction).
+
+        Scene:
+        \(scenePose)
+
+        Claims:
+        \(numbered)
+
+        For each claim output one line, exactly "<number>. <type>", and nothing else.
+        """
+    }
+
+    /// Parse the typing pass into a `claimIndex (zero-based) → type`
+    /// map. Tolerant of preamble and assorted `1.` / `1)` / `1:`
+    /// separators; an unknown type or out-of-range index is dropped.
+    public static func parseTypes(_ raw: String, count: Int) -> [Int: ClaimType] {
+        var out: [Int: ClaimType] = [:]
+        for line in raw.split(whereSeparator: { $0.isNewline }) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // leading number
+            let digits = trimmed.prefix { $0.isNumber }
+            guard !digits.isEmpty, let n = Int(digits), n >= 1, n <= count else { continue }
+            // the type token — last run of letters/underscores on the line
+            let rest = trimmed.drop { $0.isNumber }
+                .drop { ".:)- \t".contains($0) }
+            let token = rest.prefix { $0.isLetter || $0 == "_" }
+            if let type = ClaimType(rawValue: String(token).lowercased()) {
+                out[n - 1] = type
+            }
+        }
+        return out
     }
 
     // MARK: - Adjudication types

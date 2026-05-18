@@ -3,8 +3,8 @@ import Foundation
 
 /// Continuity Audit (L10) — Phase A spike, the per-scene typed-claim
 /// extraction layer (pure data). `ContinuityAudit.Claim` is the atomic
-/// decontextualised unit; `buildExtractionPrompt` / `extractionJSONSchema`
-/// / `parseClaims` mirror the proven `LedgerExtraction` shape.
+/// decontextualised unit; `buildExtractionPrompt` / `parseClaims`
+/// mirror the proven `LedgerExtraction` shape.
 func continuityAuditExtractionTests() -> TestSuite {
     let s = TestSuite("ContinuityAuditExtraction")
 
@@ -51,16 +51,6 @@ func continuityAuditExtractionTests() -> TestSuite {
         }
     }
 
-    s.test("the extraction JSON schema constrains type and source to their enums") {
-        let schema = ContinuityAudit.extractionJSONSchema()
-        let items = schema["items"] as? [String: Any]
-        let props = items?["properties"] as? [String: Any]
-        let typeEnum = (props?["type"] as? [String: Any])?["enum"] as? [String]
-        let sourceEnum = (props?["source"] as? [String: Any])?["enum"] as? [String]
-        try expectEqual(Set(typeEnum ?? []),
-                        ["attribute", "event", "knowledge_state", "temporal", "spatial"])
-        try expectEqual(Set(sourceEnum ?? []), ["narration", "dialogue", "thought"])
-    }
 
     // MARK: - Parser
 

@@ -13,11 +13,19 @@ import Foundation
 /// the field names are pinned in the prompt and `parseClaims` is
 /// tolerant (JSONL, array, or chatty preamble all parse).
 ///
+/// **Two stages.** Stage 1 extracts claims (high recall). Stage 2
+/// re-classifies each claim's `type` in a focused, scene-scoped call —
+/// the Goetia/gemma A/B (HANDOFF §15.37) showed typing is overloaded
+/// when one call also does recall, JSON, and quoting (the Claimify
+/// finding). Stage 2 fails open: a typing error keeps the stage-1
+/// best-effort types rather than aborting.
+///
 /// Guards, mirroring `OllamaLedgerExtractor` / `OllamaBeatExtractor`:
 ///
 /// - **Scene-aware token budget** — `budgetForSceneWords`.
-/// - **Retry on a degenerate result** — empty content, an unparseable
-///   response, or zero claims is re-rolled once with a doubled budget.
+/// - **Retry on a degenerate stage-1 result** — empty content, an
+///   unparseable response, or zero claims is re-rolled once with a
+///   doubled budget.
 public final class OllamaContinuityExtractor {
     private let provider: OllamaCallProvider
 
@@ -42,9 +50,47 @@ public final class OllamaContinuityExtractor {
             prompt: prompt,
             options: OllamaChatOptions(numPredict: budget),
             sceneId: sceneId,
-            attemptsRemaining: 1,
-            completion: completion
-        )
+            attemptsRemaining: 1
+        ) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .failure(let e):
+                completion(.failure(e))
+            case .success(let claims):
+                guard !claims.isEmpty else { completion(.success([])); return }
+                self.applyTyping(scenePose: scenePose, claims: claims, completion: completion)
+            }
+        }
+    }
+
+    /// Stage 2 — re-classify each claim's `type` with a focused
+    /// scene-scoped call. Fails open: a typing error or transport
+    /// failure keeps the stage-1 types.
+    private func applyTyping(
+        scenePose: String,
+        claims: [ContinuityAudit.Claim],
+        completion: @escaping (Result<[ContinuityAudit.Claim], Error>) -> Void
+    ) {
+        let prompt = ContinuityAudit.buildTypingPrompt(scenePose: scenePose, claims: claims)
+        let budget = max(512, claims.count * 24)
+        provider.call(
+            prompt: prompt, schema: [:], options: OllamaChatOptions(numPredict: budget)
+        ) { result in
+            switch result {
+            case .failure(let e):
+                DebugLog.shared.write("[continuity] typing stage failed: \(e) — keeping stage-1 types")
+                completion(.success(claims))
+            case .success(let raw):
+                let types = ContinuityAudit.parseTypes(raw, count: claims.count)
+                let retyped = claims.enumerated().map { i, c -> ContinuityAudit.Claim in
+                    guard let t = types[i] else { return c }
+                    var c2 = c
+                    c2.type = t
+                    return c2
+                }
+                completion(.success(retyped))
+            }
+        }
     }
 
     private func callWithRetry(
