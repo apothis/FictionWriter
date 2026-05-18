@@ -128,6 +128,7 @@ public enum ChicletKind: String, Codable, Equatable, CaseIterable {
     case perCallInstruction
     case modeInstruction
     case fewShotStyleExample
+    case directionDirective
 }
 
 // MARK: - Builder
@@ -515,6 +516,23 @@ public enum PromptBuilder {
                     evictionPriority: .max
                 ))
             }
+        }
+
+        // LOOM_NSFW §3.2 — near-cursor anti-fade reinforcement for
+        // explicit-foreground projects. The system addendum sits above
+        // the cache; this re-states the no-fade posture in the
+        // recency-strong slot so it stays load-bearing through a long
+        // generation.
+        if let directive = WritingDirectionPrompt.cursorDirective(direction) {
+            layers.append(Layer(
+                kind: .directionDirective,
+                label: "Direction directive",
+                content: directive,
+                tokens: TokenEstimator.estimate(directive),
+                aboveCache: false,
+                sourceId: nil,
+                evictionPriority: .max
+            ))
         }
 
         // Per-call instruction — one-shot ad-hoc steering for this

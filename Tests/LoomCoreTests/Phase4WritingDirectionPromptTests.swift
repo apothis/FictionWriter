@@ -102,6 +102,33 @@ func phase4WritingDirectionPromptTests() -> TestSuite {
         try expectEqual(WritingDirectionPrompt.continueWordTarget(.defaults), 500)
     }
 
+    // MARK: cursorDirective — near-cursor anti-fade reinforcement
+
+    s.test("default direction yields no cursor directive") {
+        try expectNil(WritingDirectionPrompt.cursorDirective(.defaults))
+    }
+
+    s.test("extreme explicitness yields a bracketed cursor directive") {
+        let d = WritingDirection(explicitnessLevel: .extreme)
+        let directive = WritingDirectionPrompt.cursorDirective(d)
+        try expectNotNil(directive)
+        try expectTrue(directive!.hasPrefix("["))
+        try expectTrue(directive!.lowercased().contains("fade"))
+    }
+
+    s.test("graphic explicitness yields a cursor directive") {
+        try expectNotNil(WritingDirectionPrompt.cursorDirective(WritingDirection(explicitnessLevel: .graphic)))
+    }
+
+    s.test("porn kind yields a cursor directive even at default explicitness") {
+        try expectNotNil(WritingDirectionPrompt.cursorDirective(WritingDirection(kind: .porn)))
+    }
+
+    s.test("onScreen explicitness on a mainstream project yields no cursor directive") {
+        let d = WritingDirection(kind: .mainstream, explicitnessLevel: .onScreen)
+        try expectNil(WritingDirectionPrompt.cursorDirective(d))
+    }
+
     // MARK: PromptBuilder wiring
 
     s.test("extreme project: the system block carries the addendum") {
@@ -126,6 +153,22 @@ func phase4WritingDirectionPromptTests() -> TestSuite {
         let result = PromptBuilder.build(makeWDContext(project: project, scene: scene))
         // The baked "~500 words" target is replaced by the longer one.
         try expectFalse(result.systemBlock.contains("~500 words"))
+    }
+
+    s.test("extreme project: the cursor directive lands in the user block") {
+        var project = Project(title: "T")
+        project.settings.writingDirection = WritingDirection(explicitnessLevel: .extreme)
+        let scene = Scene.empty(id: UUID(), title: "S")
+        let result = PromptBuilder.build(makeWDContext(project: project, scene: scene))
+        try expectTrue(result.userBlock.lowercased().contains("do not fade"))
+        try expectNotNil(result.chiclets.first { $0.sourceKind == .directionDirective })
+    }
+
+    s.test("default project: no cursor directive in the user block") {
+        let project = Project(title: "T")
+        let scene = Scene.empty(id: UUID(), title: "S")
+        let result = PromptBuilder.build(makeWDContext(project: project, scene: scene))
+        try expectNil(result.chiclets.first { $0.sourceKind == .directionDirective })
     }
 
     return s

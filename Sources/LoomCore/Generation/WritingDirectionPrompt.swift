@@ -80,6 +80,22 @@ public enum WritingDirectionPrompt {
         }
     }
 
+    /// A short bracketed directive injected near the cursor for
+    /// explicit-foreground projects. `systemAddendum` lands above the
+    /// cache, far from the generation point; over a long generation
+    /// the model drifts back toward safe defaults. This re-states the
+    /// no-fade posture in the recency-strong slot — the community's
+    /// most-recommended sustained-intensity lever. Bracketed so the
+    /// model reads it as authorial direction, not chat instruction.
+    /// `nil` when the project warrants no reinforcement.
+    public static func cursorDirective(_ direction: WritingDirection) -> String? {
+        let foreground = direction.kind == .porn || direction.kind == .erotica
+        let intense = direction.explicitnessLevel == .graphic
+            || direction.explicitnessLevel == .extreme
+        guard foreground || intense else { return nil }
+        return "[ Authorial direction: stay in the scene at the established intensity and sensory detail; do not fade out, summarise, or cut away from an explicit beat. ]"
+    }
+
     /// Target word count for a Continue generation. Explicit-foreground
     /// projects lengthen the default so the model does not stop short
     /// of the scene (LOOM_NSFW §3.2).
