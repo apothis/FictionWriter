@@ -1,0 +1,189 @@
+{
+  "_description": "Continuity Audit (L10) eval-harness fixture, manuscript 1 of the medium set (LOOM_CONTINUITY_AUDIT.md §21). 'The Long Watch' — a 7-scene science-fiction story aboard a deep-space relay station, with 12 planted contradictions across all four audited classes plus 4 precision-control non-errors. gold_claims score per-scene typed-claim extraction recall; gold_pairs score pairwise adjudication (decoupled from extraction noise); gold_contradictions are the end-to-end findings the whole pipeline should surface, tagged with kind + scene_distance for stratified reporting.",
+  "schema_version": 2,
+  "id": "long_watch",
+  "title": "The Long Watch",
+  "genre": "science fiction",
+  "scenes": [
+    {
+      "id": "s1",
+      "title": "Docking",
+      "prose": "The transit pod mated to Relay Station Kessel with a shudder Vint felt in his teeth. Six weeks of empty space behind him, and now this — a grey drum of a station turning slow against the dark. Vint was an inspector for the Bureau of Relays, sent out because Kessel had missed three reporting cycles in a row. He flexed his left hand, the prosthetic one, a Bureau-issue replacement he had never entirely stopped noticing, and waited for the lock to cycle. The station had a single airlock, set on the sunward side where the hull ran warm, and it opened for him grudgingly. Inside, the air was thin and cold and smelled of old electronics. Minimal power: the station had been running dark a long while. Somewhere far off a pump laboured against the quiet. Vint shouldered his kit and stepped through. Whatever had gone wrong aboard Kessel, the silence told him, had been going wrong for months."
+    },
+    {
+      "id": "s2",
+      "title": "The Keeper",
+      "prose": "Sael was waiting in the command ring at the station's core, a lean figure with close-cropped silver hair and the stillness that comes of too much solitude. 'You'll be the inspector,' Sael said — not a question. 'Keeper First Class Sael. I've kept Kessel nine years.' The command ring was a curved gallery of dead screens, only a handful still lit; Sael moved among them the way a person crosses their own house in the dark. 'You've had no resupply,' Vint said. 'The last ship came eight months ago,' Sael answered. 'We've made the stores last.' We. Vint marked the word. Sael spoke of the station as though it were crewed still. He asked, mildly, when the trouble had started, and Sael's face closed like a hatch. 'Define trouble,' Sael said, and turned back to the failing screens."
+    },
+    {
+      "id": "s3",
+      "title": "The Reactor",
+      "prose": "They went down to the reactor together, two decks below the command ring, through a stairwell where the gravity plating stuttered underfoot. The reactor ran at quarter power, a sullen amber glow behind its shielding. Vint walked the length of the coolant manifold and said little. Sael watched, arms folded, a fresh burn livid across one forearm. 'You handle all the maintenance yourself?' Vint asked. 'There is no one else,' Sael said. On the climb back they passed the medical bay, and its hatch was sealed — a red lockplate, a door that would not give. Sael offered nothing, and Vint did not yet press. A station gave up its secrets in its own order; he had learned that much."
+    },
+    {
+      "id": "s4",
+      "title": "Orsa's Bunk",
+      "prose": "In the crew quarters most bunks were stripped to the bare frame, but one still held a blanket and a row of taped-up star charts. It had been Orsa's — the station technician, who had left Kessel a year ago on the last tender. 'She kept those charts like scripture,' Sael said from the hatchway. Vint touched the edge of one. Kessel had carried a crew of twelve once; he had read that much in the Bureau file. 'Whoever cut that coolant line,' Vint said quietly, 'knew this station's schematics by heart.' Sael let that pass. 'I called the Bureau in myself,' the keeper added, 'the moment things began to turn' — and that was the first thing Vint did not believe, for he had been sent because Kessel went silent, not because it called. The blanket on Orsa's bunk was folded with a care no empty room earns."
+    },
+    {
+      "id": "s5",
+      "title": "The Log",
+      "prose": "Sael's quarters were small and scrupulously kept. The keeper called up the station log on a cracked handscreen and, for the first time, did not look away from him. 'Kessler Relay has not had a clean year since I took it,' Sael said — and Vint, an inspector for the Bureau of Relays, kept his face still and let the keeper talk. 'Six years I've kept this station. The supply tender last came three months back. And the coolant line —' Sael stopped. 'I cut it. Then I logged a fault, and I never told the Bureau. Nine weeks it took you to reach me, and I spent every one of them deciding whether to say so.' The handscreen's light shook a little. 'There. Now you have it.'"
+    },
+    {
+      "id": "s6",
+      "title": "Shadow Side",
+      "prose": "Vint needed air that did not taste of Sael's confession, and the station gave him a second airlock on the shadow side, cold enough that his breath ghosted at the viewport. He turned a stylus over in his right hand — the prosthetic, its metal dulled by years of handling. Sael found him there. 'You'll report all of it,' the keeper said. A junior keeper learned early that the Bureau forgave nothing, and Sael had never risen past that rank. 'Orsa is well out of it,' Sael added quietly. It had been half a year since Orsa left. Below the viewport the dark turned, slow and entire."
+    },
+    {
+      "id": "s7",
+      "title": "The Watch",
+      "prose": "They kept the last watch together in the command ring, which on Kessel was the outermost deck, a band of dark glass against the turning stars. The reactor sat above them now, up on the ring's spine, and through the deckhead Vint could hear it idling low, barely lit. Sael had pushed back the hood of the work-suit, and the deck light caught the keeper's dark hair and the old burn on one forearm, scabbed over now and fading. 'You could have run,' Vint said. 'Nine years is a long time to then run,' Sael answered. Vint logged the station as failing but salvageable, and the keeper as the same. When the relief ship came he would be aboard it; until then there was the watch, and the reactor's small light, and the cold."
+    }
+  ],
+  "gold_claims": [
+    {"scene": "s1", "type": "attribute", "subject": "Vint", "value": "Vint's left hand is a prosthetic"},
+    {"scene": "s1", "type": "attribute", "subject": "Vint", "value": "Vint is an inspector for the Bureau of Relays"},
+    {"scene": "s1", "type": "spatial", "subject": "the airlock", "value": "the station has a single airlock on the sunward side"},
+    {"scene": "s1", "type": "temporal", "subject": "the transit", "value": "Vint's transit took six weeks"},
+    {"scene": "s1", "type": "attribute", "subject": "the station", "value": "the station is called Relay Station Kessel"},
+    {"scene": "s2", "type": "attribute", "subject": "Sael", "value": "Sael has close-cropped silver hair"},
+    {"scene": "s2", "type": "attribute", "subject": "Sael", "value": "Sael is a Keeper First Class"},
+    {"scene": "s2", "type": "attribute", "subject": "Sael", "value": "Sael has kept Kessel for nine years"},
+    {"scene": "s2", "type": "spatial", "subject": "the command ring", "value": "the command ring is at the station's core"},
+    {"scene": "s2", "type": "temporal", "subject": "the supply ship", "value": "the last supply ship came eight months ago"},
+    {"scene": "s3", "type": "spatial", "subject": "the reactor", "value": "the reactor is two decks below the command ring"},
+    {"scene": "s3", "type": "attribute", "subject": "the reactor", "value": "the reactor runs at quarter power"},
+    {"scene": "s3", "type": "attribute", "subject": "Sael", "value": "Sael has a fresh burn on one forearm"},
+    {"scene": "s3", "type": "attribute", "subject": "the medical bay", "value": "the medical bay hatch is sealed"},
+    {"scene": "s4", "type": "attribute", "subject": "Orsa", "value": "Orsa is the station technician"},
+    {"scene": "s4", "type": "temporal", "subject": "Orsa", "value": "Orsa left Kessel a year ago"},
+    {"scene": "s4", "type": "event", "subject": "Kessel", "value": "Kessel once carried a crew of twelve"},
+    {"scene": "s4", "type": "knowledge_state", "subject": "Vint", "value": "Vint knows the coolant line was cut"},
+    {"scene": "s5", "type": "attribute", "subject": "the station", "value": "the station is called Kessler Relay"},
+    {"scene": "s5", "type": "attribute", "subject": "Sael", "value": "Sael has kept the station six years"},
+    {"scene": "s5", "type": "temporal", "subject": "the supply tender", "value": "the supply tender last came three months ago"},
+    {"scene": "s5", "type": "temporal", "subject": "the transit", "value": "Vint's transit took nine weeks"},
+    {"scene": "s5", "type": "event", "subject": "Sael", "value": "Sael cut the coolant line and never reported it"},
+    {"scene": "s6", "type": "spatial", "subject": "the airlock", "value": "there is a second airlock on the shadow side"},
+    {"scene": "s6", "type": "attribute", "subject": "Vint", "value": "Vint's right hand is the prosthetic"},
+    {"scene": "s6", "type": "attribute", "subject": "Sael", "value": "Sael is a junior keeper"},
+    {"scene": "s6", "type": "temporal", "subject": "Orsa", "value": "Orsa left half a year ago"},
+    {"scene": "s7", "type": "spatial", "subject": "the reactor", "value": "the reactor is above the command ring on the ring's spine"},
+    {"scene": "s7", "type": "spatial", "subject": "the command ring", "value": "the command ring is the outermost deck"},
+    {"scene": "s7", "type": "attribute", "subject": "Sael", "value": "Sael has dark hair"},
+    {"scene": "s7", "type": "attribute", "subject": "Sael", "value": "Sael's forearm burn has scabbed over"}
+  ],
+  "gold_pairs": [
+    {
+      "id": "p1", "class": "attribute", "verdict": "contradiction",
+      "note": "Vint's prosthetic hand drifts from the left to the right.",
+      "earlier": {"type": "attribute", "subject": "Vint", "attribute_key": "prosthetic hand", "value": "Vint's left hand is a prosthetic", "scene": "s1", "source": "narration", "evidence_quote": "He flexed his left hand, the prosthetic one"},
+      "later": {"type": "attribute", "subject": "Vint", "attribute_key": "prosthetic hand", "value": "Vint's right hand is the prosthetic", "scene": "s6", "source": "narration", "evidence_quote": "He turned a stylus over in his right hand — the prosthetic"}
+    },
+    {
+      "id": "p2", "class": "attribute", "verdict": "contradiction",
+      "note": "Sael's tenure drifts from nine years to six.",
+      "earlier": {"type": "attribute", "subject": "Sael", "attribute_key": "tenure", "value": "Sael has kept Kessel nine years", "scene": "s2", "source": "dialogue", "evidence_quote": "I've kept Kessel nine years"},
+      "later": {"type": "attribute", "subject": "Sael", "attribute_key": "tenure", "value": "Sael has kept the station six years", "scene": "s5", "source": "dialogue", "evidence_quote": "Six years I've kept this station"}
+    },
+    {
+      "id": "p3", "class": "spatial", "verdict": "contradiction",
+      "note": "The reactor is placed two decks below the command ring, then above it.",
+      "earlier": {"type": "spatial", "subject": "the reactor", "attribute_key": "position", "value": "the reactor is two decks below the command ring", "scene": "s3", "source": "narration", "evidence_quote": "two decks below the command ring"},
+      "later": {"type": "spatial", "subject": "the reactor", "attribute_key": "position", "value": "the reactor is above the command ring, on the ring's spine", "scene": "s7", "source": "narration", "evidence_quote": "The reactor sat above them now, up on the ring's spine"}
+    },
+    {
+      "id": "p4", "class": "spatial", "verdict": "contradiction",
+      "note": "The station has a single airlock, then a second one appears.",
+      "earlier": {"type": "spatial", "subject": "the airlock", "attribute_key": "count", "value": "the station has a single airlock, on the sunward side", "scene": "s1", "source": "narration", "evidence_quote": "The station had a single airlock, set on the sunward side"},
+      "later": {"type": "spatial", "subject": "the airlock", "attribute_key": "count", "value": "there is a second airlock, on the shadow side", "scene": "s6", "source": "narration", "evidence_quote": "the station gave him a second airlock on the shadow side"}
+    },
+    {
+      "id": "p5", "class": "temporal", "verdict": "contradiction",
+      "note": "The last supply ship is dated eight months ago, then three months ago.",
+      "earlier": {"type": "temporal", "subject": "the supply ship", "attribute_key": "", "value": "the last supply ship came eight months ago", "scene": "s2", "source": "dialogue", "evidence_quote": "The last ship came eight months ago"},
+      "later": {"type": "temporal", "subject": "the supply ship", "attribute_key": "", "value": "the supply tender last came three months ago", "scene": "s5", "source": "dialogue", "evidence_quote": "The supply tender last came three months back"}
+    },
+    {
+      "id": "p6", "class": "temporal", "verdict": "contradiction",
+      "note": "Orsa's departure is dated a year ago, then half a year ago.",
+      "earlier": {"type": "temporal", "subject": "Orsa", "attribute_key": "", "value": "Orsa left Kessel a year ago", "scene": "s4", "source": "narration", "evidence_quote": "who had left Kessel a year ago on the last tender"},
+      "later": {"type": "temporal", "subject": "Orsa", "attribute_key": "", "value": "Orsa left half a year ago", "scene": "s6", "source": "narration", "evidence_quote": "It had been half a year since Orsa left"}
+    },
+    {
+      "id": "p7", "class": "knowledge_state", "verdict": "contradiction",
+      "note": "Vint references the cut coolant line in s4, but Sael only reveals the concealed sabotage in s5.",
+      "earlier": {"type": "knowledge_state", "subject": "Vint", "attribute_key": "", "value": "Vint knows someone cut the coolant line", "scene": "s4", "source": "dialogue", "evidence_quote": "Whoever cut that coolant line"},
+      "later": {"type": "event", "subject": "the coolant line", "attribute_key": "", "value": "Sael reveals for the first time that the coolant line was cut and never reported", "scene": "s5", "source": "dialogue", "evidence_quote": "I cut it. Then I logged a fault, and I never told the Bureau"}
+    },
+    {
+      "id": "p8", "class": "attribute", "verdict": "contradiction",
+      "note": "The station's name drifts from Relay Station Kessel to Kessler Relay.",
+      "earlier": {"type": "attribute", "subject": "the station", "attribute_key": "name", "value": "the station is called Relay Station Kessel", "scene": "s1", "source": "narration", "evidence_quote": "The transit pod mated to Relay Station Kessel"},
+      "later": {"type": "attribute", "subject": "the station", "attribute_key": "name", "value": "the station is called Kessler Relay", "scene": "s5", "source": "dialogue", "evidence_quote": "Kessler Relay has not had a clean year since I took it"}
+    },
+    {
+      "id": "p9", "class": "attribute", "verdict": "contradiction",
+      "note": "Sael's hair drifts from silver to dark.",
+      "earlier": {"type": "attribute", "subject": "Sael", "attribute_key": "hair", "value": "Sael has close-cropped silver hair", "scene": "s2", "source": "narration", "evidence_quote": "a lean figure with close-cropped silver hair"},
+      "later": {"type": "attribute", "subject": "Sael", "attribute_key": "hair", "value": "Sael has dark hair", "scene": "s7", "source": "narration", "evidence_quote": "the deck light caught the keeper's dark hair"}
+    },
+    {
+      "id": "p10", "class": "temporal", "verdict": "contradiction",
+      "note": "Vint's transit is dated six weeks, then nine weeks.",
+      "earlier": {"type": "temporal", "subject": "the transit", "attribute_key": "", "value": "Vint's transit took six weeks", "scene": "s1", "source": "narration", "evidence_quote": "Six weeks of empty space behind him"},
+      "later": {"type": "temporal", "subject": "the transit", "attribute_key": "", "value": "Vint's transit took nine weeks", "scene": "s5", "source": "dialogue", "evidence_quote": "Nine weeks it took you to reach me"}
+    },
+    {
+      "id": "p11", "class": "spatial", "verdict": "contradiction",
+      "note": "The command ring is placed at the station's core, then as the outermost deck.",
+      "earlier": {"type": "spatial", "subject": "the command ring", "attribute_key": "position", "value": "the command ring is at the station's core", "scene": "s2", "source": "narration", "evidence_quote": "the command ring at the station's core"},
+      "later": {"type": "spatial", "subject": "the command ring", "attribute_key": "position", "value": "the command ring is the outermost deck", "scene": "s7", "source": "narration", "evidence_quote": "the command ring, which on Kessel was the outermost deck"}
+    },
+    {
+      "id": "p12", "class": "attribute", "verdict": "contradiction",
+      "note": "Sael's rank drifts from Keeper First Class to junior keeper.",
+      "earlier": {"type": "attribute", "subject": "Sael", "attribute_key": "rank", "value": "Sael is a Keeper First Class", "scene": "s2", "source": "dialogue", "evidence_quote": "Keeper First Class Sael"},
+      "later": {"type": "attribute", "subject": "Sael", "attribute_key": "rank", "value": "Sael is a junior keeper", "scene": "s6", "source": "narration", "evidence_quote": "Sael had never risen past that rank"}
+    },
+    {
+      "id": "p13", "class": "attribute", "verdict": "consistent",
+      "note": "Control — Vint's role stated identically in two scenes.",
+      "earlier": {"type": "attribute", "subject": "Vint", "attribute_key": "occupation", "value": "Vint is an inspector for the Bureau of Relays", "scene": "s1", "source": "narration", "evidence_quote": "Vint was an inspector for the Bureau of Relays"},
+      "later": {"type": "attribute", "subject": "Vint", "attribute_key": "occupation", "value": "Vint is an inspector for the Bureau of Relays", "scene": "s5", "source": "narration", "evidence_quote": "Vint, an inspector for the Bureau of Relays"}
+    },
+    {
+      "id": "p14", "class": "attribute", "verdict": "evolution",
+      "note": "Control — Sael's burn is fresh, then scabbed over weeks later. A legitimate in-story change.",
+      "earlier": {"type": "attribute", "subject": "Sael", "attribute_key": "forearm burn", "value": "Sael has a fresh burn on one forearm", "scene": "s3", "source": "narration", "evidence_quote": "a fresh burn livid across one forearm"},
+      "later": {"type": "attribute", "subject": "Sael", "attribute_key": "forearm burn", "value": "Sael's forearm burn has scabbed over and is fading", "scene": "s7", "source": "narration", "evidence_quote": "the old burn on one forearm, scabbed over now and fading"}
+    },
+    {
+      "id": "p15", "class": "attribute", "verdict": "consistent",
+      "note": "Control — the reactor's power state reworded but in agreement.",
+      "earlier": {"type": "attribute", "subject": "the reactor", "attribute_key": "power", "value": "the reactor runs at quarter power", "scene": "s3", "source": "narration", "evidence_quote": "The reactor ran at quarter power"},
+      "later": {"type": "attribute", "subject": "the reactor", "attribute_key": "power", "value": "the reactor idles low, barely lit", "scene": "s7", "source": "narration", "evidence_quote": "idling low, barely lit"}
+    },
+    {
+      "id": "p16", "class": "event", "verdict": "consistent",
+      "note": "Control — Sael lies in dialogue (claims the keeper summoned the Bureau); narration shows Vint was sent because Kessel went silent. A lie is the character's assertion, not a world-fact conflict.",
+      "earlier": {"type": "event", "subject": "Kessel", "attribute_key": "", "value": "Vint was sent because Kessel missed its reporting cycles", "scene": "s1", "source": "narration", "evidence_quote": "sent out because Kessel had missed three reporting cycles in a row"},
+      "later": {"type": "event", "subject": "Sael", "attribute_key": "", "value": "Sael says the keeper called the Bureau in", "scene": "s4", "source": "dialogue", "evidence_quote": "I called the Bureau in myself"}
+    }
+  ],
+  "gold_contradictions": [
+    {"id": "c1", "kind": "attribute_drift", "scene_a": "s1", "scene_b": "s6", "scene_distance": 5, "subject": "Vint", "summary": "Vint's prosthetic hand drifts from left to right.", "value_a": "Vint's left hand is a prosthetic", "value_b": "Vint's right hand is the prosthetic"},
+    {"id": "c2", "kind": "attribute_drift", "scene_a": "s2", "scene_b": "s5", "scene_distance": 3, "subject": "Sael", "summary": "Sael's tenure drifts from nine years to six.", "value_a": "Sael has kept Kessel nine years", "value_b": "Sael has kept the station six years"},
+    {"id": "c3", "kind": "spatial_conflict", "scene_a": "s3", "scene_b": "s7", "scene_distance": 4, "subject": "the reactor", "summary": "The reactor is below the command ring, then above it.", "value_a": "the reactor is two decks below the command ring", "value_b": "the reactor is above the command ring, on the ring's spine"},
+    {"id": "c4", "kind": "spatial_conflict", "scene_a": "s1", "scene_b": "s6", "scene_distance": 5, "subject": "the airlock", "summary": "The station has a single airlock, then a second appears.", "value_a": "the station has a single airlock, on the sunward side", "value_b": "there is a second airlock, on the shadow side"},
+    {"id": "c5", "kind": "timeline_conflict", "scene_a": "s2", "scene_b": "s5", "scene_distance": 3, "subject": "the supply ship", "summary": "The last supply ship is dated eight months, then three months ago.", "value_a": "the last supply ship came eight months ago", "value_b": "the supply tender last came three months ago"},
+    {"id": "c6", "kind": "timeline_conflict", "scene_a": "s4", "scene_b": "s6", "scene_distance": 2, "subject": "Orsa", "summary": "Orsa's departure is dated a year ago, then half a year ago.", "value_a": "Orsa left Kessel a year ago", "value_b": "Orsa left half a year ago"},
+    {"id": "c7", "kind": "knowledge_violation", "scene_a": "s4", "scene_b": "s5", "scene_distance": 1, "subject": "Vint", "summary": "Vint references the cut coolant line before Sael reveals the concealed sabotage.", "value_a": "Vint knows someone cut the coolant line", "value_b": "Sael reveals for the first time that the coolant line was cut and never reported"},
+    {"id": "c8", "kind": "attribute_drift", "scene_a": "s1", "scene_b": "s5", "scene_distance": 4, "subject": "the station", "summary": "The station's name drifts from Relay Station Kessel to Kessler Relay.", "value_a": "the station is called Relay Station Kessel", "value_b": "the station is called Kessler Relay"},
+    {"id": "c9", "kind": "attribute_drift", "scene_a": "s2", "scene_b": "s7", "scene_distance": 5, "subject": "Sael", "summary": "Sael's hair drifts from silver to dark.", "value_a": "Sael has close-cropped silver hair", "value_b": "Sael has dark hair"},
+    {"id": "c10", "kind": "timeline_conflict", "scene_a": "s1", "scene_b": "s5", "scene_distance": 4, "subject": "the transit", "summary": "Vint's transit is dated six weeks, then nine weeks.", "value_a": "Vint's transit took six weeks", "value_b": "Vint's transit took nine weeks"},
+    {"id": "c11", "kind": "spatial_conflict", "scene_a": "s2", "scene_b": "s7", "scene_distance": 5, "subject": "the command ring", "summary": "The command ring is at the station's core, then the outermost deck.", "value_a": "the command ring is at the station's core", "value_b": "the command ring is the outermost deck"},
+    {"id": "c12", "kind": "attribute_drift", "scene_a": "s2", "scene_b": "s6", "scene_distance": 4, "subject": "Sael", "summary": "Sael's rank drifts from Keeper First Class to junior keeper.", "value_a": "Sael is a Keeper First Class", "value_b": "Sael is a junior keeper"}
+  ]
+}

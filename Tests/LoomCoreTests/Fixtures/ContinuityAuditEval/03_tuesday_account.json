@@ -1,0 +1,208 @@
+{
+  "_description": "Continuity Audit (L10) eval-harness fixture, manuscript 3 of the medium set (LOOM_CONTINUITY_AUDIT.md §21). 'The Tuesday Account' — an 11-scene contemporary heist thriller, with 12 planted contradictions across all four audited classes plus 4 precision-control non-errors. gold_claims score per-scene extraction recall; gold_pairs score pairwise adjudication; gold_contradictions are the end-to-end findings the pipeline should surface.",
+  "schema_version": 2,
+  "id": "tuesday_account",
+  "title": "The Tuesday Account",
+  "genre": "contemporary thriller",
+  "scenes": [
+    {
+      "id": "s1",
+      "title": "The Offer",
+      "prose": "The client chose the place: a hotel bar with too few people in it. Dana Keil had been out of the game two years, and it showed in the way she checked the exits twice. The client was a woman in her sixties, silver-haired, with the patience of someone who had never once been hurried. 'Two hundred thousand,' she said. 'In bearer bonds, sitting in a private vault in the Hartmann Building. I want them moved.' Dana turned her glass without drinking. 'I plan jobs,' she said. 'I don't run them. You would want that clear.' 'I want it clean,' the client said. 'Planned is clean.' Outside, the city ran wet and bright. Dana had promised herself she was finished with this — but she had promised herself a great many things, and kept fewer."
+    },
+    {
+      "id": "s2",
+      "title": "The Building",
+      "prose": "The Hartmann Building was a tower of green glass on the financial mile, and Dana cased it for three days from a coffee shop across the street. The vault sat on the fourteenth floor, behind a law firm that rented the whole level and trusted its tenants. Deliveries came and went through a loading dock at the rear of the building, screened from the road by a brick wall and a single tired camera. A steady rain fell all three days, which suited her; nobody looks closely at anyone in the rain. By the third evening Dana had the shift changes, the camera arcs, and the slow, confident rhythm of a building that had never once been robbed. That last was the thing she liked least. Confidence like that was usually earned, and she did not yet know what had earned it."
+    },
+    {
+      "id": "s3",
+      "title": "Marco",
+      "prose": "Marco Vey worked building security at the Hartmann, which was the entire reason there was a job at all. They met in a laundromat that smelled of hot lint and bleach. Marco was wiry and restless, and a faded tattoo of a swallow marked his right forearm; he kept touching it while he talked, the way other men check a watch. 'I have never worked with your driver,' he said, when Dana mentioned Sol. 'Whoever he is, that is your call and not mine.' He slid a cloned keycard across the folding table. 'Good for the tenant floors, not the vault — you will have the vault from the inside or not at all.' Dana pocketed it. Marco was nervous, and nervous was at least honest. It was the calm ones she had learned to worry about."
+    },
+    {
+      "id": "s4",
+      "title": "Sol",
+      "prose": "Sol had driven for the crew eleven years and looked as though he had slept through most of them. He met Dana in a parking structure with the getaway car already chosen: a grey sedan, mid-range, three years old, the most forgettable thing on four wheels. 'It runs better than it looks,' Sol said, which is the most that can be asked of a car or a person. He was favouring his left wrist, sprained the week before in a way he would not explain. Sol and Marco went back further than Marco liked to admit — three jobs together, maybe four, in the years before Dana knew either of them. She filed that away. In her experience the things people left out of a story were the things that later mattered most."
+    },
+    {
+      "id": "s5",
+      "title": "The Schedule",
+      "prose": "They set the job for Tuesday. Tuesday nights the Hartmann ran a skeleton guard, and the rotation left a four-minute gap when the lobby desk stood unwatched — long enough, if nobody's hands shook. Dana walked the crew through it twice in the safehouse, a bare rented apartment with a card table and three folding chairs. 'In and out inside the gap,' she said. 'If the gap closes, you walk away empty-handed. Nobody improvises, nobody is a hero.' Marco nodded too fast. Sol did not nod at all, which she preferred. A four-minute gap was not generous, but it was real, and a real gap beaten cleanly was worth more than a longer one earned by luck."
+    },
+    {
+      "id": "s6",
+      "title": "The Walk-through",
+      "prose": "Marco took Dana through the building once, after hours, on his own pass. Dana was a planner, and a planner walks the ground when she can. The tenant floors were carpeted and identical, door after numbered door. The service stairwell ran beside the elevators, a grey concrete shaft with doors that locked behind you; she made Marco prop each one and timed the climb herself. 'You are thorough,' Marco said, half a complaint. 'I am alive,' Dana said. 'The two are related.' On the fourteenth floor she stood a long moment outside the law firm's glass doors, the vault somewhere beyond them in the dark, and felt the old pull she had spent two years pretending to be rid of."
+    },
+    {
+      "id": "s7",
+      "title": "A Loose Thread",
+      "prose": "That night Dana could not sleep, and a sleepless planner is a dangerous thing. She laid the job out across the card table again and found the thread that had been snagging at her: the bonds were too easy, too clearly the thing she had been shown. 'The second drive is in the floor safe under the partner's desk,' she said aloud, to the empty room — and only when the words were out did she think to wonder how she knew it. She had been eighteen months out of the game; long enough to get rusty, not long enough to get stupid. Nobody on the crew had spoken one word about a second drive, or a floor safe, or a senior partner. Which meant somebody already knew — and somebody had decided she should not."
+    },
+    {
+      "id": "s8",
+      "title": "The Client Again",
+      "prose": "The client wanted a final meeting, and this time she came to the safehouse herself, which Dana did not like at all. She was younger than Dana had remembered — barely forty, sharp-suited, her silver hair clearly a choice rather than an age. 'There has been a change,' the client said. 'The take is larger than I first told you. Half a million, not two hundred. I trust that is not a problem.' 'Changes are always a problem,' Dana said. 'The number is not. The change is.' The client smiled as though Dana had passed a test. When she had gone, Sol said the thing they were all holding: 'People who lie about small numbers lie about big ones.' Dana said nothing, because Sol had already said it correctly and there was no improving on it."
+    },
+    {
+      "id": "s9",
+      "title": "The Reveal",
+      "prose": "Marco broke first, the night before the job, in the stairwell of his own building because he could not say it anywhere else. 'There is a second drive,' he said. 'A floor safe, under the senior partner's desk on the vault floor. The bonds were never the real job — the client wants what is on that drive.' He had known for weeks; he had been paid, separately, to keep it from the crew until the last hour, and the keeping had finally cost him more than the money was worth. Dana listened and did not tell him she had already named the safe aloud to an empty room three nights before. Some things you keep, even from a man unburdening himself — especially then."
+    },
+    {
+      "id": "s10",
+      "title": "The Night",
+      "prose": "The job ran on Thursday night, because the client's drive could not wait for Tuesday, and money rewrites a schedule faster than sense ever does. The rain had finally stopped, the streets drying under a hard clear sky — bad for cover, good for nerves. Marco brought them in through the loading dock, and the dock faced the open street, not the rear of the building Dana had spent three days casing. His count was wrong from the first minute. The guard gap was not four minutes; it was ninety seconds, and Dana knew it the moment the lobby desk filled again behind them. They took the service stairwell — not the one beside the elevators but the narrow one at the far end of the corridor, the only door Marco's pass would open. The vault was not on the fourteenth floor at all; it was on the ninth, behind a law firm whose name was on no directory. Dana stood on the wrong floor in the wrong stairwell and understood, far too late, that the only person the plan had ever fitted was Marco."
+    },
+    {
+      "id": "s11",
+      "title": "The Drop",
+      "prose": "They got out, which was more than Dana had let herself expect while standing in that wrong stairwell. Sol was waiting two streets over with the engine running — not the grey sedan they had agreed on but a black hatchback, swapped without a word to anyone, and Dana was too tired to ask whose idea it had been. Marco climbed in last. In the streetlight the swallow tattoo showed on his left forearm, dark against pale skin, and Dana looked at it a moment too long. 'Six years I have driven this crew,' Sol said, to nobody in particular, 'and that is the first time the plan itself was the trap.' Dana said nothing. She had the drive. She did not yet know whose side it would prove to be on — and that, she thought, was the only honest place to end a job like this one."
+    }
+  ],
+  "gold_claims": [
+    {"scene": "s1", "type": "temporal", "subject": "Dana", "value": "Dana had been out of the game two years"},
+    {"scene": "s1", "type": "attribute", "subject": "the client", "value": "the client is a woman in her sixties"},
+    {"scene": "s1", "type": "attribute", "subject": "the take", "value": "the take is two hundred thousand in bearer bonds"},
+    {"scene": "s1", "type": "attribute", "subject": "Dana", "value": "Dana is a planner, not a runner"},
+    {"scene": "s2", "type": "spatial", "subject": "the vault", "value": "the vault is on the fourteenth floor"},
+    {"scene": "s2", "type": "spatial", "subject": "the loading dock", "value": "the loading dock is at the rear of the building"},
+    {"scene": "s2", "type": "spatial", "subject": "the Hartmann Building", "value": "the Hartmann Building is a tower of green glass"},
+    {"scene": "s3", "type": "attribute", "subject": "Marco", "value": "Marco works building security at the Hartmann"},
+    {"scene": "s3", "type": "attribute", "subject": "Marco", "value": "Marco has a tattoo on his right forearm"},
+    {"scene": "s4", "type": "attribute", "subject": "Sol", "value": "Sol has driven for the crew eleven years"},
+    {"scene": "s4", "type": "attribute", "subject": "the getaway car", "value": "the getaway car is a grey sedan"},
+    {"scene": "s4", "type": "event", "subject": "Sol and Marco", "value": "Sol and Marco have worked three jobs together"},
+    {"scene": "s5", "type": "temporal", "subject": "the job", "value": "the job is set for Tuesday"},
+    {"scene": "s5", "type": "temporal", "subject": "the guard rotation", "value": "there is a four-minute gap in the guard rotation"},
+    {"scene": "s6", "type": "spatial", "subject": "the service stairwell", "value": "the service stairwell is beside the elevators"},
+    {"scene": "s6", "type": "attribute", "subject": "Dana", "value": "Dana is a planner"},
+    {"scene": "s7", "type": "knowledge_state", "subject": "Dana", "value": "Dana knows the second drive is in a floor safe under the partner's desk"},
+    {"scene": "s7", "type": "temporal", "subject": "Dana", "value": "Dana had been eighteen months out of the game"},
+    {"scene": "s8", "type": "attribute", "subject": "the client", "value": "the client is barely forty"},
+    {"scene": "s8", "type": "attribute", "subject": "the take", "value": "the take is half a million"},
+    {"scene": "s9", "type": "event", "subject": "Marco", "value": "Marco reveals there is a second drive in a floor safe"},
+    {"scene": "s9", "type": "event", "subject": "the job", "value": "the real target is the second drive, not the bonds"},
+    {"scene": "s10", "type": "temporal", "subject": "the job", "value": "the job ran on Thursday night"},
+    {"scene": "s10", "type": "temporal", "subject": "the guard gap", "value": "the guard gap is ninety seconds"},
+    {"scene": "s10", "type": "spatial", "subject": "the service stairwell", "value": "the stairwell is at the far end of the corridor"},
+    {"scene": "s10", "type": "spatial", "subject": "the vault", "value": "the vault is on the ninth floor"},
+    {"scene": "s10", "type": "spatial", "subject": "the loading dock", "value": "the loading dock faces the open street"},
+    {"scene": "s11", "type": "attribute", "subject": "the getaway car", "value": "the getaway car is a black hatchback"},
+    {"scene": "s11", "type": "attribute", "subject": "Marco", "value": "Marco has a tattoo on his left forearm"},
+    {"scene": "s11", "type": "attribute", "subject": "Sol", "value": "Sol has driven the crew six years"}
+  ],
+  "gold_pairs": [
+    {
+      "id": "p1", "class": "attribute", "verdict": "contradiction",
+      "note": "The getaway car drifts from a grey sedan to a black hatchback.",
+      "earlier": {"type": "attribute", "subject": "the getaway car", "attribute_key": "vehicle", "value": "the getaway car is a grey sedan", "scene": "s4", "source": "narration", "evidence_quote": "a grey sedan"},
+      "later": {"type": "attribute", "subject": "the getaway car", "attribute_key": "vehicle", "value": "the getaway car is a black hatchback", "scene": "s11", "source": "narration", "evidence_quote": "a black hatchback"}
+    },
+    {
+      "id": "p2", "class": "attribute", "verdict": "contradiction",
+      "note": "Marco's swallow tattoo drifts from the right forearm to the left.",
+      "earlier": {"type": "attribute", "subject": "Marco", "attribute_key": "tattoo", "value": "Marco has a tattoo on his right forearm", "scene": "s3", "source": "narration", "evidence_quote": "marked his right forearm"},
+      "later": {"type": "attribute", "subject": "Marco", "attribute_key": "tattoo", "value": "Marco has a tattoo on his left forearm", "scene": "s11", "source": "narration", "evidence_quote": "on his left forearm"}
+    },
+    {
+      "id": "p3", "class": "attribute", "verdict": "contradiction",
+      "note": "The client's age drifts from her sixties to barely forty.",
+      "earlier": {"type": "attribute", "subject": "the client", "attribute_key": "age", "value": "the client is a woman in her sixties", "scene": "s1", "source": "narration", "evidence_quote": "a woman in her sixties"},
+      "later": {"type": "attribute", "subject": "the client", "attribute_key": "age", "value": "the client is barely forty", "scene": "s8", "source": "narration", "evidence_quote": "barely forty"}
+    },
+    {
+      "id": "p4", "class": "attribute", "verdict": "contradiction",
+      "note": "Sol's years driving the crew drift from eleven to six.",
+      "earlier": {"type": "attribute", "subject": "Sol", "attribute_key": "tenure", "value": "Sol has driven for the crew eleven years", "scene": "s4", "source": "narration", "evidence_quote": "Sol had driven for the crew eleven years"},
+      "later": {"type": "attribute", "subject": "Sol", "attribute_key": "tenure", "value": "Sol has driven the crew six years", "scene": "s11", "source": "dialogue", "evidence_quote": "Six years I have driven this crew"}
+    },
+    {
+      "id": "p5", "class": "spatial", "verdict": "contradiction",
+      "note": "The vault is placed on the fourteenth floor, then the ninth.",
+      "earlier": {"type": "spatial", "subject": "the vault", "attribute_key": "floor", "value": "the vault is on the fourteenth floor", "scene": "s2", "source": "narration", "evidence_quote": "The vault sat on the fourteenth floor"},
+      "later": {"type": "spatial", "subject": "the vault", "attribute_key": "floor", "value": "the vault is on the ninth floor", "scene": "s10", "source": "narration", "evidence_quote": "it was on the ninth"}
+    },
+    {
+      "id": "p6", "class": "spatial", "verdict": "contradiction",
+      "note": "The loading dock is placed at the rear of the building, then facing the open street.",
+      "earlier": {"type": "spatial", "subject": "the loading dock", "attribute_key": "position", "value": "the loading dock is at the rear of the building", "scene": "s2", "source": "narration", "evidence_quote": "a loading dock at the rear of the building"},
+      "later": {"type": "spatial", "subject": "the loading dock", "attribute_key": "position", "value": "the loading dock faces the open street", "scene": "s10", "source": "narration", "evidence_quote": "the dock faced the open street"}
+    },
+    {
+      "id": "p7", "class": "spatial", "verdict": "contradiction",
+      "note": "The service stairwell is placed beside the elevators, then at the far end of the corridor.",
+      "earlier": {"type": "spatial", "subject": "the service stairwell", "attribute_key": "position", "value": "the service stairwell is beside the elevators", "scene": "s6", "source": "narration", "evidence_quote": "The service stairwell ran beside the elevators"},
+      "later": {"type": "spatial", "subject": "the service stairwell", "attribute_key": "position", "value": "the service stairwell is at the far end of the corridor", "scene": "s10", "source": "narration", "evidence_quote": "at the far end of the corridor"}
+    },
+    {
+      "id": "p8", "class": "temporal", "verdict": "contradiction",
+      "note": "The job is set for Tuesday, then runs on Thursday.",
+      "earlier": {"type": "temporal", "subject": "the job", "attribute_key": "", "value": "the job is set for Tuesday", "scene": "s5", "source": "narration", "evidence_quote": "They set the job for Tuesday"},
+      "later": {"type": "temporal", "subject": "the job", "attribute_key": "", "value": "the job ran on Thursday night", "scene": "s10", "source": "narration", "evidence_quote": "The job ran on Thursday night"}
+    },
+    {
+      "id": "p9", "class": "temporal", "verdict": "contradiction",
+      "note": "The guard-rotation gap drifts from four minutes to ninety seconds.",
+      "earlier": {"type": "temporal", "subject": "the guard gap", "attribute_key": "", "value": "there is a four-minute gap in the guard rotation", "scene": "s5", "source": "narration", "evidence_quote": "a four-minute gap"},
+      "later": {"type": "temporal", "subject": "the guard gap", "attribute_key": "", "value": "the guard gap was ninety seconds", "scene": "s10", "source": "narration", "evidence_quote": "it was ninety seconds"}
+    },
+    {
+      "id": "p10", "class": "temporal", "verdict": "contradiction",
+      "note": "How long Dana has been out of the game drifts from two years to eighteen months.",
+      "earlier": {"type": "temporal", "subject": "Dana", "attribute_key": "", "value": "Dana had been out of the game two years", "scene": "s1", "source": "narration", "evidence_quote": "out of the game two years"},
+      "later": {"type": "temporal", "subject": "Dana", "attribute_key": "", "value": "Dana had been eighteen months out of the game", "scene": "s7", "source": "narration", "evidence_quote": "eighteen months out of the game"}
+    },
+    {
+      "id": "p11", "class": "knowledge_state", "verdict": "contradiction",
+      "note": "Dana names the floor-safe location in s7, but Marco only reveals the second drive and the floor safe in s9.",
+      "earlier": {"type": "knowledge_state", "subject": "Dana", "attribute_key": "", "value": "Dana knows the second drive is in the floor safe under the partner's desk", "scene": "s7", "source": "dialogue", "evidence_quote": "The second drive is in the floor safe under the partner's desk"},
+      "later": {"type": "event", "subject": "the second drive", "attribute_key": "", "value": "Marco reveals for the first time the second drive is in a floor safe under the senior partner's desk", "scene": "s9", "source": "dialogue", "evidence_quote": "A floor safe, under the senior partner's desk"}
+    },
+    {
+      "id": "p12", "class": "attribute", "verdict": "contradiction",
+      "note": "The take drifts from two hundred thousand to half a million.",
+      "earlier": {"type": "attribute", "subject": "the take", "attribute_key": "amount", "value": "the take is two hundred thousand", "scene": "s1", "source": "dialogue", "evidence_quote": "Two hundred thousand"},
+      "later": {"type": "attribute", "subject": "the take", "attribute_key": "amount", "value": "the take is half a million", "scene": "s8", "source": "dialogue", "evidence_quote": "Half a million, not two hundred"}
+    },
+    {
+      "id": "p13", "class": "attribute", "verdict": "consistent",
+      "note": "Control — Dana's role stated consistently across two scenes.",
+      "earlier": {"type": "attribute", "subject": "Dana", "attribute_key": "occupation", "value": "Dana plans jobs", "scene": "s1", "source": "dialogue", "evidence_quote": "I plan jobs"},
+      "later": {"type": "attribute", "subject": "Dana", "attribute_key": "occupation", "value": "Dana was a planner", "scene": "s6", "source": "narration", "evidence_quote": "Dana was a planner"}
+    },
+    {
+      "id": "p14", "class": "spatial", "verdict": "evolution",
+      "note": "Control — it rains during the casing, the rain has stopped by the night of the job. A legitimate change of weather over time.",
+      "earlier": {"type": "spatial", "subject": "the weather", "attribute_key": "", "value": "a steady rain fell during the casing", "scene": "s2", "source": "narration", "evidence_quote": "A steady rain fell all three days"},
+      "later": {"type": "spatial", "subject": "the weather", "attribute_key": "", "value": "the rain had stopped on the night of the job", "scene": "s10", "source": "narration", "evidence_quote": "The rain had finally stopped"}
+    },
+    {
+      "id": "p15", "class": "attribute", "verdict": "consistent",
+      "note": "Control — the client's silver hair, described twice and in agreement (the second mention only adds that it is dyed).",
+      "earlier": {"type": "attribute", "subject": "the client", "attribute_key": "hair", "value": "the client is silver-haired", "scene": "s1", "source": "narration", "evidence_quote": "silver-haired"},
+      "later": {"type": "attribute", "subject": "the client", "attribute_key": "hair", "value": "the client has silver hair", "scene": "s8", "source": "narration", "evidence_quote": "her silver hair clearly a choice"}
+    },
+    {
+      "id": "p16", "class": "event", "verdict": "consistent",
+      "note": "Control — Marco lies in dialogue (claims he has never worked with Sol); narration shows the two have run several jobs together. A lie is the character's assertion, not a world-fact conflict.",
+      "earlier": {"type": "event", "subject": "Marco", "attribute_key": "", "value": "Marco says he has never worked with the driver", "scene": "s3", "source": "dialogue", "evidence_quote": "I have never worked with your driver"},
+      "later": {"type": "event", "subject": "Sol and Marco", "attribute_key": "", "value": "Sol and Marco have worked several jobs together", "scene": "s4", "source": "narration", "evidence_quote": "three jobs together, maybe four"}
+    }
+  ],
+  "gold_contradictions": [
+    {"id": "c1", "kind": "attribute_drift", "scene_a": "s4", "scene_b": "s11", "scene_distance": 7, "subject": "the getaway car", "summary": "The getaway car drifts from a grey sedan to a black hatchback.", "value_a": "the getaway car is a grey sedan", "value_b": "the getaway car is a black hatchback"},
+    {"id": "c2", "kind": "attribute_drift", "scene_a": "s3", "scene_b": "s11", "scene_distance": 8, "subject": "Marco", "summary": "Marco's tattoo drifts from the right forearm to the left.", "value_a": "Marco has a tattoo on his right forearm", "value_b": "Marco has a tattoo on his left forearm"},
+    {"id": "c3", "kind": "attribute_drift", "scene_a": "s1", "scene_b": "s8", "scene_distance": 7, "subject": "the client", "summary": "The client's age drifts from her sixties to barely forty.", "value_a": "the client is a woman in her sixties", "value_b": "the client is barely forty"},
+    {"id": "c4", "kind": "attribute_drift", "scene_a": "s4", "scene_b": "s11", "scene_distance": 7, "subject": "Sol", "summary": "Sol's years driving the crew drift from eleven to six.", "value_a": "Sol has driven for the crew eleven years", "value_b": "Sol has driven the crew six years"},
+    {"id": "c5", "kind": "spatial_conflict", "scene_a": "s2", "scene_b": "s10", "scene_distance": 8, "subject": "the vault", "summary": "The vault is on the fourteenth floor, then the ninth.", "value_a": "the vault is on the fourteenth floor", "value_b": "the vault is on the ninth floor"},
+    {"id": "c6", "kind": "spatial_conflict", "scene_a": "s2", "scene_b": "s10", "scene_distance": 8, "subject": "the loading dock", "summary": "The loading dock is at the rear of the building, then facing the open street.", "value_a": "the loading dock is at the rear of the building", "value_b": "the loading dock faces the open street"},
+    {"id": "c7", "kind": "spatial_conflict", "scene_a": "s6", "scene_b": "s10", "scene_distance": 4, "subject": "the service stairwell", "summary": "The service stairwell is beside the elevators, then at the far end of the corridor.", "value_a": "the service stairwell is beside the elevators", "value_b": "the service stairwell is at the far end of the corridor"},
+    {"id": "c8", "kind": "timeline_conflict", "scene_a": "s5", "scene_b": "s10", "scene_distance": 5, "subject": "the job", "summary": "The job is set for Tuesday, then runs on Thursday.", "value_a": "the job is set for Tuesday", "value_b": "the job ran on Thursday night"},
+    {"id": "c9", "kind": "timeline_conflict", "scene_a": "s5", "scene_b": "s10", "scene_distance": 5, "subject": "the guard gap", "summary": "The guard-rotation gap drifts from four minutes to ninety seconds.", "value_a": "there is a four-minute gap in the guard rotation", "value_b": "the guard gap was ninety seconds"},
+    {"id": "c10", "kind": "timeline_conflict", "scene_a": "s1", "scene_b": "s7", "scene_distance": 6, "subject": "Dana", "summary": "How long Dana has been out of the game drifts from two years to eighteen months.", "value_a": "Dana had been out of the game two years", "value_b": "Dana had been eighteen months out of the game"},
+    {"id": "c11", "kind": "knowledge_violation", "scene_a": "s7", "scene_b": "s9", "scene_distance": 2, "subject": "Dana", "summary": "Dana names the floor-safe location before Marco reveals the second drive.", "value_a": "Dana knows the second drive is in the floor safe under the partner's desk", "value_b": "Marco reveals for the first time the second drive is in a floor safe under the senior partner's desk"},
+    {"id": "c12", "kind": "attribute_drift", "scene_a": "s1", "scene_b": "s8", "scene_distance": 7, "subject": "the take", "summary": "The take drifts from two hundred thousand to half a million.", "value_a": "the take is two hundred thousand", "value_b": "the take is half a million"}
+  ]
+}

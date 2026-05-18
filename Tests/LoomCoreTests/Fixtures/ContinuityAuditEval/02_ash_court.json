@@ -1,0 +1,210 @@
+{
+  "_description": "Continuity Audit (L10) eval-harness fixture, manuscript 2 of the medium set (LOOM_CONTINUITY_AUDIT.md §21). 'The Ash Court' — an 11-scene secondary-world fantasy of court succession, with 12 planted contradictions across all four audited classes plus 4 precision-control non-errors. Longer than manuscript 1 so the planted errors sit further apart and the prose reads more naturally. gold_claims score per-scene extraction recall; gold_pairs score pairwise adjudication; gold_contradictions are the end-to-end findings the pipeline should surface.",
+  "schema_version": 2,
+  "id": "ash_court",
+  "title": "The Ash Court",
+  "genre": "fantasy",
+  "scenes": [
+    {
+      "id": "s1",
+      "title": "The Mountain Road",
+      "prose": "Lirien came up the mountain road on the eighth day of riding, saddle-sore and silent, the silver ring of office cold on one finger. An envoy of the Riverlands was a small thing in the eyes of a mountain court, and Lirien meant to be a careful one. Cael Doran rose ahead, a city of grey stone stacked against the peak, and at its north gate the Ash Tower stood black and branchless above the wall. Below the walls the river ran east, swollen with snowmelt, loud enough to be heard from the road. The gate-guards took Lirien's name and the Riverlands seal without warmth. Inside, the streets climbed. Somewhere a bell was tolling, slow, the way a bell tolls for the dying and not the dead. Lirien had been sent to witness a succession, and it seemed the kingdom did not mean to make it easy."
+    },
+    {
+      "id": "s2",
+      "title": "The Steward",
+      "prose": "The steward met Lirien in an antechamber hung with old hunting tapestries. Vael was a stooped, dry man with ink-stained fingers, and he had served three kings of Cael Doran in his long life. 'You'll have come for the succession,' he said. 'King Bren has been five winters dead, and his widow holds the court only until the matter is settled.' He led Lirien up, and up — the throne room of Cael Doran lay on the topmost floor of the keep, a cold hall close under the roof-slates, reached by a stair that turned and turned. 'The Queen will see you,' Vael said, 'though she tires quickly now.' He paused at the door. 'Say little. This court listens to everything and forgives nothing.'"
+    },
+    {
+      "id": "s3",
+      "title": "The Queen's Gallery",
+      "prose": "Queen Areth received the envoy not on the throne but in a long gallery, walking its length slowly with one hand along the rail. She was thin as a reed, and her eyes were a pale, washed grey, and they missed nothing. 'The Riverlands send a watcher,' she said. 'Good. Let them watch.' Down the gallery hung the banners of the great houses, and above the Queen's own door the green banner of House Doran stirred in the draught — green for the mountain pine, Lirien had been taught as a child. Areth could still walk, still climb the gallery stair on a clear morning, though Vael hovered always a pace behind her. 'My husband's seat will not stay empty long,' the Queen said. 'There are those who would fill it before I am even gone.'"
+    },
+    {
+      "id": "s4",
+      "title": "Ser Caud",
+      "prose": "Ser Caud commanded what remained of the household guard, and he found Lirien on the walls at dusk. He was a big man going grey, and an old sword-scar ran up through his left eyebrow and lost itself in his hairline. 'An envoy,' he said, testing the word. 'You'll be reporting home, then, whatever happens here.' 'Witnessing,' Lirien said. 'There is a difference.' Caud grunted. He had the look of a man who had backed a side already and did not love his choice. 'The Princess is the heir by blood,' he said. 'Remember that, Riverlander, however the wind blows in the lower halls.' Then he was gone along the rampart, and the cold came down off the peak after him."
+    },
+    {
+      "id": "s5",
+      "title": "The Feast to Come",
+      "prose": "The lower halls of Cael Doran were warmer and far less honest. Lirien took a cup of spiced wine by the great hearth and listened. The talk was all of the Feast of Embers — the kingdom's oldest festival, and a month away yet, though already the kitchens smoked day and night. 'The succession will be cried at the Feast,' a wine-merchant confided. 'Always the way. A crown looks better by firelight.' An envoy of the Riverlands, Lirien said little and missed nothing, which was the whole of the office. A serving-girl refilled the cup unasked. In a month, then, the question would be answered one way or another — and a month, in a court like this one, was a great deal of time."
+    },
+    {
+      "id": "s6",
+      "title": "Whispers",
+      "prose": "Past midnight, a page brought Lirien a folded note and no name. The corridor it led to was dark and smelled of tallow. There Lirien waited, and no one came, and at last went back unsatisfied. But in the morning, asked by Vael how the night had passed, Lirien said a careless thing: 'I had not thought the old King's death was so quiet a poisoning.' The steward's ink-stained hand went still on the ledger. The word had not been spoken aloud in Cael Doran — not once, not by anyone — and Lirien had no leave to know it. 'Who told you that,' Vael said, and it was not a question, and there was no longer any warmth in the dry old voice at all."
+    },
+    {
+      "id": "s7",
+      "title": "The Princess",
+      "prose": "Princess Sibba kept her own rooms in the east wing, and she received Lirien with the crimson banner of House Doran hung behind her chair — crimson, for the blood-right she meant everyone to remember. She was young and quick-eyed and entirely unfrightened. 'My mother thinks me a child,' she said. 'The court thinks me a girl. You will write home what you see, envoy, and what you see is the rightful heir.' Lirien, with a fortnight's hard riding still aching in both knees, only bowed. 'I never go up to that cold Ash Tower,' Sibba added, lightly, when the talk turned to where the old conspiracies had been hatched. 'Draughty, haunted places. Leave them to the crows.' She smiled, and the smile did not reach her quick eyes at all."
+    },
+    {
+      "id": "s8",
+      "title": "The Map Room",
+      "prose": "Vael's clerks kept a map room low in the keep, and Lirien was permitted an hour there, ostensibly to trace the Riverlands' own borders. The great map of Cael Doran was painted on a table the size of a bed. The grey city climbed its mountain just as Lirien had first seen it from the road, every street and stair set down in faded ink. The river ran west of the walls on the map, a blue thread curling away toward the lowlands. And the Ash Tower — Lirien set a finger on it — stood at the south gate, marked with a small black flame. A clerk watched from the doorway, and so Lirien traced the Riverlands border dutifully and remembered the rest."
+    },
+    {
+      "id": "s9",
+      "title": "The Reveal",
+      "prose": "It was Vael, in the end, who told Lirien the truth, because a frightened man will sometimes speak to a stranger what he cannot say to a friend. They stood in the cold map room after the clerks had gone. 'King Bren did not die of the lung-fever they cried in the streets,' the steward said. 'He was poisoned. Three winters ago, at his own table, and the court has buried the word ever since.' He said it the way a man sets down a stone he has carried too far. 'Three winters,' Lirien said softly, 'and no one tried for it.' 'No one living dares,' said Vael. So there it was, spoken aloud at last — and Lirien thought of a careless sentence said over a ledger days before, and understood how badly it had been timed."
+    },
+    {
+      "id": "s10",
+      "title": "The Tower",
+      "prose": "Lirien climbed the Ash Tower at last, on the night before the Feast, and found it not empty. Princess Sibba was already there at the top, a lamp at her feet, as though the cold haunted place were a second home to her. Ser Caud stood with her — and in the lamp-light the old sword-scar showed plain, running up through his right eyebrow into the grey hair. They did not send Lirien away. 'You have seen us, then,' Sibba said. 'Write that down too.' On Lirien's hand the envoy's ring caught the light, a dull worn bronze. Below, through the tower's one window, the lights of the Queen's gallery still burned; Areth, they said, no longer slept at all."
+    },
+    {
+      "id": "s11",
+      "title": "Embers",
+      "prose": "The Feast of Embers was three days hence when the court assembled — three days, and the kingdom already smelled of woodsmoke and waiting. The succession was cried not in the high cold hall under the slates but in the throne room at the foot of the great stair, where the whole court might press in to hear it. Vael read the proclamation in his dry voice; he had served two kings of Cael Doran, and his hands did not shake. Queen Areth did not come down. She kept to her bed now, too weak to rise, and when Lirien was brought up to take her leave the Queen's dark eyes found the envoy's face one last time. 'Watch,' she said again, as she had at the first. 'And remember it kindly, if you can.' Then Lirien rode down the mountain road, and behind, the bells of Cael Doran began at last to ring."
+    }
+  ],
+  "gold_claims": [
+    {"scene": "s1", "type": "attribute", "subject": "Lirien", "value": "Lirien is an envoy of the Riverlands"},
+    {"scene": "s1", "type": "attribute", "subject": "Lirien", "value": "Lirien wears a silver ring of office"},
+    {"scene": "s1", "type": "temporal", "subject": "the journey", "value": "Lirien rode for eight days"},
+    {"scene": "s1", "type": "spatial", "subject": "the Ash Tower", "value": "the Ash Tower stands at the north gate"},
+    {"scene": "s1", "type": "spatial", "subject": "the river", "value": "the river runs east of the walls"},
+    {"scene": "s2", "type": "attribute", "subject": "Vael", "value": "Vael is the court steward"},
+    {"scene": "s2", "type": "attribute", "subject": "Vael", "value": "Vael has served three kings of Cael Doran"},
+    {"scene": "s2", "type": "temporal", "subject": "King Bren", "value": "King Bren died five winters ago"},
+    {"scene": "s2", "type": "spatial", "subject": "the throne room", "value": "the throne room is on the topmost floor of the keep"},
+    {"scene": "s3", "type": "attribute", "subject": "Queen Areth", "value": "Queen Areth has pale grey eyes"},
+    {"scene": "s3", "type": "attribute", "subject": "the banner of House Doran", "value": "the banner of House Doran is green"},
+    {"scene": "s3", "type": "attribute", "subject": "Queen Areth", "value": "Queen Areth can still walk the gallery"},
+    {"scene": "s4", "type": "attribute", "subject": "Ser Caud", "value": "Ser Caud has a scar through his left eyebrow"},
+    {"scene": "s4", "type": "attribute", "subject": "Ser Caud", "value": "Ser Caud commands the household guard"},
+    {"scene": "s5", "type": "temporal", "subject": "the Feast of Embers", "value": "the Feast of Embers is a month away"},
+    {"scene": "s5", "type": "attribute", "subject": "Lirien", "value": "Lirien is an envoy of the Riverlands"},
+    {"scene": "s6", "type": "knowledge_state", "subject": "Lirien", "value": "Lirien knows the old King was poisoned"},
+    {"scene": "s7", "type": "attribute", "subject": "the banner of House Doran", "value": "the banner of House Doran is crimson"},
+    {"scene": "s7", "type": "temporal", "subject": "the journey", "value": "Lirien rode for a fortnight"},
+    {"scene": "s7", "type": "attribute", "subject": "Princess Sibba", "value": "Princess Sibba claims to be the rightful heir"},
+    {"scene": "s8", "type": "spatial", "subject": "the river", "value": "the river runs west of the walls"},
+    {"scene": "s8", "type": "spatial", "subject": "the Ash Tower", "value": "the Ash Tower stands at the south gate"},
+    {"scene": "s9", "type": "event", "subject": "King Bren", "value": "King Bren was poisoned"},
+    {"scene": "s9", "type": "temporal", "subject": "King Bren", "value": "King Bren died three winters ago"},
+    {"scene": "s10", "type": "attribute", "subject": "Ser Caud", "value": "Ser Caud has a scar through his right eyebrow"},
+    {"scene": "s10", "type": "attribute", "subject": "Lirien", "value": "Lirien's envoy ring is bronze"},
+    {"scene": "s10", "type": "event", "subject": "Princess Sibba", "value": "Princess Sibba is at the top of the Ash Tower"},
+    {"scene": "s11", "type": "temporal", "subject": "the Feast of Embers", "value": "the Feast of Embers is three days away"},
+    {"scene": "s11", "type": "spatial", "subject": "the throne room", "value": "the throne room is at the foot of the great stair"},
+    {"scene": "s11", "type": "attribute", "subject": "Vael", "value": "Vael has served two kings of Cael Doran"},
+    {"scene": "s11", "type": "attribute", "subject": "Queen Areth", "value": "Queen Areth has dark eyes"},
+    {"scene": "s11", "type": "attribute", "subject": "Queen Areth", "value": "Queen Areth keeps to her bed, too weak to rise"}
+  ],
+  "gold_pairs": [
+    {
+      "id": "p1", "class": "attribute", "verdict": "contradiction",
+      "note": "Lirien's ring of office drifts from silver to bronze.",
+      "earlier": {"type": "attribute", "subject": "Lirien", "attribute_key": "ring of office", "value": "Lirien wears a silver ring of office", "scene": "s1", "source": "narration", "evidence_quote": "the silver ring of office"},
+      "later": {"type": "attribute", "subject": "Lirien", "attribute_key": "ring of office", "value": "Lirien's envoy ring is a dull worn bronze", "scene": "s10", "source": "narration", "evidence_quote": "a dull worn bronze"}
+    },
+    {
+      "id": "p2", "class": "attribute", "verdict": "contradiction",
+      "note": "Queen Areth's eyes drift from pale grey to dark.",
+      "earlier": {"type": "attribute", "subject": "Queen Areth", "attribute_key": "eye colour", "value": "Queen Areth has pale grey eyes", "scene": "s3", "source": "narration", "evidence_quote": "her eyes were a pale, washed grey"},
+      "later": {"type": "attribute", "subject": "Queen Areth", "attribute_key": "eye colour", "value": "Queen Areth has dark eyes", "scene": "s11", "source": "narration", "evidence_quote": "the Queen's dark eyes"}
+    },
+    {
+      "id": "p3", "class": "attribute", "verdict": "contradiction",
+      "note": "Ser Caud's scar drifts from the left eyebrow to the right.",
+      "earlier": {"type": "attribute", "subject": "Ser Caud", "attribute_key": "scar", "value": "Ser Caud has a scar through his left eyebrow", "scene": "s4", "source": "narration", "evidence_quote": "an old sword-scar ran up through his left eyebrow"},
+      "later": {"type": "attribute", "subject": "Ser Caud", "attribute_key": "scar", "value": "Ser Caud has a scar through his right eyebrow", "scene": "s10", "source": "narration", "evidence_quote": "running up through his right eyebrow"}
+    },
+    {
+      "id": "p4", "class": "attribute", "verdict": "contradiction",
+      "note": "The number of kings Vael has served drifts from three to two.",
+      "earlier": {"type": "attribute", "subject": "Vael", "attribute_key": "kings served", "value": "Vael has served three kings of Cael Doran", "scene": "s2", "source": "narration", "evidence_quote": "he had served three kings of Cael Doran"},
+      "later": {"type": "attribute", "subject": "Vael", "attribute_key": "kings served", "value": "Vael has served two kings of Cael Doran", "scene": "s11", "source": "narration", "evidence_quote": "he had served two kings of Cael Doran"}
+    },
+    {
+      "id": "p5", "class": "spatial", "verdict": "contradiction",
+      "note": "The throne room is placed on the topmost floor, then at the foot of the great stair.",
+      "earlier": {"type": "spatial", "subject": "the throne room", "attribute_key": "position", "value": "the throne room is on the topmost floor of the keep", "scene": "s2", "source": "narration", "evidence_quote": "the throne room of Cael Doran lay on the topmost floor of the keep"},
+      "later": {"type": "spatial", "subject": "the throne room", "attribute_key": "position", "value": "the throne room is at the foot of the great stair", "scene": "s11", "source": "narration", "evidence_quote": "the throne room at the foot of the great stair"}
+    },
+    {
+      "id": "p6", "class": "spatial", "verdict": "contradiction",
+      "note": "The river is placed east of the walls, then west.",
+      "earlier": {"type": "spatial", "subject": "the river", "attribute_key": "position", "value": "the river runs east of the walls", "scene": "s1", "source": "narration", "evidence_quote": "the river ran east"},
+      "later": {"type": "spatial", "subject": "the river", "attribute_key": "position", "value": "the river runs west of the walls", "scene": "s8", "source": "narration", "evidence_quote": "The river ran west of the walls"}
+    },
+    {
+      "id": "p7", "class": "spatial", "verdict": "contradiction",
+      "note": "The Ash Tower is placed at the north gate, then the south gate.",
+      "earlier": {"type": "spatial", "subject": "the Ash Tower", "attribute_key": "position", "value": "the Ash Tower stands at the north gate", "scene": "s1", "source": "narration", "evidence_quote": "at its north gate the Ash Tower stood"},
+      "later": {"type": "spatial", "subject": "the Ash Tower", "attribute_key": "position", "value": "the Ash Tower stands at the south gate", "scene": "s8", "source": "narration", "evidence_quote": "stood at the south gate"}
+    },
+    {
+      "id": "p8", "class": "temporal", "verdict": "contradiction",
+      "note": "King Bren's death is dated five winters ago, then three.",
+      "earlier": {"type": "temporal", "subject": "King Bren", "attribute_key": "", "value": "King Bren died five winters ago", "scene": "s2", "source": "dialogue", "evidence_quote": "King Bren has been five winters dead"},
+      "later": {"type": "temporal", "subject": "King Bren", "attribute_key": "", "value": "King Bren died three winters ago", "scene": "s9", "source": "dialogue", "evidence_quote": "Three winters ago, at his own table"}
+    },
+    {
+      "id": "p9", "class": "temporal", "verdict": "contradiction",
+      "note": "Lirien's journey is dated eight days, then a fortnight.",
+      "earlier": {"type": "temporal", "subject": "the journey", "attribute_key": "", "value": "Lirien rode for eight days", "scene": "s1", "source": "narration", "evidence_quote": "on the eighth day of riding"},
+      "later": {"type": "temporal", "subject": "the journey", "attribute_key": "", "value": "Lirien rode for a fortnight", "scene": "s7", "source": "narration", "evidence_quote": "a fortnight's hard riding"}
+    },
+    {
+      "id": "p10", "class": "temporal", "verdict": "contradiction",
+      "note": "The Feast of Embers is a month away, then three days away.",
+      "earlier": {"type": "temporal", "subject": "the Feast of Embers", "attribute_key": "", "value": "the Feast of Embers is a month away", "scene": "s5", "source": "narration", "evidence_quote": "a month away yet"},
+      "later": {"type": "temporal", "subject": "the Feast of Embers", "attribute_key": "", "value": "the Feast of Embers is three days away", "scene": "s11", "source": "narration", "evidence_quote": "The Feast of Embers was three days hence"}
+    },
+    {
+      "id": "p11", "class": "knowledge_state", "verdict": "contradiction",
+      "note": "Lirien references the old King's poisoning in s6, but it is only revealed — spoken aloud for the first time — in s9.",
+      "earlier": {"type": "knowledge_state", "subject": "Lirien", "attribute_key": "", "value": "Lirien knows the old King was poisoned", "scene": "s6", "source": "dialogue", "evidence_quote": "I had not thought the old King's death was so quiet a poisoning"},
+      "later": {"type": "event", "subject": "King Bren", "attribute_key": "", "value": "Vael reveals for the first time that King Bren was poisoned", "scene": "s9", "source": "dialogue", "evidence_quote": "He was poisoned"}
+    },
+    {
+      "id": "p12", "class": "attribute", "verdict": "contradiction",
+      "note": "The banner of House Doran drifts from green to crimson.",
+      "earlier": {"type": "attribute", "subject": "the banner of House Doran", "attribute_key": "colour", "value": "the banner of House Doran is green", "scene": "s3", "source": "narration", "evidence_quote": "the green banner of House Doran"},
+      "later": {"type": "attribute", "subject": "the banner of House Doran", "attribute_key": "colour", "value": "the banner of House Doran is crimson", "scene": "s7", "source": "narration", "evidence_quote": "the crimson banner of House Doran"}
+    },
+    {
+      "id": "p13", "class": "attribute", "verdict": "consistent",
+      "note": "Control — Lirien's role stated identically in two scenes.",
+      "earlier": {"type": "attribute", "subject": "Lirien", "attribute_key": "occupation", "value": "Lirien is an envoy of the Riverlands", "scene": "s1", "source": "narration", "evidence_quote": "An envoy of the Riverlands"},
+      "later": {"type": "attribute", "subject": "Lirien", "attribute_key": "occupation", "value": "Lirien is an envoy of the Riverlands", "scene": "s5", "source": "narration", "evidence_quote": "An envoy of the Riverlands"}
+    },
+    {
+      "id": "p14", "class": "attribute", "verdict": "evolution",
+      "note": "Control — the Queen can walk the gallery early, is bedbound late. A legitimate decline over the story.",
+      "earlier": {"type": "attribute", "subject": "Queen Areth", "attribute_key": "health", "value": "Queen Areth can still walk the gallery", "scene": "s3", "source": "narration", "evidence_quote": "Areth could still walk, still climb the gallery stair"},
+      "later": {"type": "attribute", "subject": "Queen Areth", "attribute_key": "health", "value": "Queen Areth keeps to her bed, too weak to rise", "scene": "s11", "source": "narration", "evidence_quote": "She kept to her bed now, too weak to rise"}
+    },
+    {
+      "id": "p15", "class": "spatial", "verdict": "consistent",
+      "note": "Control — the city described two ways but in agreement.",
+      "earlier": {"type": "spatial", "subject": "Cael Doran", "attribute_key": "", "value": "Cael Doran is a city of grey stone on the mountain", "scene": "s1", "source": "narration", "evidence_quote": "a city of grey stone stacked against the peak"},
+      "later": {"type": "spatial", "subject": "Cael Doran", "attribute_key": "", "value": "the grey city climbs its mountain", "scene": "s8", "source": "narration", "evidence_quote": "The grey city climbed its mountain"}
+    },
+    {
+      "id": "p16", "class": "event", "verdict": "consistent",
+      "note": "Control — Sibba lies in dialogue (claims she never goes to the Ash Tower); narration later finds her at the top of it. A lie is the character's assertion, not a world-fact conflict.",
+      "earlier": {"type": "event", "subject": "Princess Sibba", "attribute_key": "", "value": "Sibba says she never goes up to the Ash Tower", "scene": "s7", "source": "dialogue", "evidence_quote": "I never go up to that cold Ash Tower"},
+      "later": {"type": "event", "subject": "Princess Sibba", "attribute_key": "", "value": "Sibba is found at the top of the Ash Tower", "scene": "s10", "source": "narration", "evidence_quote": "Princess Sibba was already there at the top"}
+    }
+  ],
+  "gold_contradictions": [
+    {"id": "c1", "kind": "attribute_drift", "scene_a": "s1", "scene_b": "s10", "scene_distance": 9, "subject": "Lirien", "summary": "Lirien's ring of office drifts from silver to bronze.", "value_a": "Lirien wears a silver ring of office", "value_b": "Lirien's envoy ring is a dull worn bronze"},
+    {"id": "c2", "kind": "attribute_drift", "scene_a": "s3", "scene_b": "s11", "scene_distance": 8, "subject": "Queen Areth", "summary": "Queen Areth's eyes drift from pale grey to dark.", "value_a": "Queen Areth has pale grey eyes", "value_b": "Queen Areth has dark eyes"},
+    {"id": "c3", "kind": "attribute_drift", "scene_a": "s4", "scene_b": "s10", "scene_distance": 6, "subject": "Ser Caud", "summary": "Ser Caud's scar drifts from the left eyebrow to the right.", "value_a": "Ser Caud has a scar through his left eyebrow", "value_b": "Ser Caud has a scar through his right eyebrow"},
+    {"id": "c4", "kind": "attribute_drift", "scene_a": "s2", "scene_b": "s11", "scene_distance": 9, "subject": "Vael", "summary": "The number of kings Vael has served drifts from three to two.", "value_a": "Vael has served three kings of Cael Doran", "value_b": "Vael has served two kings of Cael Doran"},
+    {"id": "c5", "kind": "spatial_conflict", "scene_a": "s2", "scene_b": "s11", "scene_distance": 9, "subject": "the throne room", "summary": "The throne room is on the topmost floor, then at the foot of the great stair.", "value_a": "the throne room is on the topmost floor of the keep", "value_b": "the throne room is at the foot of the great stair"},
+    {"id": "c6", "kind": "spatial_conflict", "scene_a": "s1", "scene_b": "s8", "scene_distance": 7, "subject": "the river", "summary": "The river runs east of the walls, then west.", "value_a": "the river runs east of the walls", "value_b": "the river runs west of the walls"},
+    {"id": "c7", "kind": "spatial_conflict", "scene_a": "s1", "scene_b": "s8", "scene_distance": 7, "subject": "the Ash Tower", "summary": "The Ash Tower stands at the north gate, then the south gate.", "value_a": "the Ash Tower stands at the north gate", "value_b": "the Ash Tower stands at the south gate"},
+    {"id": "c8", "kind": "timeline_conflict", "scene_a": "s2", "scene_b": "s9", "scene_distance": 7, "subject": "King Bren", "summary": "King Bren's death is dated five winters ago, then three.", "value_a": "King Bren died five winters ago", "value_b": "King Bren died three winters ago"},
+    {"id": "c9", "kind": "timeline_conflict", "scene_a": "s1", "scene_b": "s7", "scene_distance": 6, "subject": "the journey", "summary": "Lirien's journey is dated eight days, then a fortnight.", "value_a": "Lirien rode for eight days", "value_b": "Lirien rode for a fortnight"},
+    {"id": "c10", "kind": "timeline_conflict", "scene_a": "s5", "scene_b": "s11", "scene_distance": 6, "subject": "the Feast of Embers", "summary": "The Feast of Embers is a month away, then three days away.", "value_a": "the Feast of Embers is a month away", "value_b": "the Feast of Embers is three days away"},
+    {"id": "c11", "kind": "knowledge_violation", "scene_a": "s6", "scene_b": "s9", "scene_distance": 3, "subject": "Lirien", "summary": "Lirien references the old King's poisoning before it is revealed.", "value_a": "Lirien knows the old King was poisoned", "value_b": "Vael reveals for the first time that King Bren was poisoned"},
+    {"id": "c12", "kind": "attribute_drift", "scene_a": "s3", "scene_b": "s7", "scene_distance": 4, "subject": "the banner of House Doran", "summary": "The banner of House Doran drifts from green to crimson.", "value_a": "the banner of House Doran is green", "value_b": "the banner of House Doran is crimson"}
+  ]
+}
