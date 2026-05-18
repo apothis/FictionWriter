@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import type {
   Character,
   CharacterCustomField,
+  CharacterKink,
   CharacterPatch,
+  KinkStance,
   Relationship,
   SceneSummary,
 } from "../types";
@@ -205,6 +207,16 @@ export function CharacterEditor({
           />
         </Section>
 
+        <Section
+          title="Kinks"
+          hint="What this character brings to a scene. Free-form — the list suggests common terms but accepts anything. Rendered into the bible entry so the model writes them consistently."
+        >
+          <KinksEditor
+            values={draft.kinks ?? []}
+            onChange={(next) => update("kinks", next)}
+          />
+        </Section>
+
         <Section title="Custom fields" hint="Free-form extension slots for fandom-specific or one-off metadata.">
           <CustomFieldsEditor
             values={draft.customFields}
@@ -333,6 +345,80 @@ function RelationshipsEditor({
         disabled={allCharacters.length === 0}
       >
         + Add relationship
+      </Button>
+    </div>
+  );
+}
+
+const KINK_STANCES: { value: KinkStance; label: string }[] = [
+  { value: "into", label: "into" },
+  { value: "curious", label: "curious" },
+  { value: "softLimit", label: "soft limit" },
+  { value: "hardLimit", label: "hard limit" },
+];
+
+// A curated suggestion list — the input still accepts free text
+// (the research warned against a rigid taxonomy).
+const KINK_SUGGESTIONS = [
+  "restraint", "bondage", "praise", "degradation", "dominance",
+  "submission", "power exchange", "edging", "overstimulation",
+  "voyeurism", "exhibitionism", "roleplay", "sensation play",
+  "impact play", "breath play", "pain", "marking", "aftercare",
+  "dirty talk", "teasing", "service", "primal play",
+];
+
+function KinksEditor({
+  values,
+  onChange,
+}: {
+  values: CharacterKink[];
+  onChange: (next: CharacterKink[]) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <datalist id="kink-suggestions">
+        {KINK_SUGGESTIONS.map((k) => (
+          <option key={k} value={k} />
+        ))}
+      </datalist>
+      {values.map((kink, i) => (
+        <div key={i} className="flex gap-2">
+          <Input
+            value={kink.name}
+            placeholder="kink"
+            list="kink-suggestions"
+            onChange={(e) => {
+              const next = [...values];
+              next[i] = { ...kink, name: e.target.value };
+              onChange(next);
+            }}
+          />
+          <Select
+            value={kink.stance}
+            onChange={(e) => {
+              const next = [...values];
+              next[i] = { ...kink, stance: e.target.value as KinkStance };
+              onChange(next);
+            }}
+          >
+            {KINK_STANCES.map((st) => (
+              <option key={st.value} value={st.value}>{st.label}</option>
+            ))}
+          </Select>
+          <Button
+            variant="ghost"
+            onClick={() => onChange(values.filter((_, j) => j !== i))}
+            aria-label="Remove kink"
+          >
+            ✕
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="ghost"
+        onClick={() => onChange([...values, { name: "", stance: "into" }])}
+      >
+        + Add kink
       </Button>
     </div>
   );

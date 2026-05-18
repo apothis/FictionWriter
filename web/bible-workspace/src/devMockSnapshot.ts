@@ -34,6 +34,14 @@ function character(
     customFields: [],
     injectionMode: "constant",
     knownFactsBySceneId: {},
+    kinks:
+      id === CHANTAL
+        ? [
+            { name: "restraint", stance: "into" },
+            { name: "praise", stance: "into" },
+            { name: "knife play", stance: "hardLimit" },
+          ]
+        : [],
   };
 }
 

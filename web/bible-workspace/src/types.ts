@@ -28,6 +28,16 @@ export interface Character {
   customFields: CharacterCustomField[];
   injectionMode: "constant" | "keyed";
   knownFactsBySceneId: Record<string, KnownFact[]>;
+  // Per-character kink profile. Optional for legacy-payload tolerance.
+  kinks?: CharacterKink[];
+}
+
+// Mirrors CharacterKink.swift — free-form name + a stance.
+export type KinkStance = "into" | "curious" | "softLimit" | "hardLimit";
+
+export interface CharacterKink {
+  name: string;
+  stance: KinkStance;
 }
 
 export interface Relationship {
@@ -293,6 +303,7 @@ export interface CharacterPatch {
   canonBrief?: string;
   customFields?: CharacterCustomField[];
   injectionMode?: "constant" | "keyed";
+  kinks?: CharacterKink[];
 }
 
 // Mirrors ReferencePatch.swift — name / nsfw / body are user-editable.

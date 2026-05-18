@@ -529,6 +529,7 @@ public struct SnapshotCharacter: Codable, Equatable {
     public var canonBrief: String?
     public var customFields: [CharacterCustomField]
     public var injectionMode: InjectionMode
+    public var kinks: [CharacterKink]
 
     public init(from character: Character) {
         self.id = character.id
@@ -549,6 +550,7 @@ public struct SnapshotCharacter: Codable, Equatable {
         self.canonBrief = character.canonBrief
         self.customFields = character.customFields
         self.injectionMode = character.injectionMode
+        self.kinks = character.kinks
     }
 }
 
