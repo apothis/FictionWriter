@@ -2695,12 +2695,26 @@ Phase 2** — no generation code consumed it. Then a build pass:
   `AntiSlopDefaults`. Data only; KoboldCpp `banned_strings` transport
   wiring deferred until that server capability is confirmed.
 
-All TDD red→green→commit. **1929 tests green.** 8 commits on `main`.
-LOOM_NSFW.md §3.10 + LOOM_TECH_STACK.md updated.
+All TDD red→green→commit. LOOM_NSFW.md §3.10 + LOOM_TECH_STACK.md
+updated.
 
-**Still pending:** webview UI for the three P2 schemas. User decided
-all three get **separate webview surfaces** — DynamicSheet as a new
-`bible-workspace` view; a new editor-side webview panel for Scene
-framing; a settings webview for the anti-slop list. The latter two are
-each a new Vite bundle + window/panel controller + bridge (Planned-
-Project-wizard scale). Not yet started.
+**Webview UI — DynamicSheet shipped.** The DynamicSheet editor landed
+in the `bible-workspace` webview: new `DYNAMICS` list section +
+`DynamicSheetEditor.tsx`, the `dynamics` snapshot field, and
+add/patch/delete bridge intents (`DynamicSheetPatch` + `ProjectSession`
+mutators + controller dispatch). Verified live in the dev preview
+(dev-mock dynamic renders; editor opens; no console errors).
+**1934 tests green. 11 commits on `main`.**
+
+**Still pending — two webview surfaces.** User decided Scene-framing
+and anti-slop each get their own surface:
+- **Scene framing** — an editor-side webview panel showing the current
+  scene's `Scene.framing`. Needs a new Vite bundle (`LOOM_BUNDLE`
+  case in `vite.config.ts` + HTML entry + `scripts/build-bible-
+  workspace.sh` entry), a Swift window/panel controller, a bridge, and
+  an editor affordance (menu item) to open it for the current scene.
+- **Anti-slop list** — a settings webview editing
+  `ProjectSettings.antiSlopPhrases` (a string-list editor). Same
+  new-bundle scaffolding.
+Each is Planned-Project-wizard-scale build-system + new-window work —
+best as a dedicated session, not a tail-end push.
