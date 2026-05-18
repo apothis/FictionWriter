@@ -21,6 +21,11 @@ public struct Scene: Codable, Equatable {
     public var targetWordCount: Int?
     public var contentPath: String       // `scenes/<id>.md`, derived from id
     public var notes: String              // Phase 2+ persistence
+    /// Author-written scenario/framing block for this scene — the
+    /// dynamic, what's at stake, the intended intensity. Unlike `notes`
+    /// (private), `framing` is injected near the cursor at generation
+    /// time. LOOM_NSFW per-scene framing (P2a).
+    public var framing: String
     public var generatedSpans: [GeneratedSpan]   // Phase 1.k persistence
     public var snapshots: [Snapshot]             // Phase 2+ persistence
     public var extraFrontmatter: [String: String] // forward-compat sink
@@ -33,7 +38,7 @@ public struct Scene: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, title, pov, location, status, conflict, outcome
         case summary, summaryDirty, targetWordCount, contentPath
-        case notes, generatedSpans, snapshots, extraFrontmatter
+        case notes, framing, generatedSpans, snapshots, extraFrontmatter
         // prose intentionally excluded
     }
 
@@ -50,6 +55,7 @@ public struct Scene: Codable, Equatable {
         targetWordCount: Int? = nil,
         contentPath: String? = nil,
         notes: String = "",
+        framing: String = "",
         generatedSpans: [GeneratedSpan] = [],
         snapshots: [Snapshot] = [],
         extraFrontmatter: [String: String] = [:],
@@ -67,6 +73,7 @@ public struct Scene: Codable, Equatable {
         self.targetWordCount = targetWordCount
         self.contentPath = contentPath ?? "scenes/\(id.uuidString).md"
         self.notes = notes
+        self.framing = framing
         self.generatedSpans = generatedSpans
         self.snapshots = snapshots
         self.extraFrontmatter = extraFrontmatter
@@ -88,6 +95,7 @@ public struct Scene: Codable, Equatable {
         self.contentPath = try c.decodeIfPresent(String.self, forKey: .contentPath)
             ?? "scenes/\(self.id.uuidString).md"
         self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        self.framing = try c.decodeIfPresent(String.self, forKey: .framing) ?? ""
         self.generatedSpans = try c.decodeIfPresent([GeneratedSpan].self, forKey: .generatedSpans) ?? []
         self.snapshots = try c.decodeIfPresent([Snapshot].self, forKey: .snapshots) ?? []
         self.extraFrontmatter = try c.decodeIfPresent([String: String].self, forKey: .extraFrontmatter) ?? [:]

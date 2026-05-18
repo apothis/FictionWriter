@@ -44,6 +44,9 @@ public enum SceneFile {
         if !scene.summary.isEmpty {
             lines.append("summary: \(quote(scene.summary))")
         }
+        if !scene.framing.isEmpty {
+            lines.append("framing: \(quote(scene.framing))")
+        }
         lines.append("summaryDirty: \(scene.summaryDirty ? "true" : "false")")
 
         // Forward-compat: emit any extra keys not owned by Loom in
@@ -83,12 +86,13 @@ public enum SceneFile {
         let conflict = frontmatter["conflict"] ?? ""
         let outcome = frontmatter["outcome"] ?? ""
         let summary = frontmatter["summary"] ?? ""
+        let framing = frontmatter["framing"] ?? ""
 
         // Extra: every key not in the Loom-owned set lands here. The set
         // must mirror the encode side exactly.
         let owned: Set<String> = [
             "id", "title", "pov", "location", "status",
-            "targetWordCount", "conflict", "outcome", "summary", "summaryDirty",
+            "targetWordCount", "conflict", "outcome", "summary", "framing", "summaryDirty",
         ]
         var extra: [String: String] = [:]
         for (key, value) in frontmatter where !owned.contains(key) {
@@ -107,6 +111,7 @@ public enum SceneFile {
             summaryDirty: summaryDirty,
             targetWordCount: targetWordCount,
             contentPath: contentPath,
+            framing: framing,
             extraFrontmatter: extra,
             prose: split.body
         )

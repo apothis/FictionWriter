@@ -129,6 +129,7 @@ public enum ChicletKind: String, Codable, Equatable, CaseIterable {
     case modeInstruction
     case fewShotStyleExample
     case directionDirective
+    case sceneFraming
 }
 
 // MARK: - Builder
@@ -514,6 +515,27 @@ public enum PromptBuilder {
                     aboveCache: false,
                     sourceId: nil,
                     evictionPriority: .max
+                ))
+            }
+        }
+
+        // P2a — per-scene framing. The author's scenario block for the
+        // current scene (the dynamic, what's at stake, the intended
+        // intensity), bracketed so the model reads it as authorial
+        // direction, injected near the cursor.
+        if let sceneId = context.currentSceneId,
+           let scene = context.scenes[sceneId] {
+            let framing = scene.framing.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !framing.isEmpty {
+                let block = "[ Scene framing: \(framing) ]"
+                layers.append(Layer(
+                    kind: .sceneFraming,
+                    label: "Scene framing",
+                    content: block,
+                    tokens: TokenEstimator.estimate(block),
+                    aboveCache: false,
+                    sourceId: sceneId,
+                    evictionPriority: 60
                 ))
             }
         }
