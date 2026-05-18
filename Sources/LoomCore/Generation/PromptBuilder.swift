@@ -242,7 +242,14 @@ public enum PromptBuilder {
         // ABOVE CACHE: System (per-mode), Project Memory, Style guide
         // (Phase 5; empty), Bible-Constant.
 
-        let systemContent = systemPromptFor(mode: context.mode)
+        // LOOM_NSFW.md §3.2 + §3.5 — the project's WritingDirection
+        // drives the system-prompt posture, the Continue word target,
+        // and (below) the Author's Note injection depth.
+        let direction = context.project.settings.writingDirection
+        let systemContent = systemPromptFor(
+            mode: context.mode,
+            continueWordTarget: WritingDirectionPrompt.continueWordTarget(direction)
+        ) + WritingDirectionPrompt.systemAddendum(direction)
         layers.append(Layer(
             kind: .system,
             label: "System",
@@ -319,7 +326,10 @@ public enum PromptBuilder {
         // content so the bracket doesn't appear twice in the
         // assembled prompt.
         let an = context.project.settings.authorsNote
-        let depthLines = context.project.settings.authorsNoteDepthLines
+        let depthLines = WritingDirectionPrompt.authorsNoteDepth(
+            direction,
+            projectDefault: context.project.settings.authorsNoteDepthLines
+        )
         var recentProse = buildRecentProseLayer(context)
 
         // Phase 2 #7 — Bible-Keyed layer. The keyed entities activate
@@ -651,11 +661,11 @@ public enum PromptBuilder {
 
     // MARK: - Mode-specific content
 
-    private static func systemPromptFor(mode: GenerationMode) -> String {
+    private static func systemPromptFor(mode: GenerationMode, continueWordTarget: Int = 500) -> String {
         switch mode {
         case .continueProse:
             return """
-            You are a fiction writer continuing an existing manuscript. You will be given prose; pick up exactly where it ends and write the next ~500 words of the scene. Maintain voice, tense, POV, and tone exactly as established. Do NOT restate, paraphrase, or quote any of the preceding prose — your output begins on the very next character that follows it. Do not summarize, do not break narrative voice, do not introduce meta-commentary or chapter headings. End at a natural pause (paragraph break, scene beat, or sentence boundary).
+            You are a fiction writer continuing an existing manuscript. You will be given prose; pick up exactly where it ends and write the next ~\(continueWordTarget) words of the scene. Maintain voice, tense, POV, and tone exactly as established. Do NOT restate, paraphrase, or quote any of the preceding prose — your output begins on the very next character that follows it. Do not summarize, do not break narrative voice, do not introduce meta-commentary or chapter headings. End at a natural pause (paragraph break, scene beat, or sentence boundary).
             """
         case .expand:
             return """

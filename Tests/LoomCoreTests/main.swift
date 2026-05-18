@@ -38,6 +38,7 @@ let suites: [TestSuite] = [
     phase2SettingsControllerMountTests(),
     phase2RecommendedContextBudgetTests(),
     phase2WritingDirectionTests(),
+    phase4WritingDirectionPromptTests(),
     phase2FanficMetadataTests(),
     phase2CharacterSchemaTests(),
     phase2BibleEntitiesTests(),
