@@ -124,6 +124,17 @@ func continuityConflictRetrievalTests() -> TestSuite {
             ContinuityConflictRetrieval.candidatePairs(claims: claims, sceneOrder: order).count, 3)
     }
 
+    s.test("two claims in the same scene are not paired — the audit is cross-scene") {
+        // "a wind that smelled of salt and woodsmoke" — a conjunction
+        // the writer wrote as a unit, not a continuity error.
+        let claims = [
+            claim(.attribute, subject: "the wind", key: "smell", value: "salt", scene: "s1"),
+            claim(.attribute, subject: "the wind", key: "smell", value: "woodsmoke", scene: "s1"),
+        ]
+        try expectEqual(
+            ContinuityConflictRetrieval.candidatePairs(claims: claims, sceneOrder: order).count, 0)
+    }
+
     s.test("a claim in a scene outside the order is skipped") {
         let claims = [
             claim(.attribute, subject: "Mara", key: "eye colour", value: "green", scene: "s1"),

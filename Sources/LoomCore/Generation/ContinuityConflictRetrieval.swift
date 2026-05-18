@@ -65,6 +65,12 @@ public enum ContinuityConflictRetrieval {
             guard sorted.count >= 2 else { continue }
             for i in 0..<sorted.count {
                 for j in (i + 1)..<sorted.count {
+                    // Cross-scene only — the audit detects drift *across*
+                    // scenes. Two claims in one scene are far more often a
+                    // conjunction the writer wrote as a unit ("a wind that
+                    // smelled of salt and woodsmoke") than a continuity
+                    // error, so a same-scene pair is never a candidate.
+                    guard sorted[i].claim.sourceSceneId != sorted[j].claim.sourceSceneId else { continue }
                     pairs.append(CandidatePair(earlier: sorted[i].claim, later: sorted[j].claim))
                 }
             }
