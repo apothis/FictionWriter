@@ -348,6 +348,14 @@ public final class ProjectSession {
 
     // MARK: - Scene metadata mutations (Phase 3 §E)
 
+    public func setSceneFraming(id: UUID, to framing: String) {
+        guard var scene = scenes[id] else { return }
+        scene.framing = framing
+        scenes[id] = scene
+        markDirty()
+        DebugLog.shared.write("[scene] framing id=\(id) len=\(framing.count)")
+    }
+
     public func setSceneStatus(id: UUID, to status: SceneStatus) {
         guard var scene = scenes[id] else { return }
         scene.status = status
@@ -953,6 +961,12 @@ public final class ProjectSession {
     public func setMemory(_ memory: String) {
         project.settings.memory = memory
         markDirty()
+    }
+
+    public func setAntiSlopPhrases(_ phrases: [String]) {
+        project.settings.antiSlopPhrases = phrases
+        markDirty()
+        DebugLog.shared.write("[settings] antiSlopPhrases count=\(phrases.count)")
     }
 
     public func setAuthorsNote(_ note: String) {

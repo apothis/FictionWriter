@@ -66,6 +66,19 @@ public enum BibleWorkspaceBridge {
         return "window.loomWizard.applyPlannedSnapshot(\(escapeSeparators(json)));"
     }
 
+    /// P2 project-tools bundle — Swift→JS snapshot push for the
+    /// scene-framing / anti-slop webview. Targets the bundle's
+    /// namespaced global, `window.loomTools.applyToolsSnapshot`.
+    public static func encodeProjectToolsSnapshotPush(
+        _ snapshot: ProjectToolsSnapshot
+    ) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let data = try encoder.encode(snapshot)
+        let json = String(data: data, encoding: .utf8) ?? "{}"
+        return "window.loomTools.applyToolsSnapshot(\(escapeSeparators(json)));"
+    }
+
     /// Phase 4 — the Swift→JS reply leg for request/reply intents
     /// (`generateOutline`, `createPlannedProject`). Produces a
     /// one-line `window.loomWizard.resolveReply(<envelope>)` call; the JS
@@ -131,6 +144,9 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     case addDynamicSheet(name: String)
     case patchDynamicSheet(id: UUID, patch: DynamicSheetPatch)
     case deleteDynamicSheet(id: UUID)
+    // P2 project-tools webview — per-scene framing + anti-slop list.
+    case setSceneFraming(sceneId: UUID, framing: String)
+    case setAntiSlopPhrases(phrases: [String])
     case deleteKnownFact(characterId: UUID, sceneId: UUID, factId: UUID)
     case acceptSuggestion(factId: UUID)
     case rejectSuggestion(factId: UUID)
@@ -208,7 +224,7 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
-        case body, nsfw
+        case body, nsfw, framing, phrases
         case proposalId, accepted, demoteConflicting
         case x, y
         case fromCharacterId, toCharacterId, edgeKind, status, notes
@@ -224,6 +240,8 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case addDynamicSheet
         case patchDynamicSheet
         case deleteDynamicSheet
+        case setSceneFraming
+        case setAntiSlopPhrases
         case deleteKnownFact
         case acceptSuggestion
         case rejectSuggestion
@@ -280,6 +298,13 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .deleteDynamicSheet(let id):
             try c.encode(Kind.deleteDynamicSheet.rawValue, forKey: .kind)
             try c.encode(id, forKey: .id)
+        case .setSceneFraming(let sceneId, let framing):
+            try c.encode(Kind.setSceneFraming.rawValue, forKey: .kind)
+            try c.encode(sceneId, forKey: .sceneId)
+            try c.encode(framing, forKey: .framing)
+        case .setAntiSlopPhrases(let phrases):
+            try c.encode(Kind.setAntiSlopPhrases.rawValue, forKey: .kind)
+            try c.encode(phrases, forKey: .phrases)
         case .deleteKnownFact(let characterId, let sceneId, let factId):
             try c.encode(Kind.deleteKnownFact.rawValue, forKey: .kind)
             try c.encode(characterId, forKey: .characterId)
@@ -420,6 +445,13 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .deleteDynamicSheet:
             let id = try c.decode(UUID.self, forKey: .id)
             self = .deleteDynamicSheet(id: id)
+        case .setSceneFraming:
+            let sceneId = try c.decode(UUID.self, forKey: .sceneId)
+            let framing = try c.decode(String.self, forKey: .framing)
+            self = .setSceneFraming(sceneId: sceneId, framing: framing)
+        case .setAntiSlopPhrases:
+            let phrases = try c.decode([String].self, forKey: .phrases)
+            self = .setAntiSlopPhrases(phrases: phrases)
         case .deleteKnownFact:
             let characterId = try c.decode(UUID.self, forKey: .characterId)
             let sceneId = try c.decode(UUID.self, forKey: .sceneId)

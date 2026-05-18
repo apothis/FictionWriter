@@ -84,4 +84,10 @@ LOOM_BUNDLE=plannedProject bun run build
 postprocess_html "$BUNDLE_DIR/dist-planned/plannedProject.html" "plannedProject"
 sync_resources "dist-planned" "PlannedProject"
 
+# --- Project-tools bundle (scene framing + anti-slop) ---
+echo "[bible-workspace] building Project-tools bundle..."
+LOOM_BUNDLE=projectTools bun run build
+postprocess_html "$BUNDLE_DIR/dist-tools/projectTools.html" "projectTools"
+sync_resources "dist-tools" "ProjectTools"
+
 echo "[bible-workspace] ready"

@@ -348,6 +348,22 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         workspace.toolTip = "Open the dedicated entity-management window: full character editors, lorebook power-user fields, accepted-facts examiner, suggestions queue. (Phase 4.5 — see LOOM_BIBLE_WORKSPACE.md)"
         bibleMenu.addItem(workspace)
         bibleMenu.addItem(.separator())
+        // P2 — project-tools webviews.
+        let sceneFraming = NSMenuItem(
+            title: "Edit Scene Framing…",
+            action: #selector(openSceneFramingClicked),
+            keyEquivalent: "")
+        sceneFraming.target = self
+        sceneFraming.toolTip = "Edit the current scene's framing block — the scenario, dynamic, and intended intensity injected near the cursor at generation time."
+        bibleMenu.addItem(sceneFraming)
+        let antiSlop = NSMenuItem(
+            title: "Edit Anti-slop List…",
+            action: #selector(openAntiSlopClicked),
+            keyEquivalent: "")
+        antiSlop.target = self
+        antiSlop.toolTip = "Edit the project's curated anti-slop phrase list."
+        bibleMenu.addItem(antiSlop)
+        bibleMenu.addItem(.separator())
         // Phase 7.b.6 — trigger for the Scene-Template Generation
         // feature. Lives in the Bible menu because it consumes a
         // Template Scene entity (managed via Bible Workspace).
@@ -822,6 +838,37 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             )
         }
         bibleWorkspaceWindow?.showAndActivate()
+    }
+
+    // MARK: - Project-tools windows (P2)
+
+    private var sceneFramingWindow: ProjectToolsWindowController?
+    private var antiSlopWindow: ProjectToolsWindowController?
+
+    @objc private func openSceneFramingClicked() {
+        let session = AppState.shared.currentSession
+        guard let sceneId = session.currentSceneId else {
+            let alert = NSAlert()
+            alert.messageText = "No scene selected"
+            alert.informativeText = "Select a scene in the sidebar, then edit its framing."
+            alert.runModal()
+            return
+        }
+        sceneFramingWindow = ProjectToolsWindowController(
+            session: session, mode: .sceneFraming(sceneId: sceneId)
+        )
+        sceneFramingWindow?.showAndActivate()
+    }
+
+    @objc private func openAntiSlopClicked() {
+        if let existing = antiSlopWindow, existing.window?.isVisible == true {
+            existing.showAndActivate()
+            return
+        }
+        antiSlopWindow = ProjectToolsWindowController(
+            session: AppState.shared.currentSession, mode: .antiSlop
+        )
+        antiSlopWindow?.showAndActivate()
     }
 
     // MARK: - File menu actions

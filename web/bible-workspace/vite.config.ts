@@ -20,9 +20,24 @@ import { fileURLToPath, URL } from "node:url";
 // env var (see scripts/build-bible-workspace.sh). `vite dev` serves
 // both HTML files natively — the split only matters for the build.
 
-const isWizard = process.env.LOOM_BUNDLE === "plannedProject";
-const entryHTML = isWizard ? "plannedProject.html" : "index.html";
-const entryName = isWizard ? "plannedProject" : "index";
+// One entry per WKWebView bundle. Selected by the LOOM_BUNDLE env var
+// (see scripts/build-bible-workspace.sh); `index` is the default.
+const BUNDLES: Record<string, { html: string; name: string; out: string }> = {
+  index: { html: "index.html", name: "index", out: "dist" },
+  plannedProject: {
+    html: "plannedProject.html",
+    name: "plannedProject",
+    out: "dist-planned",
+  },
+  projectTools: {
+    html: "projectTools.html",
+    name: "projectTools",
+    out: "dist-tools",
+  },
+};
+const bundle = BUNDLES[process.env.LOOM_BUNDLE ?? "index"] ?? BUNDLES.index;
+const entryHTML = bundle.html;
+const entryName = bundle.name;
 
 export default defineConfig({
   plugins: [react()],
@@ -34,7 +49,7 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
-    outDir: isWizard ? "dist-planned" : "dist",
+    outDir: bundle.out,
     emptyOutDir: true,
     assetsInlineLimit: 0,
     // file:// loading: ES modules don't reliably execute under

@@ -265,6 +265,41 @@ func phase4_5BibleWorkspaceBridgeTests() -> TestSuite {
         try expectEqual(snap.dynamics, [])
     }
 
+    // MARK: - P2 project-tools intents
+
+    s.test("setSceneFraming round-trips through encode/decode") {
+        let intent = BibleWorkspaceIntent.setSceneFraming(
+            sceneId: UUID(), framing: "Hate-sex dynamic; high tension."
+        )
+        let data = try JSONEncoder().encode(intent)
+        try expectEqual(try BibleWorkspaceBridge.decodeIntent(data), intent)
+    }
+
+    s.test("setAntiSlopPhrases round-trips through encode/decode") {
+        let intent = BibleWorkspaceIntent.setAntiSlopPhrases(
+            phrases: ["a testament to", "her core"]
+        )
+        let data = try JSONEncoder().encode(intent)
+        try expectEqual(try BibleWorkspaceBridge.decodeIntent(data), intent)
+    }
+
+    s.test("ProjectToolsSnapshot.framing carries the scene's framing text") {
+        var scene = Scene.empty(title: "The Beach")
+        scene.framing = "what's at stake"
+        let snap = ProjectToolsSnapshot.framing(scene: scene, projectTitle: "P")
+        try expectEqual(snap.tool, "framing")
+        try expectEqual(snap.framing, "what's at stake")
+        try expectEqual(snap.sceneId, scene.id.uuidString)
+    }
+
+    s.test("ProjectToolsSnapshot.antiSlop carries the project's phrase list") {
+        var project = Project(title: "P")
+        project.settings.antiSlopPhrases = ["x", "y"]
+        let snap = ProjectToolsSnapshot.antiSlop(project: project)
+        try expectEqual(snap.tool, "antislop")
+        try expectEqual(snap.antiSlopPhrases, ["x", "y"])
+    }
+
     // MARK: - Session 4 intent (Phase 4.5 §7) — accepted-facts examiner
 
     s.test("decodeIntent on deleteKnownFact yields the expected case") {
