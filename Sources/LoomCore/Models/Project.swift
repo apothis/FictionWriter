@@ -131,6 +131,11 @@ public struct ProjectSettings: Codable, Equatable {
     /// target set. Scene + Chapter have their own
     /// `targetWordCount: Int?` already (LOOM_DATA_MODEL.md §2).
     public var targetWordCount: Int?
+    /// P2c — the project's anti-slop phrase list. A curated, editable
+    /// list of cliché phrases (seeded from `AntiSlopDefaults` at
+    /// project creation). Currently a data resource only — the
+    /// transport wiring to KoboldCpp `banned_strings` is deferred.
+    public var antiSlopPhrases: [String]
 
     public init(
         serverProfileId: UUID? = nil,
@@ -143,7 +148,8 @@ public struct ProjectSettings: Codable, Equatable {
         writingDirection: WritingDirection = .defaults,
         pov: POVStyle = .thirdPersonLimited,
         tense: NarrativeTense = .past,
-        targetWordCount: Int? = nil
+        targetWordCount: Int? = nil,
+        antiSlopPhrases: [String] = []
     ) {
         self.serverProfileId = serverProfileId
         self.contextBudgetTokens = contextBudgetTokens
@@ -156,6 +162,7 @@ public struct ProjectSettings: Codable, Equatable {
         self.pov = pov
         self.tense = tense
         self.targetWordCount = targetWordCount
+        self.antiSlopPhrases = antiSlopPhrases
     }
 
     public static let defaults = ProjectSettings()
@@ -173,6 +180,7 @@ public struct ProjectSettings: Codable, Equatable {
         self.pov = try c.decodeIfPresent(POVStyle.self, forKey: .pov) ?? .thirdPersonLimited
         self.tense = try c.decodeIfPresent(NarrativeTense.self, forKey: .tense) ?? .past
         self.targetWordCount = try c.decodeIfPresent(Int.self, forKey: .targetWordCount)
+        self.antiSlopPhrases = try c.decodeIfPresent([String].self, forKey: .antiSlopPhrases) ?? []
     }
 }
 

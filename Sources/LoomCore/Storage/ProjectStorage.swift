@@ -44,6 +44,8 @@ public final class ProjectStorage {
         // LOOM_NSFW §2.3 — a new project is seeded with the Loom-default
         // Project Memory so it ships anti-refusal framing from creation.
         project.settings.memory = ProjectMemoryPresets.loomDefault.text
+        // P2c — seed the editable anti-slop phrase list.
+        project.settings.antiSlopPhrases = AntiSlopDefaults.phrases
         try saveProject(project, at: url)
         DebugLog.shared.write("[project] created: \(url.lastPathComponent) at=\(url.path)")
         return project
@@ -72,6 +74,7 @@ public final class ProjectStorage {
 
         var project = Project(title: title)
         project.settings.memory = ProjectMemoryPresets.loomDefault.text
+        project.settings.antiSlopPhrases = AntiSlopDefaults.phrases
         project.manuscript = outline.manuscript
         project.plannedConfig = config
         if let seed = config.seedCharacter() {
