@@ -2733,5 +2733,9 @@ hardening:
 - **Prefill-aware Continue** — a mid-sentence tail at the cursor is
   routed into the assistant-turn prefill (anti-refusal); no new UI.
   `PrefillSeed` splits head/seed. Validated against Goetia.
+- **Per-character kink profile** — `Character.kinks` ([`CharacterKink`]:
+  free-form name + stance into/curious/soft/hard limit). Rendered into
+  the character's bible entry; editable in the CharacterEditor webview
+  with a curated suggestion datalist.
 
-**1970 tests green. 19 commits on `main`.**
+**1981 tests green.**
