@@ -72,6 +72,7 @@ let fixturePath = env["LOOM_SPIKE_FIXTURE"]
 let ollamaURL = env["LOOM_SPIKE_OLLAMA_URL"] ?? "http://localhost:11434"
 let extractModel = env["LOOM_SPIKE_OLLAMA_MODEL"] ?? "gemma4_2b:latest"
 let phase = env["LOOM_SPIKE_PHASE"] ?? "both"
+let extractBackend = env["LOOM_SPIKE_EXTRACT_BACKEND"] ?? "ollama"
 let adjBackend = env["LOOM_SPIKE_ADJ_BACKEND"] ?? "ollama"
 let adjModel = env["LOOM_SPIKE_ADJ_MODEL"] ?? extractModel
 let koboldURL = env["LOOM_SPIKE_KOBOLD_URL"] ?? "http://192.168.1.201:5001"
@@ -88,10 +89,51 @@ guard let fixtureData = FileManager.default.contents(atPath: fixturePath),
 let ollama = OllamaClient(baseURL: URL(string: ollamaURL)!, model: extractModel)
 let ollamaAdj = OllamaClient(baseURL: URL(string: ollamaURL)!, model: adjModel)
 
+/// A KoboldCpp `/api/v1/generate` provider — lets the production
+/// `OllamaContinuityExtractor` run on the writer model (Goetia, 24B)
+/// instead of the small Ollama extractor. `[INST]`-wrapped, unconstrained.
+final class KoboldGenerateProvider: OllamaCallProvider {
+    let baseURL: URL
+    init(baseURL: URL) { self.baseURL = baseURL }
+    func call(
+        prompt: String, schema: [String: Any], options: OllamaChatOptions,
+        completion: @escaping (Result<String, OllamaError>) -> Void
+    ) {
+        guard let url = URL(string: "/api/v1/generate", relativeTo: baseURL)?.absoluteURL else {
+            completion(.failure(.badURL)); return
+        }
+        let body: [String: Any] = [
+            "prompt": "[INST]\(prompt)[/INST]",
+            "max_length": options.numPredict, "max_context_length": 8192,
+            "temperature": 0.2, "top_p": 0.9, "min_p": 0.05, "rep_pen": 1.05,
+            "stop_sequence": ["[INST]", "</s>"],
+        ]
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 600
+        URLSession(configuration: cfg).dataTask(with: req) { data, _, err in
+            if let err = err { completion(.failure(.transport("\(err)"))); return }
+            guard let data = data,
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let results = obj["results"] as? [[String: Any]],
+                  let text = results.first?["text"] as? String
+            else { completion(.failure(.unexpectedShape)); return }
+            completion(.success(text))
+        }.resume()
+    }
+}
+
 // Extraction goes through the production OllamaContinuityExtractor —
-// unconstrained generation + re-roll, the corrected path (the Ollama
-// format-schema flakes ~50% on gemma4_2b).
-let continuityExtractor = OllamaContinuityExtractor(provider: ollama)
+// unconstrained generation + re-roll, the corrected path. The backend
+// is selectable: the small Ollama extractor, or the 24B Goetia writer
+// on KoboldCpp (LOOM_SPIKE_EXTRACT_BACKEND).
+let extractProvider: OllamaCallProvider = extractBackend == "kobold"
+    ? KoboldGenerateProvider(baseURL: URL(string: koboldURL)!)
+    : ollama
+let continuityExtractor = OllamaContinuityExtractor(provider: extractProvider)
 
 func extractClaims(prose: String, sceneId: String) -> [ContinuityAudit.Claim] {
     let sem = DispatchSemaphore(value: 0)
@@ -168,7 +210,7 @@ func jaccard(_ a: String, _ b: String) -> Double {
 // MARK: - Report
 
 var report = "# ContinuityAuditSpike\n\n"
-report += "- **Extraction model**: \(extractModel) @ \(ollamaURL)\n"
+report += "- **Extraction**: \(extractBackend == "kobold" ? "Goetia (24B) @ \(koboldURL)" : "\(extractModel) @ \(ollamaURL)")\n"
 report += "- **Adjudication**: \(adjBackend == "kobold" ? "Goetia @ \(koboldURL)" : "\(adjModel) @ \(ollamaURL)")\n"
 report += "- **Fixture**: \(fixture.scenes.count) scenes, \(fixture.gold_claims.count) gold claims, \(fixture.gold_pairs.count) gold pairs\n\n"
 
