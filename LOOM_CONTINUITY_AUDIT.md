@@ -660,3 +660,39 @@ and a few precision refinements. This is honest ongoing work, not a quick
 fix. The feature is a usable review aid in its current state — re-running
 an audit improves coverage — but should be presented as such, not as
 exhaustive.
+
+## 20. Open problems — research targets for the next session
+
+The pipeline is built and sound; the gap to production quality is recall +
+consistency, not architecture. Concrete open problems, in priority order —
+**the next session should research each widely (prior art, papers, other
+tools, fine-tuning options) before tuning blindly:**
+
+1. **Per-scene extraction recall (~83%) and its run-to-run variance — the
+   dominant problem.** A contradiction is found only when *both* its claims
+   are extracted in the same run; at ~83% per-claim recall that is ~69% per
+   contradiction, and it varies. Research: claim/proposition-extraction
+   recall techniques; multi-sample / self-consistency / ensemble extraction
+   (run extraction k times, union the claims); whether a small purpose-built
+   or fine-tuned extraction model beats prompting a 24B; the Claimify
+   pipeline applied more fully (select → decompose → classify); reliable
+   constrained decoding (GBNF / XGrammar on KoboldCpp) for structural
+   guarantees without the Ollama flake.
+2. **Type-classification accuracy.** Two-stage typing helped (typed recall
+   55→72% on Goetia) but a gap remains, and `type` drives retrieval
+   routing. Research: whether the 5-type taxonomy itself is too brittle
+   (attribute vs event is genuinely ambiguous); a tighter taxonomy; or
+   constrained-enum classification.
+3. **Knowledge-check reveal-completeness (FP2).** A knowledge violation is
+   mis-flagged when extraction fails to surface the *earliest* reveal event
+   (the character is shown learning the fact, but that event claim is
+   missed). Tied to problem 1, but also: should the knowledge check be more
+   conservative, or use scene-text context in adjudication?
+4. **Making a single on-demand audit trustworthy despite stochastic
+   extraction.** Research: is the answer multi-run aggregation, a confidence
+   floor, or surfacing "low-confidence / re-run for coverage" to the user?
+
+A proper **eval harness** (a larger hand-graded fixture than the current
+6-scene one, multi-run averaging, precision/recall tracked over runs) is a
+prerequisite for tuning any of this without dice-rolling — building it is
+likely the first concrete step after the research.
