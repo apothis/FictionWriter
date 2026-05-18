@@ -386,6 +386,19 @@ public final class BibleWorkspaceWindowController: NSWindowController, WKScriptM
         case .deleteLorebookEntry(let id):
             session.deleteLorebookEntry(id: id)
             DebugLog.shared.write("[workspace] deleteLorebookEntry id=\(id)")
+        case .addDynamicSheet(let name):
+            let sheet = session.addDynamicSheet(name: name)
+            DebugLog.shared.write("[workspace] addDynamicSheet id=\(sheet.id) name=\(name)")
+        case .patchDynamicSheet(let id, let patch):
+            guard let sheet = session.project.bible.dynamics.first(where: { $0.id == id }) else {
+                DebugLog.shared.write("[workspace] patchDynamicSheet ignored — stale id=\(id)")
+                return
+            }
+            session.updateDynamicSheet(patch.apply(to: sheet))
+            DebugLog.shared.write("[workspace] patchDynamicSheet applied id=\(id)")
+        case .deleteDynamicSheet(let id):
+            session.deleteDynamicSheet(id: id)
+            DebugLog.shared.write("[workspace] deleteDynamicSheet id=\(id)")
         case .deleteKnownFact(let characterId, let sceneId, let factId):
             session.removeKnownFact(characterId: characterId, sceneId: sceneId, factId: factId)
             DebugLog.shared.write("[workspace] deleteKnownFact character=\(characterId) scene=\(sceneId) fact=\(factId)")

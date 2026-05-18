@@ -127,6 +127,10 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     case patchLorebookEntry(id: UUID, patch: LorebookEntryPatch)
     case addLorebookEntry(name: String)
     case deleteLorebookEntry(id: UUID)
+    // P2b — Dynamic Sheet CRUD from the bible-workspace webview.
+    case addDynamicSheet(name: String)
+    case patchDynamicSheet(id: UUID, patch: DynamicSheetPatch)
+    case deleteDynamicSheet(id: UUID)
     case deleteKnownFact(characterId: UUID, sceneId: UUID, factId: UUID)
     case acceptSuggestion(factId: UUID)
     case rejectSuggestion(factId: UUID)
@@ -217,6 +221,9 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case patchLorebookEntry
         case addLorebookEntry
         case deleteLorebookEntry
+        case addDynamicSheet
+        case patchDynamicSheet
+        case deleteDynamicSheet
         case deleteKnownFact
         case acceptSuggestion
         case rejectSuggestion
@@ -262,6 +269,16 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             try c.encode(name, forKey: .name)
         case .deleteLorebookEntry(let id):
             try c.encode(Kind.deleteLorebookEntry.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+        case .addDynamicSheet(let name):
+            try c.encode(Kind.addDynamicSheet.rawValue, forKey: .kind)
+            try c.encode(name, forKey: .name)
+        case .patchDynamicSheet(let id, let patch):
+            try c.encode(Kind.patchDynamicSheet.rawValue, forKey: .kind)
+            try c.encode(id, forKey: .id)
+            try c.encode(patch, forKey: .patch)
+        case .deleteDynamicSheet(let id):
+            try c.encode(Kind.deleteDynamicSheet.rawValue, forKey: .kind)
             try c.encode(id, forKey: .id)
         case .deleteKnownFact(let characterId, let sceneId, let factId):
             try c.encode(Kind.deleteKnownFact.rawValue, forKey: .kind)
@@ -393,6 +410,16 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .deleteLorebookEntry:
             let id = try c.decode(UUID.self, forKey: .id)
             self = .deleteLorebookEntry(id: id)
+        case .addDynamicSheet:
+            let name = try c.decode(String.self, forKey: .name)
+            self = .addDynamicSheet(name: name)
+        case .patchDynamicSheet:
+            let id = try c.decode(UUID.self, forKey: .id)
+            let patch = try c.decode(DynamicSheetPatch.self, forKey: .patch)
+            self = .patchDynamicSheet(id: id, patch: patch)
+        case .deleteDynamicSheet:
+            let id = try c.decode(UUID.self, forKey: .id)
+            self = .deleteDynamicSheet(id: id)
         case .deleteKnownFact:
             let characterId = try c.decode(UUID.self, forKey: .characterId)
             let sceneId = try c.decode(UUID.self, forKey: .sceneId)

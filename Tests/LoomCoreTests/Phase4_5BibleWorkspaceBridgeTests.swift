@@ -218,6 +218,53 @@ func phase4_5BibleWorkspaceBridgeTests() -> TestSuite {
         try expectEqual(decoded, intent)
     }
 
+    // MARK: - P2b — Dynamic Sheet intents
+
+    s.test("decodeIntent on addDynamicSheet yields the expected case") {
+        let intent = try BibleWorkspaceBridge.decodeIntent(
+            Data("{\"kind\":\"addDynamicSheet\",\"name\":\"Mira & Cole\"}".utf8)
+        )
+        switch intent {
+        case .addDynamicSheet(let name):
+            try expectEqual(name, "Mira & Cole")
+        default:
+            try expect(false, "expected .addDynamicSheet")
+        }
+    }
+
+    s.test("patchDynamicSheet round-trips through encode/decode") {
+        let intent = BibleWorkspaceIntent.patchDynamicSheet(
+            id: UUID(),
+            patch: DynamicSheetPatch(roles: "A leads.", alwaysOn: true, enabled: false)
+        )
+        let data = try JSONEncoder().encode(intent)
+        try expectEqual(try BibleWorkspaceBridge.decodeIntent(data), intent)
+    }
+
+    s.test("deleteDynamicSheet round-trips through encode/decode") {
+        let intent = BibleWorkspaceIntent.deleteDynamicSheet(id: UUID())
+        let data = try JSONEncoder().encode(intent)
+        try expectEqual(try BibleWorkspaceBridge.decodeIntent(data), intent)
+    }
+
+    s.test("a snapshot carries the project's dynamics through encode") {
+        var project = Project(title: "T")
+        project.bible.dynamics = [DynamicSheet(name: "Mira & Cole", roles: "A leads.")]
+        let snapshot = BibleWorkspaceSnapshot.build(
+            project: project, scenes: [:], suggestionsQueue: LedgerSuggestionsQueue()
+        )
+        try expectEqual(snapshot.dynamics.count, 1)
+        try expectEqual(snapshot.dynamics.first?.name, "Mira & Cole")
+    }
+
+    s.test("a snapshot JSON without dynamics decodes with an empty list") {
+        let json = """
+        {"projectTitle":"T","characters":[],"lorebook":[],"scenes":[],"suggestions":[]}
+        """
+        let snap = try JSONDecoder().decode(BibleWorkspaceSnapshot.self, from: Data(json.utf8))
+        try expectEqual(snap.dynamics, [])
+    }
+
     // MARK: - Session 4 intent (Phase 4.5 §7) — accepted-facts examiner
 
     s.test("decodeIntent on deleteKnownFact yields the expected case") {

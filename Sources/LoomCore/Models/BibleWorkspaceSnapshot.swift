@@ -16,6 +16,9 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     public let projectTitle: String
     public let characters: [SnapshotCharacter]
     public let lorebook: [LorebookEntry]
+    /// P2b — per-relationship Dynamic Sheets. Additive — legacy
+    /// snapshots decode with `[]`.
+    public let dynamics: [DynamicSheet]
     public let scenes: [SceneSummary]
     public let suggestions: [PendingSuggestion]
     /// Phase 5 production A2.1 — reference texts available to the
@@ -94,6 +97,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         projectTitle: String,
         characters: [SnapshotCharacter],
         lorebook: [LorebookEntry],
+        dynamics: [DynamicSheet] = [],
         scenes: [SceneSummary],
         suggestions: [PendingSuggestion],
         references: [SnapshotReference] = [],
@@ -110,6 +114,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.projectTitle = projectTitle
         self.characters = characters
         self.lorebook = lorebook
+        self.dynamics = dynamics
         self.scenes = scenes
         self.suggestions = suggestions
         self.references = references
@@ -125,7 +130,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case projectTitle, characters, lorebook, scenes, suggestions
+        case projectTitle, characters, lorebook, dynamics, scenes, suggestions
         case references, templateScenes, sceneExemplars, isProjectOnDisk
         case extractingTemplateIds, ingestingReferenceIds, discoveringSceneIds, proposedEntities
         case proposedRelationships, relationshipMapLayout
@@ -136,6 +141,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
         self.projectTitle = try c.decode(String.self, forKey: .projectTitle)
         self.characters = try c.decode([SnapshotCharacter].self, forKey: .characters)
         self.lorebook = try c.decode([LorebookEntry].self, forKey: .lorebook)
+        self.dynamics = try c.decodeIfPresent([DynamicSheet].self, forKey: .dynamics) ?? []
         self.scenes = try c.decode([SceneSummary].self, forKey: .scenes)
         self.suggestions = try c.decode([PendingSuggestion].self, forKey: .suggestions)
         self.references = try c.decodeIfPresent([SnapshotReference].self, forKey: .references) ?? []
@@ -219,6 +225,7 @@ public struct BibleWorkspaceSnapshot: Codable, Equatable {
             projectTitle: project.title,
             characters: project.bible.characters.map(SnapshotCharacter.init(from:)),
             lorebook: project.bible.lorebook,
+            dynamics: project.bible.dynamics,
             scenes: sceneSummaries,
             suggestions: pending,
             references: references,

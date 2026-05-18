@@ -72,6 +72,23 @@ export interface LorebookEntry {
   sticky: boolean;
 }
 
+// Mirrors DynamicSheet.swift (P2b) — a structured per-relationship
+// spec (roles / wants / limits / safeword / arc) fed to the writer
+// model. Lives on the Bible alongside the lorebook.
+export interface DynamicSheet {
+  id: string;
+  name: string;
+  participantIds: string[];
+  roles: string;
+  wants: string;
+  softLimits: string;
+  hardLimits: string;
+  safeword: string;
+  arc: string;
+  alwaysOn: boolean;
+  enabled: boolean;
+}
+
 export interface SceneSummary {
   id: string;
   title: string;
@@ -139,6 +156,9 @@ export interface BibleWorkspaceSnapshot {
   projectTitle: string;
   characters: Character[];
   lorebook: LorebookEntry[];
+  // P2b — per-relationship Dynamic Sheets. Optional for legacy-
+  // payload tolerance; readers default to [].
+  dynamics?: DynamicSheet[];
   scenes: SceneSummary[];
   suggestions: PendingSuggestion[];
   references: SnapshotReference[];
@@ -296,6 +316,20 @@ export interface SceneExemplarPatch {
   name?: string;
   nsfw?: boolean;
   body?: string;
+}
+
+// Mirrors DynamicSheetPatch.swift — every field optional.
+export interface DynamicSheetPatch {
+  name?: string;
+  participantIds?: string[];
+  roles?: string;
+  wants?: string;
+  softLimits?: string;
+  hardLimits?: string;
+  safeword?: string;
+  arc?: string;
+  alwaysOn?: boolean;
+  enabled?: boolean;
 }
 
 // Mirrors LorebookEntryPatch.swift — every field optional. Same

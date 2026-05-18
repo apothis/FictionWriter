@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type {
   BibleWorkspaceSnapshot,
   CharacterPatch,
+  DynamicSheetPatch,
   LorebookEntryPatch,
   ReferencePatch,
   SceneExemplarPatch,
@@ -11,6 +12,7 @@ import { postIntent, subscribeToSnapshots } from "./bridge";
 import { EntityList } from "./views/EntityList";
 import { CharacterEditor } from "./views/CharacterEditor";
 import { LorebookEditor } from "./views/LorebookEditor";
+import { DynamicSheetEditor } from "./views/DynamicSheetEditor";
 import { ReferenceEditor } from "./views/ReferenceEditor";
 import { TemplateSceneEditor } from "./views/TemplateSceneEditor";
 import { SceneExemplarEditor } from "./views/SceneExemplarEditor";
@@ -27,6 +29,7 @@ import { RelationshipGraph } from "./views/RelationshipGraph";
 type Selection =
   | { kind: "character"; id: string }
   | { kind: "lorebook"; id: string }
+  | { kind: "dynamic"; id: string }
   | { kind: "reference"; id: string }
   | { kind: "template"; id: string }
   | { kind: "sceneExemplar"; id: string }
@@ -89,6 +92,25 @@ export function App() {
         onBack={() => setSelection(null)}
         onDelete={() => {
           postIntent({ kind: "deleteLorebookEntry", id: entry.id });
+          setSelection(null);
+        }}
+      />
+    );
+  }
+
+  if (selection?.kind === "dynamic") {
+    const sheet = (snapshot.dynamics ?? []).find((d) => d.id === selection.id);
+    if (!sheet) return renderList();
+    return (
+      <DynamicSheetEditor
+        sheet={sheet}
+        characters={snapshot.characters}
+        dispatchPatch={(patch: DynamicSheetPatch) =>
+          postIntent({ kind: "patchDynamicSheet", id: sheet.id, patch })
+        }
+        onBack={() => setSelection(null)}
+        onDelete={() => {
+          postIntent({ kind: "deleteDynamicSheet", id: sheet.id });
           setSelection(null);
         }}
       />
@@ -287,6 +309,7 @@ export function App() {
         snapshot={snapshot!}
         onSelectCharacter={(id) => setSelection({ kind: "character", id })}
         onSelectLorebookEntry={(id) => setSelection({ kind: "lorebook", id })}
+        onSelectDynamicSheet={(id) => setSelection({ kind: "dynamic", id })}
         onSelectReference={(id) => setSelection({ kind: "reference", id })}
         onSelectTemplateScene={(id) => setSelection({ kind: "template", id })}
         onSelectSceneExemplar={(id) =>
@@ -306,6 +329,10 @@ export function App() {
         onAddLorebookEntry={() => {
           const name = `Entry ${snapshot!.lorebook.length + 1}`;
           postIntent({ kind: "addLorebookEntry", name });
+        }}
+        onAddDynamicSheet={() => {
+          const name = `Dynamic ${(snapshot!.dynamics ?? []).length + 1}`;
+          postIntent({ kind: "addDynamicSheet", name });
         }}
         onAddReference={() => {
           const name = `Reference ${snapshot!.references.length + 1}`;

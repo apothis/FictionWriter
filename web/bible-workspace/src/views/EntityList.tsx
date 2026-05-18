@@ -1,6 +1,7 @@
 import type {
   BibleWorkspaceSnapshot,
   Character,
+  DynamicSheet,
   LorebookEntry,
   PendingSuggestion,
   SnapshotReference,
@@ -17,10 +18,12 @@ interface Props {
   snapshot: BibleWorkspaceSnapshot;
   onSelectCharacter: (id: string) => void;
   onSelectLorebookEntry: (id: string) => void;
+  onSelectDynamicSheet: (id: string) => void;
   onSelectReference: (id: string) => void;
   onSelectTemplateScene: (id: string) => void;
   onSelectSceneExemplar: (id: string) => void;
   onAddLorebookEntry: () => void;
+  onAddDynamicSheet: () => void;
   onAddReference: () => void;
   onAddTemplateScene: () => void;
   onAddSceneExemplar: () => void;
@@ -35,10 +38,12 @@ export function EntityList({
   snapshot,
   onSelectCharacter,
   onSelectLorebookEntry,
+  onSelectDynamicSheet,
   onSelectReference,
   onSelectTemplateScene,
   onSelectSceneExemplar,
   onAddLorebookEntry,
+  onAddDynamicSheet,
   onAddReference,
   onAddTemplateScene,
   onAddSceneExemplar,
@@ -118,6 +123,31 @@ export function EntityList({
                 key={entry.id}
                 entry={entry}
                 onClick={() => onSelectLorebookEntry(entry.id)}
+              />
+            ))
+          )}
+        </Section>
+        <Section
+          title="Dynamics"
+          count={(snapshot.dynamics ?? []).length}
+          headerAction={
+            <button
+              type="button"
+              onClick={onAddDynamicSheet}
+              className="text-xs text-loom-accent hover:underline"
+            >
+              + Add dynamic
+            </button>
+          }
+        >
+          {(snapshot.dynamics ?? []).length === 0 ? (
+            <EmptyRow text="No relationship dynamics yet. A Dynamic Sheet is a structured roles / wants / limits / safeword / arc spec fed to the writer model." />
+          ) : (
+            (snapshot.dynamics ?? []).map((d) => (
+              <DynamicRow
+                key={d.id}
+                sheet={d}
+                onClick={() => onSelectDynamicSheet(d.id)}
               />
             ))
           )}
@@ -395,6 +425,46 @@ function LorebookRow({
       {entry.content && (
         <p className="mt-1 line-clamp-2 text-xs leading-snug text-loom-fg-secondary">
           {entry.content}
+        </p>
+      )}
+    </button>
+  );
+}
+
+function DynamicRow({
+  sheet,
+  onClick,
+}: {
+  sheet: DynamicSheet;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group block w-full cursor-pointer rounded-lg px-3 py-2.5 text-left hover:bg-loom-bg-elevated focus:bg-loom-bg-elevated focus:outline-none focus:ring-1 focus:ring-loom-accent"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="truncate text-sm font-medium text-loom-fg">
+          {sheet.name || "(unnamed dynamic)"}
+        </span>
+        <div className="flex shrink-0 items-baseline gap-2 text-[11px] text-loom-fg-tertiary">
+          <span
+            className={cn(
+              "rounded px-1.5 py-0.5",
+              sheet.alwaysOn
+                ? "bg-loom-accent/15 text-loom-accent"
+                : "bg-loom-bg-elevated text-loom-fg-secondary",
+            )}
+          >
+            {sheet.alwaysOn ? "always on" : "keyed"}
+          </span>
+          {!sheet.enabled && <span className="text-loom-fg-tertiary">off</span>}
+        </div>
+      </div>
+      {sheet.roles && (
+        <p className="mt-1 line-clamp-2 text-xs leading-snug text-loom-fg-secondary">
+          {sheet.roles}
         </p>
       )}
     </button>

@@ -542,6 +542,31 @@ public final class ProjectSession {
         DebugLog.shared.write("[bible] deleteLorebookEntry id=\(id)")
     }
 
+    // MARK: - Dynamic Sheet mutations (P2b)
+
+    @discardableResult
+    public func addDynamicSheet(name: String) -> DynamicSheet {
+        let sheet = DynamicSheet(name: name)
+        project.bible.dynamics.append(sheet)
+        markChanged()
+        DebugLog.shared.write("[bible] addDynamicSheet id=\(sheet.id) name=\(name)")
+        return sheet
+    }
+
+    public func updateDynamicSheet(_ sheet: DynamicSheet) {
+        guard let idx = project.bible.dynamics.firstIndex(where: { $0.id == sheet.id }) else { return }
+        project.bible.dynamics[idx] = sheet
+        markChanged()
+        DebugLog.shared.write("[bible] updateDynamicSheet id=\(sheet.id)")
+    }
+
+    public func deleteDynamicSheet(id: UUID) {
+        guard let idx = project.bible.dynamics.firstIndex(where: { $0.id == id }) else { return }
+        project.bible.dynamics.remove(at: idx)
+        markChanged()
+        DebugLog.shared.write("[bible] deleteDynamicSheet id=\(id)")
+    }
+
     /// Phase 4 §14.1 #8 / LOOM_NSFW §2.5 — install (or top up) the
     /// Sphiratrioth starter pack. Additive by entry name: any pack
     /// entry whose `name` is NOT already present in the project's
