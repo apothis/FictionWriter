@@ -42,6 +42,8 @@ function character(
             { name: "knife play", stance: "hardLimit" },
           ]
         : [],
+    intimateAnatomy:
+      id === CHANTAL ? "Intimate anatomy detail for Chantal." : "",
   };
 }
 

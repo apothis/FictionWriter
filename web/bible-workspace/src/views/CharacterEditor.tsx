@@ -217,6 +217,18 @@ export function CharacterEditor({
           />
         </Section>
 
+        <Section
+          title="Intimate anatomy"
+          hint="Sexual/intimate body detail. Deliberately kept OUT of the always-on description so it can't leak into clothed, non-explicit prose. Injected only when the scene is explicit (on-screen or higher) AND this character is shown undressed in the scene."
+        >
+          <Textarea
+            rows={4}
+            value={draft.intimateAnatomy ?? ""}
+            placeholder="Intimate anatomy detail — surfaces only once this character is undressed in an explicit scene."
+            onChange={(e) => update("intimateAnatomy", e.target.value)}
+          />
+        </Section>
+
         <Section title="Custom fields" hint="Free-form extension slots for fandom-specific or one-off metadata.">
           <CustomFieldsEditor
             values={draft.customFields}

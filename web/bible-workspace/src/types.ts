@@ -30,6 +30,8 @@ export interface Character {
   knownFactsBySceneId: Record<string, KnownFact[]>;
   // Per-character kink profile. Optional for legacy-payload tolerance.
   kinks?: CharacterKink[];
+  // Intimate/sexual anatomy detail — gated injection (never always-on).
+  intimateAnatomy?: string;
 }
 
 // Mirrors CharacterKink.swift — free-form name + a stance.
@@ -304,6 +306,7 @@ export interface CharacterPatch {
   customFields?: CharacterCustomField[];
   injectionMode?: "constant" | "keyed";
   kinks?: CharacterKink[];
+  intimateAnatomy?: string;
 }
 
 // Mirrors ReferencePatch.swift — name / nsfw / body are user-editable.
