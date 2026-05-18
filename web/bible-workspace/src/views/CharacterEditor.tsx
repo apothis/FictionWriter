@@ -219,27 +219,27 @@ export function CharacterEditor({
 
         <Section
           title="Anatomy"
-          hint="Two tiers. Apparent detail is always in context; concealed detail is gated so it can't leak into clothed, non-explicit prose."
+          hint="Two tiers, split by visibility. Rule of thumb: if a stranger could notice it across a room, it's Apparent; if the character has to be undressed for it to register, it's Concealed."
         >
           <Field
             label="Apparent (visible when clothed)"
-            hint="Build, figure, breast size — detail obvious even dressed. Always injected, like ordinary appearance."
+            hint="Detail visible or inferable while fully dressed — overall build and height, physique, figure and proportions, apparent bust/chest size, how clothes sit on the body. Always in context, like ordinary appearance. Don't put anything here that clothing would hide."
           >
             <Textarea
               rows={3}
               value={draft.apparentAnatomy ?? ""}
-              placeholder="e.g. tall, athletic build; full-figured."
+              placeholder="e.g. tall, athletic build; broad shoulders; full-figured."
               onChange={(e) => update("apparentAnatomy", e.target.value)}
             />
           </Field>
           <Field
             label="Concealed (visible only undressed)"
-            hint="Genital/intimate detail not obvious when clothed. Injected only when the scene is explicit (on-screen or higher) AND this character is shown undressed in the scene."
+            hint="Detail revealed only once undressed — genital anatomy, nipples, body hair, intimate piercings or tattoos, scars or marks normally under clothing. Injected only when the scene is explicit (on-screen or higher) AND this character is shown undressed, so it can't leak into clothed prose."
           >
             <Textarea
               rows={4}
               value={draft.intimateAnatomy ?? ""}
-              placeholder="Surfaces only once this character is undressed in an explicit scene."
+              placeholder="Detail that requires this character to be undressed — surfaces only then, in an explicit scene."
               onChange={(e) => update("intimateAnatomy", e.target.value)}
             />
           </Field>
