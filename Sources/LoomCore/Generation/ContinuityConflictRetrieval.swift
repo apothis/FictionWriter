@@ -20,11 +20,13 @@ import Foundation
 /// subject lives inside the value), and stays bounded because only
 /// near-paraphrases pair.
 ///
-/// **Source-routing** is unchanged: only `narration` claims enter
-/// world-fact conflict pairs. A `dialogue` / `thought` claim is the
-/// character's assertion — a lie or a private belief is not a
-/// continuity error. `knowledgeState` claims are excluded here; they
-/// have a dedicated check (`ContinuityKnowledgeCheck`).
+/// **Source-routing.** Two `narration` claims always may pair (a
+/// world-fact conflict). Two `dialogue` / `thought` claims may pair only
+/// when they share a speaker — a character contradicting *themselves*.
+/// A narration claim never pairs with a dialogue / thought claim: a
+/// lying or mistaken character is not a continuity error.
+/// `knowledgeState` claims are excluded here; they have a dedicated
+/// check (`ContinuityKnowledgeCheck`).
 public enum ContinuityConflictRetrieval {
 
     public struct CandidatePair: Equatable {
@@ -65,7 +67,6 @@ public enum ContinuityConflictRetrieval {
         var eligible: [Entry] = []
         for (i, claim) in claims.enumerated() {
             guard claim.type != .knowledgeState else { continue }
-            guard claim.source == .narration else { continue }
             guard let si = sceneIndex[claim.sourceSceneId] else { continue }
             eligible.append(Entry(claim: claim, sceneIdx: si, arrayIdx: i))
         }
@@ -97,11 +98,29 @@ public enum ContinuityConflictRetrieval {
                     // scenes; two claims in one scene are far more often a
                     // conjunction the writer wrote as a unit.
                     guard sorted[i].claim.sourceSceneId != sorted[j].claim.sourceSceneId else { continue }
+                    guard canPair(sorted[i].claim, sorted[j].claim) else { continue }
                     pairs.append(CandidatePair(earlier: sorted[i].claim, later: sorted[j].claim))
                 }
             }
         }
         return pairs
+    }
+
+    /// Source-routing — which two claims may form a candidate pair.
+    /// Two narration claims always may. Two dialogue/thought claims may
+    /// only when they share a (non-empty, normalised) speaker. A
+    /// narration claim never pairs with a dialogue/thought claim.
+    private static func canPair(
+        _ a: ContinuityAudit.Claim, _ b: ContinuityAudit.Claim
+    ) -> Bool {
+        let aNarration = a.source == .narration
+        let bNarration = b.source == .narration
+        if aNarration && bNarration { return true }
+        if !aNarration && !bNarration {
+            let sa = normalize(a.speaker), sb = normalize(b.speaker)
+            return !sa.isEmpty && sa == sb
+        }
+        return false
     }
 
     // MARK: - Default value similarity

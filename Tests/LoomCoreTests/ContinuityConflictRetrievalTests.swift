@@ -19,11 +19,12 @@ func continuityConflictRetrievalTests() -> TestSuite {
         subject: String = "x",
         value: String,
         scene: String,
-        source: ContinuityAudit.ClaimSource = .narration
+        source: ContinuityAudit.ClaimSource = .narration,
+        speaker: String = ""
     ) -> ContinuityAudit.Claim {
         ContinuityAudit.Claim(
             type: type, subject: subject, attributeKey: "", value: value,
-            sourceSceneId: scene, source: source, evidenceQuote: "q")
+            sourceSceneId: scene, source: source, speaker: speaker, evidenceQuote: "q")
     }
 
     let order = ["s1", "s2", "s3"]
@@ -52,6 +53,37 @@ func continuityConflictRetrievalTests() -> TestSuite {
         let claims = [
             claim(.attribute, value: "Mara feels calm and steady", scene: "s1", source: .narration),
             claim(.attribute, value: "Mara feels calm and afraid", scene: "s2", source: .thought),
+        ]
+        try expectEqual(
+            ContinuityConflictRetrieval.candidatePairs(claims: claims, sceneOrder: order).count, 0)
+    }
+
+    s.test("two dialogue claims by the same speaker pair — a character contradicting themselves") {
+        let claims = [
+            claim(.attribute, value: "Sael has kept the station nine years", scene: "s1",
+                  source: .dialogue, speaker: "Sael"),
+            claim(.attribute, value: "Sael has kept the station six years", scene: "s2",
+                  source: .dialogue, speaker: "Sael"),
+        ]
+        try expectEqual(
+            ContinuityConflictRetrieval.candidatePairs(claims: claims, sceneOrder: order).count, 1)
+    }
+
+    s.test("two dialogue claims by different speakers do not pair") {
+        let claims = [
+            claim(.attribute, value: "the keeper has kept the station nine years", scene: "s1",
+                  source: .dialogue, speaker: "Sael"),
+            claim(.attribute, value: "the keeper has kept the station six years", scene: "s2",
+                  source: .dialogue, speaker: "Vint"),
+        ]
+        try expectEqual(
+            ContinuityConflictRetrieval.candidatePairs(claims: claims, sceneOrder: order).count, 0)
+    }
+
+    s.test("a dialogue claim with no named speaker does not pair") {
+        let claims = [
+            claim(.attribute, value: "the station has run nine years", scene: "s1", source: .dialogue),
+            claim(.attribute, value: "the station has run six years", scene: "s2", source: .dialogue),
         ]
         try expectEqual(
             ContinuityConflictRetrieval.candidatePairs(claims: claims, sceneOrder: order).count, 0)

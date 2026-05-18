@@ -49,6 +49,11 @@ public enum ContinuityAudit {
         public var value: String
         public var sourceSceneId: String
         public var source: ClaimSource
+        /// For a `dialogue` / `thought` claim, the character speaking or
+        /// thinking it, as written; empty for `narration`. Load-bearing
+        /// for retrieval: a dialogue claim conflicts only with the *same
+        /// speaker's* other claims, never with narration.
+        public var speaker: String
         /// Verbatim span the claim was grounded in.
         public var evidenceQuote: String
 
@@ -60,6 +65,7 @@ public enum ContinuityAudit {
             value: String,
             sourceSceneId: String,
             source: ClaimSource,
+            speaker: String = "",
             evidenceQuote: String
         ) {
             self.id = id
@@ -69,7 +75,24 @@ public enum ContinuityAudit {
             self.value = value
             self.sourceSceneId = sourceSceneId
             self.source = source
+            self.speaker = speaker
             self.evidenceQuote = evidenceQuote
+        }
+
+        /// Forward-load: `speaker` is additive — a `Claim` persisted
+        /// before the field existed (inside a stored `ContinuityFinding`)
+        /// decodes with an empty speaker.
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(UUID.self, forKey: .id)
+            type = try c.decode(ClaimType.self, forKey: .type)
+            subject = try c.decode(String.self, forKey: .subject)
+            attributeKey = try c.decode(String.self, forKey: .attributeKey)
+            value = try c.decode(String.self, forKey: .value)
+            sourceSceneId = try c.decode(String.self, forKey: .sourceSceneId)
+            source = try c.decode(ClaimSource.self, forKey: .source)
+            speaker = try c.decodeIfPresent(String.self, forKey: .speaker) ?? ""
+            evidenceQuote = try c.decode(String.self, forKey: .evidenceQuote)
         }
     }
 
@@ -95,7 +118,7 @@ public enum ContinuityAudit {
     public static let extractionInstruction = """
     You are auditing a novel for continuity. From the single scene below, extract every concrete, checkable claim — each as one atomic statement that stands on its own without the surrounding sentence. A single sentence often carries several claims at once — an action, a trait, a time, a place — so extract each as its own separate object.
 
-    Output one JSON object per line (JSONL) — no surrounding array, no commentary, no blank lines. Each object has exactly these six keys:
+    Output one JSON object per line (JSONL) — no surrounding array, no commentary, no blank lines. Each object has exactly these seven keys:
 
     - "type": one of attribute, event, knowledge_state, temporal, spatial.
         attribute = a fixed trait of a person, place, or object (eye colour, a scar, a job, who owns what).
@@ -107,6 +130,7 @@ public enum ContinuityAudit {
     - "attribute_key": for an attribute claim, the dimension (for example "eye colour"); an empty string otherwise.
     - "value": the claim itself, as one self-contained statement.
     - "source": one of narration (stated by the narrator as fact), dialogue (spoken aloud by a character), thought (a character's private thought).
+    - "speaker": for a dialogue or thought claim, the name of the character speaking or thinking it; an empty string for narration.
     - "evidence_quote": a short verbatim span copied from the scene.
     """
 
@@ -129,6 +153,7 @@ public enum ContinuityAudit {
         let attribute_key: String?
         let value: String?
         let source: String?
+        let speaker: String?
         let evidence_quote: String?
     }
 
@@ -162,6 +187,7 @@ public enum ContinuityAudit {
                 value: value,
                 sourceSceneId: sourceSceneId,
                 source: source,
+                speaker: r.speaker ?? "",
                 evidenceQuote: quote
             ))
         }

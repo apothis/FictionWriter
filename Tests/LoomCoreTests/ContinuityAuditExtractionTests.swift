@@ -135,12 +135,27 @@ func continuityAuditExtractionTests() -> TestSuite {
                        "the prompt should ask for a temporal claim when an event is time-anchored")
     }
 
-    s.test("the extraction prompt pins the JSONL format and the six field names") {
+    s.test("the extraction prompt pins the JSONL format and the seven field names") {
         let prompt = ContinuityAudit.buildExtractionPrompt(scenePose: "A scene.")
         try expectTrue(prompt.lowercased().contains("one json object per line"))
-        for field in ["type", "subject", "attribute_key", "value", "source", "evidence_quote"] {
+        for field in ["type", "subject", "attribute_key", "value", "source", "speaker", "evidence_quote"] {
             try expectTrue(prompt.contains("\"\(field)\""), "prompt must pin the \(field) key")
         }
+    }
+
+    s.test("parseClaims reads the speaker of a dialogue claim") {
+        let raw = #"{"type":"attribute","subject":"the station","attribute_key":"tenure","value":"nine years","source":"dialogue","speaker":"Sael","evidence_quote":"nine years"}"#
+        let claims = try ContinuityAudit.parseClaims(raw, sourceSceneId: "s2")
+        try expectEqual(claims.count, 1)
+        try expectEqual(claims[0].speaker, "Sael")
+        try expectEqual(claims[0].source, .dialogue)
+    }
+
+    s.test("a Claim persisted before the speaker field decodes with an empty speaker") {
+        let oldJSON = #"{"id":"\#(UUID().uuidString)","type":"attribute","subject":"Mara","attributeKey":"eye colour","value":"green","sourceSceneId":"s1","source":"narration","evidenceQuote":"q"}"#
+        let claim = try JSONDecoder().decode(ContinuityAudit.Claim.self, from: Data(oldJSON.utf8))
+        try expectEqual(claim.speaker, "")
+        try expectEqual(claim.subject, "Mara")
     }
 
     return s
