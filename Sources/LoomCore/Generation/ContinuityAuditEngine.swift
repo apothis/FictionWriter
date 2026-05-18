@@ -75,6 +75,7 @@ public final class ContinuityAuditEngine {
     private var completion: ((Result<[ContinuityFinding], Error>) -> Void)?
     private var claims: [ContinuityAudit.Claim] = []
     private var pairs: [ContinuityConflictRetrieval.CandidatePair] = []
+    private var knowledgeCandidates: [ContinuityKnowledgeCheck.Violation] = []
     private var findings: [ContinuityFinding] = []
     /// The similarity in force for this run — embedding-backed when an
     /// embedder ran, else `baseSimilarity`.
@@ -112,6 +113,7 @@ public final class ContinuityAuditEngine {
         self.completion = completion
         self.claims = []
         self.pairs = []
+        self.knowledgeCandidates = []
         self.findings = []
         self.activeSimilarity = baseSimilarity
 
@@ -218,14 +220,55 @@ public final class ContinuityAuditEngine {
         }
     }
 
-    // MARK: - Stage 5-6: knowledge check + store
+    // MARK: - Stage 5: knowledge check + adjudication
 
     private func adjudicationDone() {
         let sceneOrder = scenes.map(\.id)
-        let violations = ContinuityKnowledgeCheck.violations(
+        // The knowledge check produces *candidates* — a loose similarity
+        // match. Each is then adjudicated by the LLM, so a loose match
+        // is never a finding on its own (the §3 architecture; without
+        // this the knowledge class produced false positives — §17).
+        knowledgeCandidates = ContinuityKnowledgeCheck.violations(
             claims: claims, sceneOrder: sceneOrder, similarity: activeSimilarity)
-        findings.append(contentsOf: violations.map(ContinuityFindingAssembly.finding(knowledgeViolation:)))
+        DebugLog.shared.write("[continuity-audit] \(knowledgeCandidates.count) knowledge candidates")
+        adjudicateKnowledge(0)
+    }
 
+    private func adjudicateKnowledge(_ index: Int) {
+        guard index < knowledgeCandidates.count else {
+            storeAndFinish()
+            return
+        }
+        let candidate = knowledgeCandidates[index]
+        let prompt = ContinuityAudit.buildKnowledgeAdjudicationPrompt(
+            reference: candidate.knowledgeClaim, reveal: candidate.revealClaim)
+        adjudicationProvider.call(
+            prompt: prompt,
+            schema: ContinuityAudit.adjudicationJSONSchema(),
+            options: OllamaChatOptions(temperature: 0.2)
+        ) { [weak self] result in
+            guard let self = self else { return }
+            self.onMain {
+                switch result {
+                case .success(let raw):
+                    if let adj = try? ContinuityAudit.parseAdjudication(raw),
+                       adj.verdict == .contradiction {
+                        self.findings.append(ContinuityFindingAssembly.finding(
+                            knowledgeViolation: candidate,
+                            explanation: adj.explanation,
+                            confidence: adj.confidence))
+                    }
+                case .failure(let error):
+                    DebugLog.shared.write("[continuity-audit] knowledge candidate \(index) adjudication failed: \(error) — skipped")
+                }
+                self.adjudicateKnowledge(index + 1)
+            }
+        }
+    }
+
+    // MARK: - Stage 6: store
+
+    private func storeAndFinish() {
         var storeError: Error? = nil
         do {
             try ContinuityAuditStore.replaceFindings(findings, in: projectURL)

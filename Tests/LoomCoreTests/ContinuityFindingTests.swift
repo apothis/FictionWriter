@@ -104,5 +104,17 @@ func continuityFindingTests() -> TestSuite {
         try expectEqual(f.status, .open)
     }
 
+    s.test("a knowledge violation can take the adjudicator's explanation and confidence") {
+        let violation = ContinuityKnowledgeCheck.Violation(
+            knowledgeClaim: claim(.knowledgeState, value: "Mara knows the secret", scene: "s2"),
+            revealClaim: claim(.event, subject: "x", value: "the secret revealed", scene: "s4"))
+        let f = ContinuityFindingAssembly.finding(
+            knowledgeViolation: violation,
+            explanation: "Mara cannot know the vault is empty before scene 4.",
+            confidence: 0.75)
+        try expectEqual(f.explanation, "Mara cannot know the vault is empty before scene 4.")
+        try expectEqual(f.confidence, 0.75)
+    }
+
     return s
 }

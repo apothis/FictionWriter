@@ -281,6 +281,33 @@ public enum ContinuityAudit {
         """
     }
 
+    /// Build the knowledge-violation adjudication prompt. The
+    /// deterministic knowledge check (`ContinuityKnowledgeCheck`) finds
+    /// *candidate* (reference, reveal) pairs by similarity — loose by
+    /// design. This routes each candidate through the LLM so a loose
+    /// similarity match is not a finding on its own (the §3 "LLM
+    /// adjudicates, deterministic narrows" architecture). Conservative
+    /// framing — flag only a clear dependency.
+    public static func buildKnowledgeAdjudicationPrompt(reference: Claim, reveal: Claim) -> String {
+        return """
+        You are auditing a novel for continuity. A character refers to or knows something in an EARLIER scene; a LATER scene appears to be where the story first establishes that information. Decide whether this is a genuine continuity error — a character knowing something before the story has revealed it.
+
+        EARLIER — what the character knows or refers to (scene \(reference.sourceSceneId), \(reference.source.rawValue)):
+        \(reference.value)
+        Evidence: "\(reference.evidenceQuote)"
+
+        LATER — where the information appears to be revealed (scene \(reveal.sourceSceneId), \(reveal.source.rawValue)):
+        \(reveal.value)
+        Evidence: "\(reveal.evidenceQuote)"
+
+        Choose one verdict:
+        - contradiction: the earlier claim genuinely depends on information the later scene is the first to establish — the character could not yet know it.
+        - consistent: not an error. The later claim does not actually establish what the earlier one refers to, the two are about different things, or the character could plausibly already know it (told earlier, present at the events, or it is common knowledge).
+
+        Be conservative — choose contradiction only when the dependency is clear. Reply with one JSON object: verdict, confidence (0 to 1), and a one-sentence explanation.
+        """
+    }
+
     public static func adjudicationJSONSchema() -> [String: Any] {
         return [
             "type": "object",

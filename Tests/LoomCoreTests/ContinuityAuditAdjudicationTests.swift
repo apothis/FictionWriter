@@ -68,6 +68,20 @@ func continuityAuditAdjudicationTests() -> TestSuite {
         try expectTrue(prompt.contains("evolution"))
     }
 
+    s.test("the knowledge-adjudication prompt carries the reference and the reveal") {
+        let reference = claim(.knowledgeState, subject: "Mara", value: "Mara knows the vault is empty",
+                              scene: "scene-2", source: .dialogue, quote: "the vault's empty")
+        let reveal = claim(.event, subject: "the vault", value: "The empty vault is discovered",
+                           scene: "scene-5", quote: "they found the vault bare")
+        let prompt = ContinuityAudit.buildKnowledgeAdjudicationPrompt(reference: reference, reveal: reveal)
+        try expectTrue(prompt.contains("Mara knows the vault is empty"))
+        try expectTrue(prompt.contains("The empty vault is discovered"))
+        try expectTrue(prompt.contains("the vault's empty"))
+        try expectTrue(prompt.contains("they found the vault bare"))
+        // it must offer a way out — the conservative / consistent verdict
+        try expectTrue(prompt.lowercased().contains("consistent"))
+    }
+
     s.test("the adjudication JSON schema constrains the verdict to its enum") {
         let schema = ContinuityAudit.adjudicationJSONSchema()
         let props = schema["properties"] as? [String: Any]

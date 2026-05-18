@@ -114,9 +114,8 @@ func continuityAuditEngineTests() -> TestSuite {
         try expectEqual(try result?.get().count, 0)
     }
 
-    s.test("a knowledge-state violation is detected and stored as a finding") {
-        let ext = StubExtractor()
-        ext.claimsByScene = [
+    func knowledgeClaims() -> [String: [ContinuityAudit.Claim]] {
+        [
             "s1": [ContinuityAudit.Claim(
                 type: .knowledgeState, subject: "Mara", attributeKey: "", value: "Mara knows SECRET",
                 sourceSceneId: "s1", source: .dialogue, evidenceQuote: "q")],
@@ -124,16 +123,37 @@ func continuityAuditEngineTests() -> TestSuite {
                 type: .event, subject: "x", attributeKey: "", value: "SECRET is revealed",
                 sourceSceneId: "s2", source: .narration, evidenceQuote: "q")],
         ]
+    }
+    let secretSimilarity: (String, String) -> Double = { a, b in
+        a.contains("SECRET") && b.contains("SECRET") ? 1.0 : 0.0
+    }
+
+    s.test("a knowledge candidate the adjudicator confirms becomes a finding") {
+        let ext = StubExtractor()
+        ext.claimsByScene = knowledgeClaims()
         let adj = StubAdjProvider()
+        adj.responder = { _ in .success(contradictionJSON) }
         let engine = ContinuityAuditEngine(
-            extractor: ext, adjudicationProvider: adj, entities: [],
-            similarity: { a, b in a.contains("SECRET") && b.contains("SECRET") ? 1.0 : 0.0 })
+            extractor: ext, adjudicationProvider: adj, entities: [], similarity: secretSimilarity)
         var result: Result<[ContinuityFinding], Error>?
         engine.audit(scenes: scenes, projectURL: tempProject()) { result = $0 }
         drive(ext, adj)
         let findings = try expectNotNil(try result?.get())
         try expectEqual(findings.count, 1)
         try expectEqual(findings[0].kind, .knowledgeViolation)
+    }
+
+    s.test("a knowledge candidate the adjudicator rejects produces no finding") {
+        let ext = StubExtractor()
+        ext.claimsByScene = knowledgeClaims()
+        let adj = StubAdjProvider()
+        adj.responder = { _ in .success(consistentJSON) }   // the FP-rejection path
+        let engine = ContinuityAuditEngine(
+            extractor: ext, adjudicationProvider: adj, entities: [], similarity: secretSimilarity)
+        var result: Result<[ContinuityFinding], Error>?
+        engine.audit(scenes: scenes, projectURL: tempProject()) { result = $0 }
+        drive(ext, adj)
+        try expectEqual(try result?.get().count, 0)
     }
 
     s.test("a scene whose extraction fails is skipped — the audit still completes") {
@@ -202,6 +222,7 @@ func continuityAuditEngineTests() -> TestSuite {
                 source: .narration, evidenceQuote: "q")],
         ]
         let adj = StubAdjProvider()
+        adj.responder = { _ in .success(contradictionJSON) }
         let embedder = StubEmbedder()
         // Both propositions share "SECRET" → same vector → cosine 1.
         embedder.vectorFor = { $0.contains("SECRET") ? onehot(2) : onehot(3) }

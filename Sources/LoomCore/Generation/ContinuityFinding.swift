@@ -87,9 +87,13 @@ public enum ContinuityFindingAssembly {
 
     /// A finding for a knowledge-state violation. A character knowing
     /// the unrevealed reads as a hard error, so severity is always
-    /// `high`; the detection is deterministic, so confidence is fixed.
+    /// `high`. `explanation` / `confidence` default to a generated
+    /// line and 0.9; the engine passes the adjudicator's own
+    /// explanation and confidence once a candidate has been judged.
     public static func finding(
-        knowledgeViolation v: ContinuityKnowledgeCheck.Violation
+        knowledgeViolation v: ContinuityKnowledgeCheck.Violation,
+        explanation: String? = nil,
+        confidence: Double? = nil
     ) -> ContinuityFinding {
         let ref = v.knowledgeClaim.sourceSceneId
         let rev = v.revealClaim.sourceSceneId
@@ -98,8 +102,9 @@ public enum ContinuityFindingAssembly {
             severity: .high,
             claimA: v.knowledgeClaim,
             claimB: v.revealClaim,
-            explanation: "References this in scene \(ref), but it is first revealed in scene \(rev).",
-            confidence: 0.9,
+            explanation: explanation
+                ?? "References this in scene \(ref), but it is first revealed in scene \(rev).",
+            confidence: confidence ?? 0.9,
             status: .open
         )
     }
