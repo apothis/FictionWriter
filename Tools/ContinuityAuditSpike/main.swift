@@ -19,10 +19,19 @@ import LoomCore
 //   LOOM_SPIKE_FIXTURE      default Tests/.../ContinuityAuditSpike/fixture.json
 //   LOOM_SPIKE_OLLAMA_URL   default http://localhost:11434
 //   LOOM_SPIKE_OLLAMA_MODEL extraction model, default gemma4_2b:latest
-//   LOOM_SPIKE_PHASE        both | extract | adjudicate   (default both)
+//   LOOM_SPIKE_PHASE        both | extract | adjudicate | engine | eval
+//                                                         (default both)
 //   LOOM_SPIKE_ADJ_BACKEND  ollama | kobold               (default ollama)
 //   LOOM_SPIKE_ADJ_MODEL    ollama adjudication model, default = extraction model
 //   LOOM_SPIKE_KOBOLD_URL   default http://192.168.1.201:5001
+//
+// The `eval` phase is the multi-run eval harness (LOOM_CONTINUITY_AUDIT
+// §21): it drives the four-manuscript eval fixture set k times and scores
+// it with `ContinuityEvalMetrics` — extraction recall (mean ± CI, Chao1
+// coverage) and end-to-end findings (precision/recall, pass@k vs pass^k).
+//   LOOM_EVAL_RUNS          runs per scene / per manuscript   (default 5)
+//   LOOM_EVAL_MODE          extract | engine | both           (default extract)
+//   LOOM_EVAL_FIXTURE_DIR   default Tests/.../ContinuityAuditEval
 
 // MARK: - stderr progress
 
@@ -52,6 +61,37 @@ struct FGoldPair: Codable {
 struct FClaim: Codable {
     let type: String, subject: String, attribute_key: String
     let value: String, scene: String, source: String, evidence_quote: String
+}
+
+// Eval-harness fixture (schema v2) — one manuscript with gold findings.
+struct EvalManuscript: Codable {
+    let id: String
+    let title: String
+    let genre: String
+    let scenes: [FScene]
+    let gold_claims: [FGoldClaim]
+    let gold_pairs: [FGoldPair]
+    let gold_contradictions: [FGoldContradiction]
+}
+struct FGoldContradiction: Codable {
+    let id: String, kind: String
+    let scene_a: String, scene_b: String, scene_distance: Int
+    let subject: String, summary: String
+    let value_a: String, value_b: String
+}
+
+func toGoldClaim(_ f: FGoldClaim) -> ContinuityEvalMetrics.GoldClaim {
+    ContinuityEvalMetrics.GoldClaim(
+        scene: f.scene,
+        type: ContinuityAudit.ClaimType(rawValue: f.type) ?? .event,
+        subject: f.subject, value: f.value)
+}
+
+func toGoldContradiction(_ f: FGoldContradiction) -> ContinuityEvalMetrics.GoldContradiction? {
+    guard let kind = ContinuityFinding.Kind(rawValue: f.kind) else { return nil }
+    return ContinuityEvalMetrics.GoldContradiction(
+        id: f.id, kind: kind, sceneA: f.scene_a, sceneB: f.scene_b,
+        valueA: f.value_a, valueB: f.value_b, sceneDistance: f.scene_distance)
 }
 
 func toClaim(_ f: FClaim) -> ContinuityAudit.Claim {
@@ -242,6 +282,178 @@ var report = "# ContinuityAuditSpike\n\n"
 report += "- **Extraction**: \(extractBackend == "kobold" ? "Goetia (24B) @ \(koboldURL)" : "\(extractModel) @ \(ollamaURL)")\n"
 report += "- **Adjudication**: \(adjBackend == "kobold" ? "Goetia @ \(koboldURL)" : "\(adjModel) @ \(ollamaURL)")\n"
 report += "- **Fixture**: \(fixture.scenes.count) scenes, \(fixture.gold_claims.count) gold claims, \(fixture.gold_pairs.count) gold pairs\n\n"
+
+// MARK: - Eval phase — multi-run eval harness (LOOM_CONTINUITY_AUDIT §21)
+
+if phase == "eval" {
+    let evalRuns = Int(env["LOOM_EVAL_RUNS"] ?? "") ?? 5
+    let evalMode = env["LOOM_EVAL_MODE"] ?? "extract"
+    let evalDir = env["LOOM_EVAL_FIXTURE_DIR"]
+        ?? "Tests/LoomCoreTests/Fixtures/ContinuityAuditEval"
+    let embedModel = env["LOOM_SPIKE_EMBED_MODEL"] ?? "bge-large:latest"
+
+    let fm = FileManager.default
+    guard let files = try? fm.contentsOfDirectory(atPath: evalDir) else {
+        log("FATAL: cannot list eval fixture dir \(evalDir)"); exit(1)
+    }
+    var manuscripts: [(String, EvalManuscript)] = []
+    for file in files.sorted() where file.hasSuffix(".json") {
+        guard let data = fm.contents(atPath: evalDir + "/" + file),
+              let m = try? JSONDecoder().decode(EvalManuscript.self, from: data) else {
+            log("  skip \(file) — not a v2 eval manuscript"); continue
+        }
+        manuscripts.append((m.id, m))
+    }
+    guard !manuscripts.isEmpty else {
+        log("FATAL: no eval manuscripts in \(evalDir)"); exit(1)
+    }
+
+    var er = "# ContinuityAuditSpike — eval harness\n\n"
+    er += "- **Mode**: \(evalMode) · **Runs**: \(evalRuns)\n"
+    er += "- **Manuscripts**: \(manuscripts.map { $0.0 }.joined(separator: ", "))\n"
+    er += "- **Extraction**: \(extractBackend == "kobold" ? "Goetia @ \(koboldURL)" : "\(extractModel) @ \(ollamaURL)")\n\n"
+
+    func fmtCI(_ a: ContinuityEvalMetrics.Aggregate) -> String {
+        let half = (a.ci95High - a.ci95Low) / 2
+        return String(format: "%.0f%% ±%.0f", a.mean * 100, half * 100)
+    }
+    func normKey(_ s: String) -> String { words(s).sorted().joined(separator: " ") }
+
+    // --- extraction multi-run (synchronous) ---
+    if evalMode == "extract" || evalMode == "both" {
+        log("== EVAL: extraction (\(evalRuns) runs/scene) ==")
+        er += "## Extraction recall — \(evalRuns) runs per scene\n\n"
+        er += "| manuscript | content recall | typed recall | Chao1 completeness |\n|---|---|---|---|\n"
+        var allContent: [Double] = [], allTyped: [Double] = []
+        for (name, m) in manuscripts {
+            var mContent: [Double] = [], mTyped: [Double] = [], mCov: [Double] = []
+            for scene in m.scenes {
+                let gold = m.gold_claims.filter { $0.scene == scene.id }.map(toGoldClaim)
+                var perRunKeys: [[String]] = []
+                for run in 0..<evalRuns {
+                    log("  \(name)/\(scene.id) run \(run + 1)/\(evalRuns) …")
+                    let claims = extractClaims(prose: scene.prose, sceneId: scene.id)
+                    let score = ContinuityEvalMetrics.extractionRecall(gold: gold, extracted: claims)
+                    mContent.append(score.recallContent)
+                    mTyped.append(score.recallTyped)
+                    perRunKeys.append(claims.map { normKey($0.value) })
+                }
+                mCov.append(ContinuityEvalMetrics.chao1(perRunItemKeys: perRunKeys).completeness)
+            }
+            let c = ContinuityEvalMetrics.aggregate(mContent)
+            let t = ContinuityEvalMetrics.aggregate(mTyped)
+            let cov = ContinuityEvalMetrics.aggregate(mCov)
+            er += "| \(name) | \(fmtCI(c)) | \(fmtCI(t)) | \(String(format: "%.0f%%", cov.mean * 100)) |\n"
+            allContent += mContent; allTyped += mTyped
+        }
+        er += "| **all** | **\(fmtCI(ContinuityEvalMetrics.aggregate(allContent)))**"
+        er += " | **\(fmtCI(ContinuityEvalMetrics.aggregate(allTyped)))** | |\n\n"
+    }
+
+    // --- engine multi-run (async, chained — the engine marshals onto main) ---
+    if evalMode == "engine" || evalMode == "both" {
+        log("== EVAL: engine end-to-end (\(evalRuns) runs/manuscript) ==")
+        var tasks: [(String, EvalManuscript, Int)] = []
+        for (name, m) in manuscripts {
+            for run in 0..<evalRuns { tasks.append((name, m, run)) }
+        }
+        var perRunFindings: [String: [[ContinuityFinding]]] = [:]
+
+        func renderEngine() -> String {
+            var r = "## Engine end-to-end — \(evalRuns) runs per manuscript\n\n"
+            r += "| manuscript | finding precision | recall | F1 |\n|---|---|---|---|\n"
+            // (manuscript, goldContradiction, per-run detected?)
+            var detections: [(String, ContinuityEvalMetrics.GoldContradiction, [Bool])] = []
+            var allP: [Double] = [], allR: [Double] = [], allF: [Double] = []
+            for (name, m) in manuscripts {
+                let gold = m.gold_contradictions.compactMap(toGoldContradiction)
+                let runs = perRunFindings[name] ?? []
+                var ps: [Double] = [], rs: [Double] = [], fs: [Double] = []
+                var perGold: [String: [Bool]] = [:]
+                for findings in runs {
+                    let score = ContinuityEvalMetrics.findingScore(gold: gold, findings: findings)
+                    ps.append(score.precision); rs.append(score.recall); fs.append(score.f1)
+                    let caught = Set(score.matchedGoldIds)
+                    for g in gold { perGold[g.id, default: []].append(caught.contains(g.id)) }
+                }
+                for g in gold { detections.append((name, g, perGold[g.id] ?? [])) }
+                let p = ContinuityEvalMetrics.aggregate(ps)
+                let rr = ContinuityEvalMetrics.aggregate(rs)
+                let f = ContinuityEvalMetrics.aggregate(fs)
+                r += "| \(name) | \(fmtCI(p)) | \(fmtCI(rr)) | \(String(format: "%.2f", f.mean)) |\n"
+                allP += ps; allR += rs; allF += fs
+            }
+            r += "| **all** | **\(fmtCI(ContinuityEvalMetrics.aggregate(allP)))**"
+            r += " | **\(fmtCI(ContinuityEvalMetrics.aggregate(allR)))**"
+            r += " | **\(String(format: "%.2f", ContinuityEvalMetrics.aggregate(allF).mean))** |\n\n"
+
+            let atK = detections.filter { ContinuityEvalMetrics.passAtK($0.2) }.count
+            let hatK = detections.filter { ContinuityEvalMetrics.passHatK($0.2) }.count
+            r += "### Reliability — pass@k vs pass^k\n\n"
+            r += "- **pass@k** (caught in ≥1 run): \(atK)/\(detections.count)\n"
+            r += "- **pass^k** (caught in every run): \(hatK)/\(detections.count)\n"
+            r += "- the gap of \(atK - hatK) is the stochasticity tax — contradictions a single audit will sometimes miss.\n\n"
+
+            r += "### Detection rate by class\n\n| class | mean detection rate | pass^k |\n|---|---|---|\n"
+            for kind in ContinuityFinding.Kind.allCases {
+                let group = detections.filter { $0.1.kind == kind }
+                guard !group.isEmpty else { continue }
+                let rate = group.map { ContinuityEvalMetrics.detectionRate($0.2) }.reduce(0, +) / Double(group.count)
+                let hk = group.filter { ContinuityEvalMetrics.passHatK($0.2) }.count
+                r += "| \(kind.rawValue) | \(String(format: "%.0f%%", rate * 100)) | \(hk)/\(group.count) |\n"
+            }
+            r += "\n### Detection rate by scene distance\n\n| distance | mean detection rate | n |\n|---|---|---|\n"
+            let buckets: [(String, (Int) -> Bool)] = [
+                ("adjacent (1-2)", { $0 <= 2 }),
+                ("mid (3-5)", { $0 >= 3 && $0 <= 5 }),
+                ("far (6+)", { $0 >= 6 }),
+            ]
+            for (label, test) in buckets {
+                let group = detections.filter { test($0.1.sceneDistance) }
+                guard !group.isEmpty else { continue }
+                let rate = group.map { ContinuityEvalMetrics.detectionRate($0.2) }.reduce(0, +) / Double(group.count)
+                r += "| \(label) | \(String(format: "%.0f%%", rate * 100)) | \(group.count) |\n"
+            }
+            r += "\n### Per-contradiction detection\n\n| manuscript:id | kind | dist | detection rate |\n|---|---|---|---|\n"
+            for (name, g, det) in detections {
+                r += "| \(name):\(g.id) | \(g.kind.rawValue) | \(g.sceneDistance) | "
+                r += "\(String(format: "%.0f%%", ContinuityEvalMetrics.detectionRate(det) * 100)) |\n"
+            }
+            return r
+        }
+
+        func runTask(_ i: Int) {
+            if i >= tasks.count {
+                er += renderEngine()
+                print(er)
+                exit(0)
+            }
+            let (name, m, run) = tasks[i]
+            log("  engine: \(name) run \(run + 1)/\(evalRuns) …")
+            let kobold = KoboldGenerateProvider(baseURL: URL(string: koboldURL)!)
+            let engine = ContinuityAuditEngine(
+                extractor: OllamaContinuityExtractor(provider: kobold),
+                adjudicationProvider: kobold,
+                entities: [],
+                embedder: OllamaEmbedProvider(baseURL: URL(string: ollamaURL)!, model: embedModel))
+            let sceneInputs = m.scenes.map {
+                ContinuityAuditEngine.SceneInput(id: $0.id, prose: $0.prose)
+            }
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("cas-eval-\(UUID().uuidString)", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            engine.audit(scenes: sceneInputs, projectURL: dir) { result in
+                perRunFindings[name, default: []].append((try? result.get()) ?? [])
+                runTask(i + 1)
+            }
+        }
+        runTask(0)
+        dispatchMain()
+    }
+
+    print(er)
+    exit(0)
+}
 
 // MARK: - Engine phase — full end-to-end audit
 
