@@ -2737,5 +2737,12 @@ hardening:
   free-form name + stance into/curious/soft/hard limit). Rendered into
   the character's bible entry; editable in the CharacterEditor webview
   with a curated suggestion datalist.
+- **Intimate anatomy with leakage-safe gating** — `Character.intimateAnatomy`,
+  kept OUT of the always-on bible block (research 2026-05-19: in-context
+  detail leaks into clothed prose; structural fix only). `AnatomyGate`
+  injects it near the cursor only when the scene is depicted
+  (explicitness ≥ onScreen) AND the character is shown undressed —
+  detected per-character (name/alias + undress term co-occurring in a
+  paragraph), sticky scene-wide. Editable in the CharacterEditor webview.
 
-**1981 tests green.**
+**1992 tests green.**
