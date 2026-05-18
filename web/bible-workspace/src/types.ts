@@ -70,6 +70,10 @@ export interface LorebookEntry {
   group: string | null;
   weight: number | null;
   sticky: boolean;
+  // Conditional activation — a scene-window gate (manuscript order).
+  // null = no bound. Optional for legacy-payload tolerance.
+  activateFromSceneId?: string | null;
+  activateUntilSceneId?: string | null;
 }
 
 // Mirrors DynamicSheet.swift (P2b) — a structured per-relationship
@@ -348,4 +352,12 @@ export interface LorebookEntryPatch {
   group?: string;
   weight?: number;
   sticky?: boolean;
+  // Scene-window gate. A scene-id sets the bound; the all-zero UUID
+  // (LOREBOOK_GATE_CLEAR) clears it back to "no gate".
+  activateFromSceneId?: string;
+  activateUntilSceneId?: string;
 }
+
+// The patch sentinel that clears a scene-gate bound (mirrors
+// LorebookEntryPatch.clearGate on the Swift side).
+export const LOREBOOK_GATE_CLEAR = "00000000-0000-0000-0000-000000000000";

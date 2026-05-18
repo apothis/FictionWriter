@@ -86,6 +86,7 @@ export function App() {
     return (
       <LorebookEditor
         entry={entry}
+        scenes={snapshot.scenes}
         dispatchPatch={(patch: LorebookEntryPatch) =>
           postIntent({ kind: "patchLorebookEntry", id: entry.id, patch })
         }

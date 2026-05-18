@@ -28,6 +28,14 @@ public struct LorebookEntry: Codable, Equatable {
     public var group: String?
     public var weight: Int?
     public var sticky: Bool
+    /// Conditional activation — the entry only activates when the
+    /// current scene is at or after this scene in manuscript order.
+    /// `nil` = no lower bound. Use case: plot-reveal lore that must
+    /// not leak into earlier scenes.
+    public var activateFromSceneId: UUID?
+    /// The entry stops activating after this scene in manuscript
+    /// order. `nil` = no upper bound.
+    public var activateUntilSceneId: UUID?
 
     public init(
         id: UUID = UUID(),
@@ -43,7 +51,9 @@ public struct LorebookEntry: Codable, Equatable {
         maxRecentScenesScanned: Int = 3,
         group: String? = nil,
         weight: Int? = nil,
-        sticky: Bool = false
+        sticky: Bool = false,
+        activateFromSceneId: UUID? = nil,
+        activateUntilSceneId: UUID? = nil
     ) {
         self.id = id
         self.name = name
@@ -59,6 +69,8 @@ public struct LorebookEntry: Codable, Equatable {
         self.group = group
         self.weight = weight
         self.sticky = sticky
+        self.activateFromSceneId = activateFromSceneId
+        self.activateUntilSceneId = activateUntilSceneId
     }
 
     public init(from decoder: Decoder) throws {
@@ -77,6 +89,8 @@ public struct LorebookEntry: Codable, Equatable {
         self.group = try c.decodeIfPresent(String.self, forKey: .group)
         self.weight = try c.decodeIfPresent(Int.self, forKey: .weight)
         self.sticky = try c.decodeIfPresent(Bool.self, forKey: .sticky) ?? false
+        self.activateFromSceneId = try c.decodeIfPresent(UUID.self, forKey: .activateFromSceneId)
+        self.activateUntilSceneId = try c.decodeIfPresent(UUID.self, forKey: .activateUntilSceneId)
     }
 }
 

@@ -377,7 +377,17 @@ public enum PromptBuilder {
         // the activator returns a single list, this split-routing
         // keeps prompt-cache hit rates high in projects that mix
         // both kinds.
-        let activatedLore = LorebookActivator.activated(in: context.project, recentProse: matchProse)
+        // Conditional activation — scene-window gate. An entry with a
+        // from/until bound only survives when the current scene falls
+        // inside its window of the manuscript order.
+        let flatSceneIds = context.project.manuscript.flatSceneIds
+        let activatedLore = LorebookActivator
+            .activated(in: context.project, recentProse: matchProse)
+            .filter {
+                LorebookSceneGate.allows(
+                    $0, currentSceneId: context.currentSceneId, flatSceneIds: flatSceneIds
+                )
+            }
         let constantLore = activatedLore.filter { $0.activationMode == .constant }
         let keyedLore = activatedLore.filter { $0.activationMode == .keyed }
         if !constantLore.isEmpty {

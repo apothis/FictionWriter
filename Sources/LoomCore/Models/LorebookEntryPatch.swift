@@ -22,6 +22,16 @@ public struct LorebookEntryPatch: Codable, Equatable {
     public var group: String?
     public var weight: Int?
     public var sticky: Bool?
+    /// Scene-window gate (conditional activation). A present value
+    /// sets the bound; the all-zero UUID (`clearGate`) sets it back to
+    /// "no gate" — the patch protocol's way to distinguish "clear"
+    /// from "leave alone" without a double-optional.
+    public var activateFromSceneId: UUID?
+    public var activateUntilSceneId: UUID?
+
+    /// Sentinel a patch sends to clear a scene-gate bound to `nil`.
+    /// A real scene's UUID is never all-zero.
+    public static let clearGate = UUID(uuid: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
 
     public init(
         name: String? = nil,
@@ -36,7 +46,9 @@ public struct LorebookEntryPatch: Codable, Equatable {
         maxRecentScenesScanned: Int? = nil,
         group: String? = nil,
         weight: Int? = nil,
-        sticky: Bool? = nil
+        sticky: Bool? = nil,
+        activateFromSceneId: UUID? = nil,
+        activateUntilSceneId: UUID? = nil
     ) {
         self.name = name
         self.content = content
@@ -51,6 +63,8 @@ public struct LorebookEntryPatch: Codable, Equatable {
         self.group = group
         self.weight = weight
         self.sticky = sticky
+        self.activateFromSceneId = activateFromSceneId
+        self.activateUntilSceneId = activateUntilSceneId
     }
 
     public func apply(to entry: LorebookEntry) -> LorebookEntry {
@@ -68,6 +82,12 @@ public struct LorebookEntryPatch: Codable, Equatable {
         if let v = group { e.group = v }
         if let v = weight { e.weight = v }
         if let v = sticky { e.sticky = v }
+        if let v = activateFromSceneId {
+            e.activateFromSceneId = (v == Self.clearGate) ? nil : v
+        }
+        if let v = activateUntilSceneId {
+            e.activateUntilSceneId = (v == Self.clearGate) ? nil : v
+        }
         return e
     }
 }

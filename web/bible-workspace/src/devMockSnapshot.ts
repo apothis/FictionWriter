@@ -60,7 +60,26 @@ export const devMockSnapshot: BibleWorkspaceSnapshot = {
     character(YELENA, "Yelena", []),
     character(ANDERS, "Anders", []),
   ],
-  lorebook: [],
+  lorebook: [
+    {
+      id: "00000000-0000-0000-0000-0000000000E1",
+      name: "The traitor reveal",
+      content: "Marek has been feeding the rival crew their movements.",
+      activationMode: "constant",
+      keys: [],
+      secondaryKeys: [],
+      enabled: true,
+      priority: 0,
+      positionMode: "top",
+      depth: null,
+      maxRecentScenesScanned: 3,
+      group: null,
+      weight: null,
+      sticky: false,
+      activateFromSceneId: null,
+      activateUntilSceneId: null,
+    },
+  ],
   dynamics: [
     {
       id: "00000000-0000-0000-0000-0000000000D1",

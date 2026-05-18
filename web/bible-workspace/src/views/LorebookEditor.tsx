@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import type { LorebookEntry, LorebookEntryPatch } from "../types";
+import type {
+  LorebookEntry,
+  LorebookEntryPatch,
+  SceneSummary,
+} from "../types";
+import { LOREBOOK_GATE_CLEAR } from "../types";
 import { Input } from "../components/ui/Input";
 import { NumericField } from "../components/ui/NumericField";
 import { Textarea } from "../components/ui/Textarea";
@@ -19,6 +24,7 @@ import { Section, Field } from "../components/EditorLayout";
 
 interface Props {
   entry: LorebookEntry;
+  scenes: SceneSummary[];
   dispatchPatch: (patch: LorebookEntryPatch) => void;
   onBack: () => void;
   onDelete: () => void;
@@ -27,7 +33,13 @@ interface Props {
 const ACTIVATION_MODES = ["constant", "keyed", "vectorised"] as const;
 const POSITION_MODES = ["top", "bottom", "depthN"] as const;
 
-export function LorebookEditor({ entry, dispatchPatch, onBack, onDelete }: Props) {
+export function LorebookEditor({
+  entry,
+  scenes,
+  dispatchPatch,
+  onBack,
+  onDelete,
+}: Props) {
   const [draft, setDraft] = useState<LorebookEntry>(entry);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -43,6 +55,16 @@ export function LorebookEditor({ entry, dispatchPatch, onBack, onDelete }: Props
   function update<K extends keyof LorebookEntry>(field: K, value: LorebookEntry[K]) {
     setDraft((prev) => ({ ...prev, [field]: value }));
     send({ [field]: value as never } as LorebookEntryPatch);
+  }
+
+  // Scene-gate fields can't ride the generic `update` — clearing a
+  // bound needs the sentinel, not an empty string.
+  function updateGate(
+    field: "activateFromSceneId" | "activateUntilSceneId",
+    sceneId: string,
+  ) {
+    setDraft((prev) => ({ ...prev, [field]: sceneId || null }));
+    send({ [field]: sceneId === "" ? LOREBOOK_GATE_CLEAR : sceneId });
   }
 
   return (
@@ -185,6 +207,40 @@ export function LorebookEditor({ entry, dispatchPatch, onBack, onDelete }: Props
               value={draft.priority}
               onChange={(n) => update("priority", n)}
             />
+          </Field>
+        </Section>
+
+        <Section
+          title="Conditional activation"
+          hint="Optionally gate this entry to a window of the manuscript — e.g. plot-reveal lore that must not leak into earlier scenes."
+        >
+          <Field
+            label="Activate from scene"
+            hint="The entry stays inactive until the writing reaches this scene."
+          >
+            <Select
+              value={draft.activateFromSceneId ?? ""}
+              onChange={(e) => updateGate("activateFromSceneId", e.target.value)}
+            >
+              <option value="">— no lower bound —</option>
+              {scenes.map((sc) => (
+                <option key={sc.id} value={sc.id}>{sc.title}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field
+            label="Activate until scene"
+            hint="The entry stops activating after this scene."
+          >
+            <Select
+              value={draft.activateUntilSceneId ?? ""}
+              onChange={(e) => updateGate("activateUntilSceneId", e.target.value)}
+            >
+              <option value="">— no upper bound —</option>
+              {scenes.map((sc) => (
+                <option key={sc.id} value={sc.id}>{sc.title}</option>
+              ))}
+            </Select>
           </Field>
         </Section>
 
