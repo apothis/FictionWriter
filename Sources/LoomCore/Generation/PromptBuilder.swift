@@ -173,15 +173,34 @@ public enum PromptBuilder {
         //    comes from the sharpened system prompt + an explicit
         //    "continue from here" instruction layer landing AFTER
         //    the prose (lower = stronger steering).
+        // 3a) Prefill-aware Continue. When the manuscript ends
+        //     mid-sentence, route that trailing unfinished fragment
+        //     out of the recent-prose user-context and into the
+        //     assistant-turn prefill — the model then *completes the
+        //     sentence* from inside its own turn (no fresh-turn seam a
+        //     refusal can open with). Only for Continue, and only when
+        //     real context survives ahead of the fragment.
+        var prefillSeed = ""
+        if context.mode == .continueProse,
+           let idx = layers.firstIndex(where: { $0.kind == .recentProse }) {
+            let split = PrefillSeed.extract(from: layers[idx].content)
+            if !split.seed.isEmpty,
+               !split.head.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                layers[idx].content = split.head
+                layers[idx].tokens = TokenEstimator.estimate(split.head)
+                prefillSeed = split.seed
+            }
+        }
+
         let above = layers.filter { $0.aboveCache }
         let below = layers.filter { !$0.aboveCache }
         let systemBlock = above.map(\.content).filter { !$0.isEmpty }.joined(separator: "\n\n")
         let userBlock = below.map { $0.userBlockContent ?? $0.content }.filter { !$0.isEmpty }.joined(separator: "\n\n")
 
-        // 4) Compute prefill: template-specific suppression only
-        //    (`<think>\n\n</think>\n\n` for Qwen ChatML); empty for
-        //    other templates.
-        let prefill = prefillFor(template: resolvedTemplate, mode: context.mode)
+        // 4) Compute prefill: template-specific suppression
+        //    (`<think>\n\n</think>\n\n` for Qwen ChatML) followed by
+        //    the prefill-aware-Continue seed (3a), if any.
+        let prefill = prefillFor(template: resolvedTemplate, mode: context.mode) + prefillSeed
 
         // 5) Wrap with the instruct-template adapter.
         let fullPrompt = adapter.wrap(system: systemBlock, userBody: userBlock, prefill: prefill)

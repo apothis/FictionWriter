@@ -44,6 +44,7 @@ let suites: [TestSuite] = [
     phase4DynamicSheetTests(),
     phase4AntiSlopTests(),
     phase4LorebookSceneGateTests(),
+    phase4PrefillSeedTests(),
     phase2FanficMetadataTests(),
     phase2CharacterSchemaTests(),
     phase2BibleEntitiesTests(),
