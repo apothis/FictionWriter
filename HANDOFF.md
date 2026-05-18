@@ -2567,3 +2567,28 @@ engine ran on the crude tokenJaccard similarity — the embedder wire-up
 will fix it). Pipeline is sound end to end; the misses map to the two
 known Phase-B-tail tuning items, not correctness defects.
 `LOOM_CONTINUITY_AUDIT.md` §16.
+
+#### Addendum 4 (2026-05-18) — embedder wire-up + a knowledge-check finding
+
+Built `ContinuityClaimFilterPipeline` (batched embed → dedup +
+per-scene evidence validation, fail-soft, mirrors `LedgerFilterPipeline`)
+and wired it into `ContinuityAuditEngine` as an optional embedder; the
+engine also derives an embedding-backed knowledge-check similarity.
+TDD, 1850 tests green.
+
+End-to-end re-run with the embedder (Goetia + bge-large): 5 findings —
+the 2 attribute-drift findings, the genuine knowledge violation (p3,
+now caught — prior miss closed), **but 2 false-positive knowledge
+violations**. The deterministic knowledge check emits a finding
+straight from a similarity match with no adjudicator in the loop, and
+raw sentence-embedding cosine is too loose for proposition matching
+("Cole knew Mara was sent" matched "Mara crossed to Cole" on shared
+character names). The adjudicated classes stayed clean — they route
+through the LLM adjudicator, the knowledge check does not.
+
+**Open follow-up (priority):** route knowledge-violation *candidates*
+through the adjudicator (the §3 "LLM adjudicates, deterministic
+narrows" architecture) — the knowledge check finds candidate
+(reference, reveal) pairs, the LLM judges each. Fixes both false
+positives. Then extraction-recall tuning, then Phase C.
+`LOOM_CONTINUITY_AUDIT.md` §17.

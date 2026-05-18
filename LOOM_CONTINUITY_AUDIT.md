@@ -2,12 +2,14 @@
 
 > **Status: Phase B complete + live-validated (2026-05-18).** Phase A spike
 > cleared the feasibility gate (§13); Phase B built the pipeline (§14), tuned
-> extraction (§15), and the full engine ran end to end against the live models
-> (§16) — 3 findings, zero false positives. Remaining: the `ClaimFilter`
-> embedder wire-up + extraction-recall tuning (would lift class coverage), then
-> Phase C (Bible Workspace surface). This document is the authoritative plan;
-> it follows the `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT` pattern. Inventory
-> pointer: **L10** in [`LOOM_PLAN.md`](LOOM_PLAN.md).
+> extraction (§15), ran end to end (§16), and wired the claim-filter embedder
+> (§17). The adjudicated classes (attribute / spatial / temporal) are clean;
+> validation surfaced that the **deterministic knowledge-state check is too
+> imprecise** (§17) — the recommended fix is to route knowledge candidates
+> through the adjudicator. Then extraction-recall tuning and Phase C (Bible
+> Workspace surface). This document is the authoritative plan; it follows the
+> `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT` pattern. Inventory pointer: **L10**
+> in [`LOOM_PLAN.md`](LOOM_PLAN.md).
 
 ## 0. What this is
 
@@ -553,3 +555,37 @@ mapping to known tuning items:
 So Phase B is live-validated. The remaining Phase-B-tail items — the
 embedder wire-up and extraction-recall tuning — are exactly what would
 lift the 2/4 class coverage; neither is a correctness defect.
+
+## 17. Embedder wire-up — validation surfaced a knowledge-check precision gap (2026-05-18)
+
+`ContinuityClaimFilterPipeline` (dedup + per-scene evidence validation,
+batched embed, fail-soft) was built and wired into `ContinuityAuditEngine`
+as an optional embedder; the engine also derives an embedding-backed
+cosine similarity for the knowledge check from the same vectors.
+
+End-to-end re-run (Goetia extraction/adjudication + bge-large embedder):
+**5 findings** — the 2 genuine attribute-drift findings, the genuine
+knowledge violation (p3, money-before-reveal — now caught, the prior miss
+closed), **but 2 false-positive knowledge violations**.
+
+The false positives expose a real design gap: the knowledge check is
+**deterministic** — a similarity match directly emits a finding, with no
+adjudicator in the loop. Raw sentence-embedding cosine is too loose for
+proposition matching:
+
+- "Cole knew Mara was sent by someone" (s2) was matched to "Mara crossed
+  to Cole" (s4) — unrelated propositions that merely share the same two
+  characters.
+- "Mara knew the keeper lost a brother" (s2) was flagged against Innes
+  restating it in s3 — but Mara *learns* it from Cole in s2; the genuine
+  s2 reveal was not matched as the earliest reveal.
+
+**Conclusion:** the deterministic knowledge check needs hardening. The
+options: (a) a much tighter similarity threshold (cheap, but won't fix
+the same-topic FP2); (b) route knowledge-violation *candidates* through
+the existing adjudicator — the LLM judges "does claim B genuinely reveal
+what A references, before A references it" — which fits the §3 "LLM
+adjudicates, deterministic narrows" architecture and would reject both
+FPs. (b) is the robust fix and is the recommended next step. Attribute
+drift and adjudicated classes are unaffected — they already route
+through the adjudicator and stayed clean.
