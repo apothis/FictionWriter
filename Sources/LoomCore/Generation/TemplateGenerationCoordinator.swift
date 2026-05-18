@@ -255,6 +255,9 @@ public final class TemplateGenerationCoordinator {
         } else {
             styleExemplars = []
         }
+        // Cross-path NSFW consistency — a .porn/.extreme project's
+        // template-generated scenes carry the same posture as the
+        // editor path. Appended to the recency-strong end of the prompt.
         let prompt = BeatGeneration.buildBeatPrompt(
             templateBody: pendingTemplateBody,
             skeleton: skeleton,
@@ -265,7 +268,7 @@ public final class TemplateGenerationCoordinator {
             styleExemplars: styleExemplars,
             imitateContent: pendingImitateContent,
             extraInstruction: pendingExtraInstruction
-        )
+        ) + WritingDirectionPrompt.systemAddendum(session.project.settings.writingDirection)
         // Capture per-beat prompt for the generation-log entry. Append
         // on the FIRST attempt of each beat (retries reuse the slot
         // rather than create duplicate entries).
@@ -317,7 +320,8 @@ public final class TemplateGenerationCoordinator {
         // sentence boundary; the SYSTEM framing + per-beat
         // instruction still enforce length discipline.
         let params = SamplerParams(
-            maxLength: max(256, beat.targetWords * 4)
+            maxLength: max(256, beat.targetWords * 4),
+            bannedStrings: session.project.settings.antiSlopPhrases
         )
 
         let profileId = session.project.settings.serverProfileId

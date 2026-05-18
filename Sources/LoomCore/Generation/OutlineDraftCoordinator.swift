@@ -131,18 +131,28 @@ public final class OutlineDraftCoordinator {
             return
         }
         let beat = beats[index]
+        // Cross-path NSFW consistency — the planned-beat draft carries
+        // the same WritingDirection posture + anti-slop as the editor
+        // path, with the target scene's explicitness override applied.
+        let direction = WritingDirectionPrompt.effective(
+            session.project.settings.writingDirection,
+            sceneExplicitness: session.scenes[sceneId]?.explicitnessLevel
+        )
         let prompt = SceneDraftPrompt.buildBeatPrompt(
             sceneSummary: sceneSummary,
             beats: beats,
             currentBeatIndex: index,
             priorProse: accumulated,
             styles: styles
-        )
+        ) + WritingDirectionPrompt.systemAddendum(direction)
         // Output budget: 4× the beat's word target with a 256-token
         // floor, mirroring TemplateGenerationCoordinator — room to end
         // on a clean sentence without the framing losing length
         // discipline.
-        let options = OllamaChatOptions(numPredict: max(256, beat.targetWords * 4))
+        let options = OllamaChatOptions(
+            numPredict: max(256, beat.targetWords * 4),
+            bannedStrings: session.project.settings.antiSlopPhrases
+        )
         provider.call(prompt: prompt, schema: [:], options: options) { [weak self] result in
             guard let self = self else { return }
             self.onMain {

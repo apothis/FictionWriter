@@ -173,17 +173,17 @@ public final class GenerationCoordinator {
         // with a per-model-family override layered on top (e.g.
         // Mistral-Small-3.x finetunes want temp=0.8 min_p=0.025
         // rep_pen=1.05 rather than the Gemma-4-tuned defaults).
-        let params = makeSamplerParams(
+        var params = makeSamplerParams(
             from: session.project.settings.generationDefaults,
             modelName: AppState.shared.lastProbedModelName
         )
+        params.bannedStrings = session.project.settings.antiSlopPhrases
         let request = GenerateRequest(
             prompt: assembled.fullPrompt,
             stopSequences: assembled.stopSequences,
             params: params,
             maxContextLength: session.project.settings.contextBudgetTokens,
-            maxLengthOverride: session.project.settings.generationDefaults.maxOutputTokens,
-            bannedStrings: session.project.settings.antiSlopPhrases
+            maxLengthOverride: session.project.settings.generationDefaults.maxOutputTokens
         )
 
         // Resolve client + kick off the stream. The project's

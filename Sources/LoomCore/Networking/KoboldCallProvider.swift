@@ -41,6 +41,7 @@ public final class KoboldCallProvider: OllamaCallProvider {
         // KoboldCpp carries it as the sampler's `maxLength`.
         var params = baseParams
         params.maxLength = options.numPredict
+        params.bannedStrings = options.bannedStrings
         client.generate(
             prompt: wrapped,
             stopSequences: adapter.stopSequences,

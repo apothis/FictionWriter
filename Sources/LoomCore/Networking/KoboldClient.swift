@@ -14,11 +14,6 @@ public struct GenerateRequest {
     /// to guarantee well-formed JSON output without prompt tricks; see
     /// LedgerExtraction.gbnfGrammar() + LOOM_LEDGER_SPIKE §8.1.
     public var grammar: String?
-    /// Phrase-level anti-slop banlist — KoboldCpp's `banned_strings`
-    /// backtracking sampler (verified on server 1.111.2, 2026-05-18):
-    /// when a banned phrase emerges the sampler rewinds and re-rolls.
-    /// Empty = no banlist.
-    public var bannedStrings: [String]
 
     public init(
         prompt: String,
@@ -26,8 +21,7 @@ public struct GenerateRequest {
         params: SamplerParams,
         maxContextLength: Int,
         maxLengthOverride: Int? = nil,
-        grammar: String? = nil,
-        bannedStrings: [String] = []
+        grammar: String? = nil
     ) {
         self.prompt = prompt
         self.stopSequences = stopSequences
@@ -35,7 +29,6 @@ public struct GenerateRequest {
         self.maxContextLength = maxContextLength
         self.maxLengthOverride = maxLengthOverride
         self.grammar = grammar
-        self.bannedStrings = bannedStrings
     }
 }
 
@@ -437,8 +430,8 @@ public final class KoboldClient: NSObject, URLSessionDataDelegate, KoboldGenerat
         if let grammar = r.grammar, !grammar.isEmpty {
             body["grammar"] = grammar
         }
-        if !r.bannedStrings.isEmpty {
-            body["banned_strings"] = r.bannedStrings
+        if !p.bannedStrings.isEmpty {
+            body["banned_strings"] = p.bannedStrings
         }
         return body
     }

@@ -22,6 +22,11 @@ public struct SamplerParams: Equatable {
     public var dryAllowedLength: Int
     public var xtcThreshold: Double
     public var xtcProbability: Double
+    /// Phrase-level anti-slop banlist — KoboldCpp's `banned_strings`
+    /// backtracking sampler. Lives here (not on `GenerateRequest`) so
+    /// every generation path that passes `SamplerParams` — editor,
+    /// template-gen, planned-beat drafting — carries it uniformly.
+    public var bannedStrings: [String]
 
     public init(
         temperature: Double = 1.0,
@@ -36,7 +41,8 @@ public struct SamplerParams: Equatable {
         dryBase: Double = 1.75,
         dryAllowedLength: Int = 2,
         xtcThreshold: Double = 0.1,
-        xtcProbability: Double = 0.5
+        xtcProbability: Double = 0.5,
+        bannedStrings: [String] = []
     ) {
         self.temperature = temperature
         self.topP = topP
@@ -51,6 +57,7 @@ public struct SamplerParams: Equatable {
         self.dryAllowedLength = dryAllowedLength
         self.xtcThreshold = xtcThreshold
         self.xtcProbability = xtcProbability
+        self.bannedStrings = bannedStrings
     }
 
     public static let phase1Defaults = SamplerParams()

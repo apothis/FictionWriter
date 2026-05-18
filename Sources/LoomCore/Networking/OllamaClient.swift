@@ -24,15 +24,21 @@ public struct OllamaChatOptions: Equatable {
     public var temperature: Double
     public var numPredict: Int
     public var repeatPenalty: Double
+    /// Phrase-level anti-slop banlist. Honoured only by the
+    /// `KoboldCallProvider` (KoboldCpp `banned_strings`); the Ollama
+    /// transport ignores it — hence it is not in `asDictionary`.
+    public var bannedStrings: [String]
 
     public init(
         temperature: Double = 0.3,
         numPredict: Int = 2048,
-        repeatPenalty: Double = 1.1
+        repeatPenalty: Double = 1.1,
+        bannedStrings: [String] = []
     ) {
         self.temperature = temperature
         self.numPredict = numPredict
         self.repeatPenalty = repeatPenalty
+        self.bannedStrings = bannedStrings
     }
 
     public var asDictionary: [String: Any] {
