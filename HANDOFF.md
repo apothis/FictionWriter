@@ -2668,3 +2668,39 @@ genuine decision points rather than self-authorize.
 **Build:** `./build.sh` · **Tests:** `swift run LoomCoreTests` (1855
 green) · **Spike:** `swift run ContinuityAuditSpike` (phases:
 `extract` / `adjudicate` / `engine`; see the file header for env vars).
+
+### 15.39 Session ledger — 2026-05-18 (NSFW / craft tooling — research + P0/P1/P2)
+
+Independent workstream from the continuity audit. Phase 1 was a
+research + assessment pass on Loom's NSFW/craft tooling; the key
+finding was that `WritingDirection` had been **schema-only since
+Phase 2** — no generation code consumed it. Then a build pass:
+
+- **P0a — `WritingDirectionPrompt`** (`Generation/`): the missing
+  consumer. System-prompt posture addendum, near-cursor anti-fade
+  directive, A/N depth shortening (`.porn`→2, `.erotica`→3), Continue
+  word target (`.porn`→1200). Wired into `PromptBuilder`.
+- **P0b — `ProjectMemoryPresets`**: Loom-default / Heavy NSFW / Minimal.
+  New projects (incl. planned) are seeded with Loom-default — they
+  previously shipped an empty Project Memory (no anti-refusal framing).
+- **P1 — near-cursor directive**: the system addendum is above-cache;
+  `cursorDirective` re-states the no-fade posture in the recency-strong
+  slot for explicit-foreground projects. Prevention, not detection
+  (user's explicit call: skip fade-detection, prevent instead).
+- **P2a — `Scene.framing`**: per-scene scenario block, injected near
+  the cursor; persists in scene frontmatter.
+- **P2b — `DynamicSheet`** (on `Bible`): structured roles/wants/limits/
+  safeword/arc spec; `DynamicSheetInjector` + `DynamicSheetPrompt`.
+- **P2c — `ProjectSettings.antiSlopPhrases`** seeded from
+  `AntiSlopDefaults`. Data only; KoboldCpp `banned_strings` transport
+  wiring deferred until that server capability is confirmed.
+
+All TDD red→green→commit. **1929 tests green.** 8 commits on `main`.
+LOOM_NSFW.md §3.10 + LOOM_TECH_STACK.md updated.
+
+**Still pending:** webview UI for the three P2 schemas. User decided
+all three get **separate webview surfaces** — DynamicSheet as a new
+`bible-workspace` view; a new editor-side webview panel for Scene
+framing; a settings webview for the anti-slop list. The latter two are
+each a new Vite bundle + window/panel controller + bridge (Planned-
+Project-wizard scale). Not yet started.

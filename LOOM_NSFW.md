@@ -275,6 +275,21 @@ Each trope's `generationHints` carries pacing notes appropriate to its genre con
 | Phase 6 | Resources panel highlights abliteration tools when `.extreme` is the project setting. |
 | Phase 7+ | Optional: in-app abliteration helper (wrapping Heretic) for users who want to abliterate models without leaving Loom. |
 
+### 3.10 Implementation status (2026-05-18)
+
+The §3.2 / §3.5 generation behaviour was **schema-only from Phase 2
+until 2026-05-18** — `WritingDirection` existed on `ProjectSettings`
+but no generation code consumed it, so a `.porn` / `.extreme` project
+generated identically to a `.literary` one. The 2026-05-18 NSFW-tooling
+pass wired it: `WritingDirectionPrompt` now produces the system-prompt
+posture addendum, the near-cursor anti-fade directive, the shortened
+Author's Note depth, and the lengthened Continue word target. The
+default Project Memory (§2.3) — also previously unshipped — is now
+seeded into new projects from `ProjectMemoryPresets`. Per-scene framing
+(`Scene.framing`), Dynamic Sheets (`Bible.dynamics`), and the anti-slop
+phrase list (`ProjectSettings.antiSlopPhrases`) landed in the same pass.
+The webview UI for the three new schemas is the remaining work.
+
 ### 3.9 Why this matters
 
 Two reasons:

@@ -79,6 +79,11 @@
 | Problem | Solution | Files |
 |---|---|---|
 | Build a story-shaped prompt | `PromptBuilder`, `BibleInjector`, `AuthorsNoteInjector`, `StylePrompt`, `StyleExemplarsLayer`, `RecentProseWindow` | `Generation/` |
+| Translate `WritingDirection` into generation posture (NSFW §3.2/§3.5) | `WritingDirectionPrompt` — system-prompt addendum, near-cursor anti-fade directive, A/N depth, Continue word target | `Generation/WritingDirectionPrompt.swift` |
+| Default Project Memory / anti-refusal presets | `ProjectMemoryPresets` (Loom-default / Heavy NSFW / Minimal) — seeded into new projects by `ProjectStorage` | `Models/ProjectMemoryPresets.swift` |
+| Per-relationship kink/dynamic spec for the model | `DynamicSheet` (on `Bible`), `DynamicSheetInjector` + `DynamicSheetPrompt` (alwaysOn / participant-keyed activation) | `Models/DynamicSheet.swift`, `Generation/DynamicSheetPrompt.swift` |
+| Per-scene framing block | `Scene.framing` — author scenario block, injected near the cursor | `Models/Scene.swift` |
+| Curated anti-slop phrase list | `ProjectSettings.antiSlopPhrases` seeded from `AntiSlopDefaults` — data only, transport wiring deferred | `Models/AntiSlopDefaults.swift` |
 | Context-budget sizing | `ContextBudgetRecommendation`, `TokenEstimator` | `Generation/` |
 | Generation-mode orchestration | `GenerationCoordinator`, `TemplateGenerationCoordinator`, `OutlineDraftCoordinator`, `OutlineGenerator`, `SceneBeatPlanner` | `Generation/` |
 | Scene-template imitation | `BeatExtraction`/`Pipeline`, `BeatGeneration`, `VoiceDescriptor`, `SceneExemplar` | `Templates/` |
