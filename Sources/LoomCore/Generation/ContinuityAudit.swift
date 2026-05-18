@@ -93,7 +93,7 @@ public enum ContinuityAudit {
     /// Positive framing only — the `feedback_prompt_blacklist_evasion`
     /// lesson: enumerate what to produce, not what to avoid.
     public static let extractionInstruction = """
-    You are auditing a novel for continuity. From the single scene below, extract every concrete, checkable claim — each as one atomic statement that stands on its own without the surrounding sentence.
+    You are auditing a novel for continuity. From the single scene below, extract every concrete, checkable claim — each as one atomic statement that stands on its own without the surrounding sentence. A single sentence often carries several claims at once — an action, a trait, a time, a place — so extract each as its own separate object.
 
     Output one JSON object per line (JSONL) — no surrounding array, no commentary, no blank lines. Each object has exactly these six keys:
 
@@ -101,7 +101,7 @@ public enum ContinuityAudit {
         attribute = a fixed trait of a person, place, or object (eye colour, a scar, a job, who owns what).
         event = something that happened or that a character did or learned.
         knowledge_state = a fact a character knows, believes, or refers to in this scene.
-        temporal = a time marker (a date, season, time of day, age, or how long since something).
+        temporal = when something happened or how it sits in time — a date, season, time of day, age, or how long ago. When a sentence anchors an event in time ("the storm the week before", "two winters ago", "she had arrived that morning"), emit a separate temporal claim about that timing, on top of any event claim for what happened.
         spatial = a place fact (where something is, layout, distance, direction).
     - "subject": the person, place, or object the claim is about.
     - "attribute_key": for an attribute claim, the dimension (for example "eye colour"); an empty string otherwise.

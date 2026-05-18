@@ -308,6 +308,11 @@ if phase == "both" || phase == "extract" {
         let gold = fixture.gold_claims.filter { $0.scene == scene.id }
         log("  scene \(scene.id) (\(scene.title)) …")
         let claims = extractClaims(prose: scene.prose, sceneId: scene.id)
+        if env["LOOM_SPIKE_DUMP_CLAIMS"] != nil {
+            for c in claims {
+                log("    [\(c.type.rawValue)/\(c.source.rawValue)] \(c.subject) :: \(c.value)")
+            }
+        }
         var matched = 0, content = 0
         for g in gold {
             // typed match — same type AND value overlap

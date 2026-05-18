@@ -127,6 +127,14 @@ func continuityAuditExtractionTests() -> TestSuite {
         }
     }
 
+    s.test("the extraction prompt asks for sentence decomposition and event-timing claims") {
+        let prompt = ContinuityAudit.buildExtractionPrompt(scenePose: "A scene.").lowercased()
+        try expectTrue(prompt.contains("several claims"),
+                       "the prompt should ask for one sentence to decompose into several claims")
+        try expectTrue(prompt.contains("temporal claim about that timing"),
+                       "the prompt should ask for a temporal claim when an event is time-anchored")
+    }
+
     s.test("the extraction prompt pins the JSONL format and the six field names") {
         let prompt = ContinuityAudit.buildExtractionPrompt(scenePose: "A scene.")
         try expectTrue(prompt.lowercased().contains("one json object per line"))
