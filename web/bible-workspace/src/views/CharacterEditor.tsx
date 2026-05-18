@@ -15,6 +15,7 @@ import { Button } from "../components/ui/Button";
 import { Tabs } from "../components/ui/Tabs";
 import { Section, Field } from "../components/EditorLayout";
 import { useDebouncedCallback } from "../lib/useDebouncedCallback";
+import { KINK_SUGGESTIONS } from "../lib/kinkSuggestions";
 import { FactsExaminer } from "./FactsExaminer";
 
 // Phase 4.5 Sessions 2 + 4 — full character editor. All `Character`
@@ -383,16 +384,6 @@ const KINK_STANCES: { value: KinkStance; label: string }[] = [
   { value: "curious", label: "curious" },
   { value: "softLimit", label: "soft limit" },
   { value: "hardLimit", label: "hard limit" },
-];
-
-// A curated suggestion list — the input still accepts free text
-// (the research warned against a rigid taxonomy).
-const KINK_SUGGESTIONS = [
-  "restraint", "bondage", "praise", "degradation", "dominance",
-  "submission", "power exchange", "edging", "overstimulation",
-  "voyeurism", "exhibitionism", "roleplay", "sensation play",
-  "impact play", "breath play", "pain", "marking", "aftercare",
-  "dirty talk", "teasing", "service", "primal play",
 ];
 
 function KinksEditor({
