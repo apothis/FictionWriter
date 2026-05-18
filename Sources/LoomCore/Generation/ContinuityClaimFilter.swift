@@ -56,19 +56,35 @@ public enum ContinuityClaimFilter {
         return out
     }
 
-    /// Drop claims whose `evidenceQuote` has no scene sentence within
-    /// `threshold` cosine. Fail-open on an empty quote or a missing
-    /// embedding for the quote.
+    /// Drop claims whose `evidenceQuote` is not grounded in the scene.
+    ///
+    /// A quote that appears **verbatim** in the scene prose is grounded —
+    /// kept directly, no embedding needed. This is the common case: the
+    /// extractor is asked for a verbatim span. Only a quote that is *not*
+    /// a literal substring (a model paraphrase, or a hallucination) falls
+    /// through to the embedding-cosine fallback against the scene's
+    /// sentences. The verbatim check is load-bearing: short verbatim
+    /// fragments embed far from the long sentences that contain them, so
+    /// a cosine-only test silently drops correct claims.
+    ///
+    /// Fail-open: an empty quote, or a non-verbatim quote with no
+    /// embedding, keeps the claim.
     public static func validateEvidence(
         claims: [ContinuityAudit.Claim],
+        sceneProse: String,
         sceneSentences: [String],
         embeddings: [String: [Float]],
         threshold: Double = defaultEvidenceThreshold
     ) -> [ContinuityAudit.Claim] {
+        let normalizedProse = normalizedSpan(sceneProse)
         var out: [ContinuityAudit.Claim] = []
         for claim in claims {
             let quote = claim.evidenceQuote
             if quote.isEmpty {
+                out.append(claim)
+                continue
+            }
+            if normalizedProse.contains(normalizedSpan(quote)) {
                 out.append(claim)
                 continue
             }
@@ -83,6 +99,18 @@ public enum ContinuityClaimFilter {
             if matches { out.append(claim) }
         }
         return out
+    }
+
+    /// Lowercase, normalise quote glyphs, collapse whitespace — so a
+    /// verbatim-span check tolerates curly-vs-straight quotes and
+    /// whitespace differences without matching across paraphrase.
+    private static func normalizedSpan(_ s: String) -> String {
+        let lowered = s.lowercased()
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "\u{2018}", with: "'")
+            .replacingOccurrences(of: "\u{201C}", with: "\"")
+            .replacingOccurrences(of: "\u{201D}", with: "\"")
+        return lowered.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
     private static func dedupGroupKey(_ c: ContinuityAudit.Claim) -> String {

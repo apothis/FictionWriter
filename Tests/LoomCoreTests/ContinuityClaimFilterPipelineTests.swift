@@ -42,7 +42,7 @@ func continuityClaimFilterPipelineTests() -> TestSuite {
         embedder.concept = { _ in 3 }
         var result: ContinuityClaimFilterPipeline.Result?
         ContinuityClaimFilterPipeline.apply(
-            embedder: embedder, claims: claims, sceneSentencesByScene: [:]) { result = $0 }
+            embedder: embedder, claims: claims, sceneProseByScene: [:]) { result = $0 }
         let r = try expectNotNil(result)
         try expectEqual(r.claims.count, 1)
         try expectEqual(r.dedupDropped, 1)
@@ -60,7 +60,7 @@ func continuityClaimFilterPipelineTests() -> TestSuite {
         var result: ContinuityClaimFilterPipeline.Result?
         ContinuityClaimFilterPipeline.apply(
             embedder: embedder, claims: claims,
-            sceneSentencesByScene: ["s1": ["She had her green eyes."], "s2": ["A different line."]]
+            sceneProseByScene: ["s1": "She had her green eyes.", "s2": "A different line."]
         ) { result = $0 }
         try expectEqual(try expectNotNil(result).claims.count, 1)
     }
@@ -72,7 +72,7 @@ func continuityClaimFilterPipelineTests() -> TestSuite {
         var result: ContinuityClaimFilterPipeline.Result?
         ContinuityClaimFilterPipeline.apply(
             embedder: embedder, claims: claims,
-            sceneSentencesByScene: ["s1": ["An unrelated sentence."]]) { result = $0 }
+            sceneProseByScene: ["s1": "An unrelated sentence."]) { result = $0 }
         let r = try expectNotNil(result)
         try expectEqual(r.claims.count, 0)
         try expectEqual(r.evidenceDropped, 1)
@@ -83,7 +83,7 @@ func continuityClaimFilterPipelineTests() -> TestSuite {
         let embedder = StubEmbedder()
         var result: ContinuityClaimFilterPipeline.Result?
         ContinuityClaimFilterPipeline.apply(
-            embedder: embedder, claims: claims, sceneSentencesByScene: [:]) { result = $0 }
+            embedder: embedder, claims: claims, sceneProseByScene: [:]) { result = $0 }
         _ = try expectNotNil(try expectNotNil(result).embeddings["Mara has green eyes"])
     }
 
@@ -96,7 +96,7 @@ func continuityClaimFilterPipelineTests() -> TestSuite {
         embedder.fail = true
         var result: ContinuityClaimFilterPipeline.Result?
         ContinuityClaimFilterPipeline.apply(
-            embedder: embedder, claims: claims, sceneSentencesByScene: [:]) { result = $0 }
+            embedder: embedder, claims: claims, sceneProseByScene: [:]) { result = $0 }
         let r = try expectNotNil(result)
         try expectEqual(r.claims.count, 2)
         try expectEqual(r.dedupDropped, 0)
@@ -106,7 +106,7 @@ func continuityClaimFilterPipelineTests() -> TestSuite {
     s.test("an empty claim list short-circuits to an empty result") {
         var result: ContinuityClaimFilterPipeline.Result?
         ContinuityClaimFilterPipeline.apply(
-            embedder: StubEmbedder(), claims: [], sceneSentencesByScene: [:]) { result = $0 }
+            embedder: StubEmbedder(), claims: [], sceneProseByScene: [:]) { result = $0 }
         try expectEqual(try expectNotNil(result).claims.count, 0)
     }
 

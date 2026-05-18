@@ -41,7 +41,7 @@ public enum ContinuityClaimFilterPipeline {
     public static func apply(
         embedder: KoboldEmbedding,
         claims: [ContinuityAudit.Claim],
-        sceneSentencesByScene: [String: [String]],
+        sceneProseByScene: [String: String],
         completion: @escaping (Result) -> Void
     ) {
         guard !claims.isEmpty else {
@@ -49,6 +49,7 @@ public enum ContinuityClaimFilterPipeline {
             return
         }
 
+        let sceneSentencesByScene = sceneProseByScene.mapValues { SentenceSplitter.split($0) }
         var texts: Set<String> = []
         for claim in claims {
             texts.insert(claim.value)
@@ -79,6 +80,7 @@ public enum ContinuityClaimFilterPipeline {
             for (sceneId, group) in Dictionary(grouping: postDedup, by: { $0.sourceSceneId }) {
                 postEvidence += ContinuityClaimFilter.validateEvidence(
                     claims: group,
+                    sceneProse: sceneProseByScene[sceneId] ?? "",
                     sceneSentences: sceneSentencesByScene[sceneId] ?? [],
                     embeddings: embeddings)
             }

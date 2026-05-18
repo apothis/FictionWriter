@@ -70,19 +70,32 @@ func continuityClaimFilterTests() -> TestSuite {
 
     // MARK: - validateEvidence
 
-    s.test("a claim whose evidence matches a scene sentence is kept") {
+    s.test("a verbatim evidence fragment is kept even when its embedding is far from the sentence") {
+        let prose = "She turned, her green eyes bright."
         let claims = [claim(subject: "Mara", value: "v", scene: "s1", quote: "her green eyes")]
-        let embeddings = ["her green eyes": vec(1), "She turned, her green eyes bright.": vec(1)]
+        // Quote embeds far from the sentence — the verbatim-substring
+        // check must keep it regardless (the ~80-drop-per-audit bug).
+        let embeddings = ["her green eyes": vec(7), prose: vec(1)]
         let kept = ContinuityClaimFilter.validateEvidence(
-            claims: claims, sceneSentences: ["She turned, her green eyes bright."], embeddings: embeddings)
+            claims: claims, sceneProse: prose, sceneSentences: [prose], embeddings: embeddings)
         try expectEqual(kept.count, 1)
     }
 
-    s.test("a claim whose evidence matches no scene sentence is dropped") {
-        let claims = [claim(subject: "Mara", value: "v", scene: "s1", quote: "her violet eyes")]
-        let embeddings = ["her violet eyes": vec(2), "She turned, her green eyes bright.": vec(1)]
+    s.test("a non-verbatim quote close to a sentence embedding is kept via the fallback") {
+        let prose = "She turned, her green eyes bright."
+        let claims = [claim(subject: "Mara", value: "v", scene: "s1", quote: "Mara's green gaze")]
+        let embeddings = ["Mara's green gaze": vec(1), prose: vec(1)]
         let kept = ContinuityClaimFilter.validateEvidence(
-            claims: claims, sceneSentences: ["She turned, her green eyes bright."], embeddings: embeddings)
+            claims: claims, sceneProse: prose, sceneSentences: [prose], embeddings: embeddings)
+        try expectEqual(kept.count, 1)
+    }
+
+    s.test("a non-verbatim quote far from every sentence is dropped") {
+        let prose = "She turned, her green eyes bright."
+        let claims = [claim(subject: "Mara", value: "v", scene: "s1", quote: "her violet eyes")]
+        let embeddings = ["her violet eyes": vec(2), prose: vec(1)]
+        let kept = ContinuityClaimFilter.validateEvidence(
+            claims: claims, sceneProse: prose, sceneSentences: [prose], embeddings: embeddings)
         try expectEqual(kept.count, 0)
     }
 
@@ -90,14 +103,14 @@ func continuityClaimFilterTests() -> TestSuite {
         let claims = [claim(subject: "Mara", value: "v", scene: "s1", quote: "")]
         try expectEqual(
             ContinuityClaimFilter.validateEvidence(
-                claims: claims, sceneSentences: ["anything"], embeddings: [:]).count, 1)
+                claims: claims, sceneProse: "anything", sceneSentences: ["anything"], embeddings: [:]).count, 1)
     }
 
-    s.test("a claim whose evidence has no embedding is kept — fail-open") {
+    s.test("a non-verbatim quote with no embedding is kept — fail-open") {
         let claims = [claim(subject: "Mara", value: "v", scene: "s1", quote: "some quote")]
         try expectEqual(
             ContinuityClaimFilter.validateEvidence(
-                claims: claims, sceneSentences: ["a sentence"], embeddings: [:]).count, 1)
+                claims: claims, sceneProse: "a different prose entirely", sceneSentences: ["a sentence"], embeddings: [:]).count, 1)
     }
 
     return s

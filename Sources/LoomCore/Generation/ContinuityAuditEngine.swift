@@ -158,10 +158,10 @@ public final class ContinuityAuditEngine {
         }
         // Filter pass — dedup + evidence validation — and reuse the
         // embeddings for an embedding-backed knowledge-check similarity.
-        var sentences: [String: [String]] = [:]
-        for scene in scenes { sentences[scene.id] = SentenceSplitter.split(scene.prose) }
+        var proseByScene: [String: String] = [:]
+        for scene in scenes { proseByScene[scene.id] = scene.prose }
         ContinuityClaimFilterPipeline.apply(
-            embedder: embedder, claims: claims, sceneSentencesByScene: sentences
+            embedder: embedder, claims: claims, sceneProseByScene: proseByScene
         ) { [weak self] result in
             guard let self = self else { return }
             self.onMain {
