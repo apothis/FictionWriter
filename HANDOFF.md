@@ -2608,3 +2608,24 @@ knowledge violation; both prior FPs gone. 3 of 4 contradiction classes
 detected cleanly. Only miss: temporal (extraction didn't surface both
 storm claims — the extraction-recall item). Phase B complete +
 validated. `LOOM_CONTINUITY_AUDIT.md` §18.
+
+#### Addendum 6 (2026-05-18) — honest multi-run picture
+
+Closed the §16 temporal miss at the extraction level: the extraction
+prompt now decomposes time-anchored sentences into a separate
+`temporal` claim (`4f3b732`) — dump-verified (extraction now emits
+`temporal` storm claims). But repeated end-to-end runs gave a more
+honest picture than the single clean §18 run: per-run coverage is
+**stochastic** — a contradiction is found only when both its claims
+are extracted in the same run, and extraction recall (~83%) varies, so
+spatial / temporal are caught some runs and missed others. Two false
+positives also surfaced: a same-scene conjunction ("wind smelled of
+salt" vs "woodsmoke") — **fixed**, retrieval is now cross-scene only
+(`8bf3d26`); and a knowledge FP2 (extraction didn't surface the s2
+reveal event) — an extraction-completeness gap.
+
+Honest state: the pipeline is architecturally sound and unit-tested
+(1855 green), genuinely surfaces real contradictions, but is **not yet
+polished** — reaching production quality needs sustained
+extraction-recall + precision tuning, not a quick fix. It is a usable
+review aid as-is. Full assessment: `LOOM_CONTINUITY_AUDIT.md` §19.

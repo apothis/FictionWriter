@@ -1,15 +1,18 @@
 # Loom — Continuity Audit (design + plan)
 
-> **Status: Phase B complete + live-validated (2026-05-18).** Phase A spike
-> cleared the feasibility gate (§13); Phase B built the pipeline (§14), tuned
-> extraction (§15), ran end to end (§16), wired the claim-filter embedder
-> (§17), and routed the knowledge check through the adjudicator (§18). The
-> end-to-end run lands **4 findings, zero false positives** — 3 of the 4
-> contradiction classes detected cleanly; the temporal miss is the documented
-> extraction-recall item. Remaining: extraction-recall tuning, then Phase C
-> (Bible Workspace surface). This document is the authoritative plan; it
-> follows the `LOOM_*_SPIKE` / `LOOM_PLANNED_PROJECT` pattern. Inventory
-> pointer: **L10** in [`LOOM_PLAN.md`](LOOM_PLAN.md).
+> **Status: Phase B built + architecturally validated; tuning ongoing
+> (2026-05-18).** Phase A spike cleared the feasibility gate (§13); Phase B
+> built the pipeline (§14), tuned extraction (§15), ran end to end (§16),
+> wired the claim-filter embedder (§17), and routed the knowledge check
+> through the adjudicator (§18). Repeated end-to-end runs (§19) give the
+> honest picture: the pipeline is architecturally sound (1855 tests green)
+> and surfaces real contradictions, but per-run coverage is **stochastic**
+> (extraction recall ~83%) and precision is imperfect — it is a usable
+> review aid, not yet polished. Remaining: sustained extraction
+> recall/precision tuning, then Phase C (Bible Workspace surface). This
+> document is the authoritative plan; it follows the `LOOM_*_SPIKE` /
+> `LOOM_PLANNED_PROJECT` pattern. Inventory pointer: **L10** in
+> [`LOOM_PLAN.md`](LOOM_PLAN.md).
 
 ## 0. What this is
 
@@ -622,3 +625,38 @@ extraction-recall tuning item (§16), not a pipeline defect.
 
 Phase B is complete and validated. Remaining before Phase C:
 extraction-recall tuning (would close the temporal miss).
+
+## 19. End-to-end behaviour is stochastic — honest assessment (2026-05-18)
+
+Repeated end-to-end runs after §18 give a more honest picture than the
+single clean "§18: 4 findings, 0 FP" run, which was a good roll, not the
+stable state. Across four engine runs on the 6-scene fixture:
+
+- **Eye-colour drift** — caught every run (the prototypical attribute case).
+- **Spatial / temporal conflicts** — caught in *some* runs, missed in
+  others. The cause is extraction recall: a contradiction is only found
+  when **both** of its claims are extracted *in the same run*, and per-run
+  extraction recall is ~83% and varies. The temporal extraction fix (§16
+  follow-up — decompose time-anchored sentences; commit `4f3b732`) is
+  correct and dump-verified (extraction now emits `temporal` storm claims),
+  but a given run can still miss it if a claim does not surface.
+- **False positives** — two seen and addressed/diagnosed:
+  - *Conjunction* — "wind smelled of salt" vs "woodsmoke" from one scene's
+    "a wind that smelled of salt and woodsmoke". **Fixed** (`8bf3d26`):
+    retrieval now pairs cross-scene only — the audit is about drift across
+    scenes; a same-scene pair is far more often a conjunction.
+  - *Knowledge FP2* — "Mara filed away that the keeper lost a brother" (s2,
+    where Cole tells her) flagged against Innes restating it (s3). Root
+    cause: extraction did not surface the s2 reveal event, so the earliest
+    matched reveal was s3. An extraction-completeness gap, not a pipeline
+    defect.
+
+**Assessment.** The pipeline is architecturally sound and every component
+is unit-tested (1855 tests green); end to end it genuinely surfaces real
+contradictions. But it is **not yet polished** — per-run coverage is
+stochastic and precision is imperfect. Reaching production quality needs
+sustained tuning of extraction recall + consistency (the dominant lever)
+and a few precision refinements. This is honest ongoing work, not a quick
+fix. The feature is a usable review aid in its current state — re-running
+an audit improves coverage — but should be presented as such, not as
+exhaustive.
