@@ -214,6 +214,56 @@ report += "- **Extraction**: \(extractBackend == "kobold" ? "Goetia (24B) @ \(ko
 report += "- **Adjudication**: \(adjBackend == "kobold" ? "Goetia @ \(koboldURL)" : "\(adjModel) @ \(ollamaURL)")\n"
 report += "- **Fixture**: \(fixture.scenes.count) scenes, \(fixture.gold_claims.count) gold claims, \(fixture.gold_pairs.count) gold pairs\n\n"
 
+// MARK: - Engine phase — full end-to-end audit
+
+// `ContinuityAuditEngine` marshals provider completions onto the main
+// queue, so this branch services it with `dispatchMain()` (never
+// returns; exits from the audit completion) rather than blocking the
+// main thread on a semaphore.
+if phase == "engine" {
+    log("== ENGINE (end-to-end) ==")
+    let kobold = KoboldGenerateProvider(baseURL: URL(string: koboldURL)!)
+    let engine = ContinuityAuditEngine(
+        extractor: OllamaContinuityExtractor(provider: kobold),
+        adjudicationProvider: kobold,
+        entities: []
+    )
+    let sceneInputs = fixture.scenes.map {
+        ContinuityAuditEngine.SceneInput(id: $0.id, prose: $0.prose)
+    }
+    let projectDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("cas-engine-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+    log("running full audit over \(sceneInputs.count) scenes (extraction + adjudication on Goetia) …")
+    let started = Date()
+    engine.audit(scenes: sceneInputs, projectURL: projectDir) { result in
+        let elapsed = Date().timeIntervalSince(started)
+        var r = "# ContinuityAuditSpike — engine (end-to-end)\n\n"
+        r += "- **Extraction + adjudication**: Goetia (24B) @ \(koboldURL)\n"
+        r += "- **Scenes**: \(sceneInputs.count) · **Elapsed**: \(String(format: "%.0fs", elapsed))\n\n"
+        switch result {
+        case .failure(let e):
+            r += "**Audit failed: \(e)**\n"
+        case .success(let findings):
+            r += "## \(findings.count) findings\n\n"
+            let byKind = Dictionary(grouping: findings, by: { $0.kind.rawValue })
+            for (kind, fs) in byKind.sorted(by: { $0.key < $1.key }) {
+                r += "- **\(kind)**: \(fs.count)\n"
+            }
+            r += "\n"
+            for f in findings {
+                r += "### \(f.kind.rawValue) — \(f.severity.rawValue) (conf \(String(format: "%.2f", f.confidence)))\n"
+                r += "- A (scene \(f.claimA.sourceSceneId)): \(f.claimA.value)\n"
+                r += "- B (scene \(f.claimB.sourceSceneId)): \(f.claimB.value)\n"
+                r += "- \(f.explanation)\n\n"
+            }
+        }
+        print(r)
+        exit(0)
+    }
+    dispatchMain()
+}
+
 // MARK: - Phase 1: extraction
 
 if phase == "both" || phase == "extract" {
