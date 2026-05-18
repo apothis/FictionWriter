@@ -113,6 +113,18 @@ on any degenerate result (empty / unparseable / zero claims). It keeps the
 scene-word-aware `num_predict` budget (`OllamaLedgerExtractor.budgetForSceneWords`).
 The claim extractor is `OllamaContinuityExtractor`.
 
+**Two-stage extraction — typing is its own focused pass.** A
+model A/B (§15) and prior-art research (Claimify) both found that asking
+one call to do recall + typing + JSON + quoting at once overloads the
+*type* classification — a bigger model finds more facts but types them no
+better. So extraction runs in two stages: stage 1 extracts claims; stage 2
+re-classifies each claim's `type` in a call that does nothing else (scene +
+the claim list → one type per claim). Stage 2 fails open — a typing error
+keeps the stage-1 best-effort types. **Both stages run on Goetia (24B,
+KoboldCpp)** — see §15; the small Ollama model is not capable enough even
+for the focused typing pass, so the continuity audit is entirely a
+KoboldCpp/Goetia feature with no Ollama dependency.
+
 **Reuse vs. fresh extraction.** Loom already extracts character facts into
 `Character.knownFactsBySceneId` ([`Character.swift:23`](Sources/LoomCore/Models/Character.swift)).
 The audit *consumes* those accepted facts as `attribute` / `knowledgeState`
@@ -467,3 +479,44 @@ pure-data / orchestration modules in `Sources/LoomCore/`:
 real models (extraction on Ollama, adjudication on Goetia) — the engine is
 stub-smoke-tested only. That live pass + the filter wire-up close Phase B
 before Phase C (the Bible Workspace surface).
+
+## 15. Extraction tuning — research + model A/B (2026-05-18)
+
+After the Phase B engine landed, an extraction-quality pass: prior-art
+research on alternatives to a generative LLM, plus a model A/B for the
+claim extractor.
+
+**Prior-art research — alternatives to generative extraction.** Verdict:
+do **not** bolt on classic IE.
+
+- OpenIE, Semantic Role Labeling, REBEL-style relation extraction, AMR,
+  spaCy SVO triples — all trained/benchmarked on news/encyclopedic text,
+  all collapse on dialogue and interiority, none emits a *typed* claim with
+  source attribution. They would lower recall on fiction. NER-family
+  approaches are genuinely the wrong shape (confirms the GLiNER-for-claims
+  rejection).
+- The real match is **claim decomposition** from the fact-verification
+  literature — Microsoft's **Claimify** (select claim-bearing sentences →
+  decompose into atomic claims → abstain on ambiguous ones), VeriScore
+  (benchmarked on fiction). But every published system still does *type*
+  classification as a separate LLM judgment — typing is not free.
+- Reliable constrained decoding (GBNF, XGrammar, llguidance) lives in
+  llama.cpp / KoboldCpp, **not** Ollama, whose `format` schema is leaky by
+  design. Available as a future hardening; the unconstrained + re-roll path
+  already removed the structural flake empirically.
+
+**Model A/B — claim extraction** (6-scene fixture, recall of planted gold
+claims; "content" = type-agnostic, "typed" = type must also match):
+
+| extractor | content recall | typed recall |
+|---|---|---|
+| gemma4_2b, single-stage | 77% | 61% |
+| gemma4_2b, two-stage typing | 72% | 61% |
+| Goetia 24B, single-stage | 83% | 55% |
+| **Goetia 24B, two-stage typing** | **83%** | **72%** |
+
+The two-stage typing pass lifts typed recall **+17 points on Goetia**
+(55→72%) and is flat on gemma4_2b — a 2B model is too weak even for the
+focused typing call. **Decision: claim extraction runs on Goetia 24B,
+two-stage.** n=1 per cell (generation is stochastic); a few more runs
+would firm the numbers, but the direction is consistent with the research.

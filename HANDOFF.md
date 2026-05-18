@@ -2528,3 +2528,28 @@ types it). Type-classification accuracy matters because retrieval
 routes by type; sharpening it is the concrete extraction-tuning
 target. The spike now drives the production extractor and reports
 both recall figures.
+
+#### Addendum 2 (2026-05-18) — extraction tuning: research + two-stage
+
+The user asked to (a) research alternatives to a generative extractor
+and (b) A/B the 24B model. Both done.
+
+Research verdict: do NOT bolt on classic IE (OpenIE / SRL / REBEL /
+AMR / spaCy SVO) — all trained on news/encyclopedic text, all collapse
+on dialogue + interiority, none emits a typed source-attributed claim;
+they would lower recall on fiction. The real match is claim-
+decomposition (Claimify, VeriScore) — but typing is still a separate
+LLM judgment everywhere. Reliable constrained decoding lives in
+llama.cpp/KoboldCpp, not Ollama.
+
+Model A/B (recall of planted gold claims): gemma4_2b 77% content / 61%
+typed; Goetia 24B single-stage 83% / 55%. A bigger model finds more
+facts but types them no better — typing is overloaded in an omnibus
+call. Fix shipped (`18b0e64`): **two-stage extraction** — stage 1
+extracts, stage 2 re-classifies each claim's type in a focused
+scene-scoped call. Goetia two-stage: **83% content / 72% typed**
+(+17 typed). Flat on gemma4_2b (a 2B model is too weak even for
+focused typing). Decision: **claim extraction runs on Goetia 24B,
+two-stage** — the continuity audit is now entirely a KoboldCpp/Goetia
+feature, no Ollama dependency. Full write-up: `LOOM_CONTINUITY_AUDIT.md`
+§15.

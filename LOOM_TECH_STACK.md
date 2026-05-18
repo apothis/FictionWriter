@@ -106,6 +106,8 @@
 | Python embedding subprocess | Replaced — migrated to native CoreML (drops ~3 GB of deps) | LOOM_PLAN L8 |
 | MLX port | Reverted — Xcode not installed on the build machine | LOOM_MLX_PORT_SPIKE |
 | Whole-document LLM contradiction judging | Rejected — ContraDoc shows ~54% precision; the audit decomposes to pairwise instead | LOOM_CONTINUITY_AUDIT §2, §13 |
+| Classic IE (OpenIE / SRL / REBEL / AMR / spaCy SVO) for claim extraction from fiction | Rejected — all trained on news/encyclopedic text, collapse on dialogue + interiority, emit untyped relations not source-attributed typed claims; would lower recall on fiction | LOOM_CONTINUITY_AUDIT §15 |
+| Ollama `format` JSON schema on small gemma | Avoid — flakes ~50% (degenerate buffer → empty). Use unconstrained + pinned fields + JSONL + tolerant parse, or GBNF on KoboldCpp | LOOM_CONTINUITY_AUDIT §3.1, HANDOFF §15.19 |
 | TTS / voice, multi-user collab, cloud sync, mobile | Deferred indefinitely | LOOM_PLAN §1 |
 
 ## 4. Where to look for the rest
