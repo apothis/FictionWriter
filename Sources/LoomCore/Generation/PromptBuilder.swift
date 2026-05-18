@@ -247,8 +247,15 @@ public enum PromptBuilder {
 
         // LOOM_NSFW.md §3.2 + §3.5 — the project's WritingDirection
         // drives the system-prompt posture, the Continue word target,
-        // and (below) the Author's Note injection depth.
-        let direction = context.project.settings.writingDirection
+        // and (below) the Author's Note injection depth. A per-scene
+        // explicitness override (if the current scene set one) is
+        // layered on top.
+        let direction = WritingDirectionPrompt.effective(
+            context.project.settings.writingDirection,
+            sceneExplicitness: context.currentSceneId.flatMap {
+                context.scenes[$0]?.explicitnessLevel
+            }
+        )
         let systemContent = systemPromptFor(
             mode: context.mode,
             continueWordTarget: WritingDirectionPrompt.continueWordTarget(direction)

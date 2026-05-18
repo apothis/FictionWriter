@@ -47,6 +47,9 @@ public enum SceneFile {
         if !scene.framing.isEmpty {
             lines.append("framing: \(quote(scene.framing))")
         }
+        if let level = scene.explicitnessLevel {
+            lines.append("explicitnessLevel: \(quote(level.rawValue))")
+        }
         lines.append("summaryDirty: \(scene.summaryDirty ? "true" : "false")")
 
         // Forward-compat: emit any extra keys not owned by Loom in
@@ -87,12 +90,15 @@ public enum SceneFile {
         let outcome = frontmatter["outcome"] ?? ""
         let summary = frontmatter["summary"] ?? ""
         let framing = frontmatter["framing"] ?? ""
+        let explicitnessLevel = frontmatter["explicitnessLevel"]
+            .flatMap { ExplicitnessLevel(rawValue: $0) }
 
         // Extra: every key not in the Loom-owned set lands here. The set
         // must mirror the encode side exactly.
         let owned: Set<String> = [
             "id", "title", "pov", "location", "status",
-            "targetWordCount", "conflict", "outcome", "summary", "framing", "summaryDirty",
+            "targetWordCount", "conflict", "outcome", "summary", "framing",
+            "explicitnessLevel", "summaryDirty",
         ]
         var extra: [String: String] = [:]
         for (key, value) in frontmatter where !owned.contains(key) {
@@ -112,6 +118,7 @@ public enum SceneFile {
             targetWordCount: targetWordCount,
             contentPath: contentPath,
             framing: framing,
+            explicitnessLevel: explicitnessLevel,
             extraFrontmatter: extra,
             prose: split.body
         )

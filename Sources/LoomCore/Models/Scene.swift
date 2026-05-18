@@ -26,6 +26,12 @@ public struct Scene: Codable, Equatable {
     /// (private), `framing` is injected near the cursor at generation
     /// time. LOOM_NSFW per-scene framing (P2a).
     public var framing: String
+    /// Per-scene explicitness override. `nil` = use the project's
+    /// `WritingDirection.explicitnessLevel`. Lets a non-explicit scene
+    /// in an explicit project (or vice versa) opt out/in — `.fadeToBlack`
+    /// here fully suppresses the explicit-foreground posture for the
+    /// scene regardless of the project's writing direction.
+    public var explicitnessLevel: ExplicitnessLevel?
     public var generatedSpans: [GeneratedSpan]   // Phase 1.k persistence
     public var snapshots: [Snapshot]             // Phase 2+ persistence
     public var extraFrontmatter: [String: String] // forward-compat sink
@@ -38,7 +44,7 @@ public struct Scene: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, title, pov, location, status, conflict, outcome
         case summary, summaryDirty, targetWordCount, contentPath
-        case notes, framing, generatedSpans, snapshots, extraFrontmatter
+        case notes, framing, explicitnessLevel, generatedSpans, snapshots, extraFrontmatter
         // prose intentionally excluded
     }
 
@@ -56,6 +62,7 @@ public struct Scene: Codable, Equatable {
         contentPath: String? = nil,
         notes: String = "",
         framing: String = "",
+        explicitnessLevel: ExplicitnessLevel? = nil,
         generatedSpans: [GeneratedSpan] = [],
         snapshots: [Snapshot] = [],
         extraFrontmatter: [String: String] = [:],
@@ -74,6 +81,7 @@ public struct Scene: Codable, Equatable {
         self.contentPath = contentPath ?? "scenes/\(id.uuidString).md"
         self.notes = notes
         self.framing = framing
+        self.explicitnessLevel = explicitnessLevel
         self.generatedSpans = generatedSpans
         self.snapshots = snapshots
         self.extraFrontmatter = extraFrontmatter
@@ -96,6 +104,7 @@ public struct Scene: Codable, Equatable {
             ?? "scenes/\(self.id.uuidString).md"
         self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         self.framing = try c.decodeIfPresent(String.self, forKey: .framing) ?? ""
+        self.explicitnessLevel = try c.decodeIfPresent(ExplicitnessLevel.self, forKey: .explicitnessLevel)
         self.generatedSpans = try c.decodeIfPresent([GeneratedSpan].self, forKey: .generatedSpans) ?? []
         self.snapshots = try c.decodeIfPresent([Snapshot].self, forKey: .snapshots) ?? []
         self.extraFrontmatter = try c.decodeIfPresent([String: String].self, forKey: .extraFrontmatter) ?? [:]

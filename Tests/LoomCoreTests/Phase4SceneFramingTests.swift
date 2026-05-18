@@ -65,6 +65,34 @@ func phase4SceneFramingTests() -> TestSuite {
         try expectEqual(scene.framing, "")
     }
 
+    s.test("explicitnessLevel override defaults to nil and round-trips") {
+        try expectNil(Scene.empty(title: "S").explicitnessLevel)
+        var scene = Scene.empty(title: "S")
+        scene.explicitnessLevel = .extreme
+        let data = try JSONEncoder.loomPretty.encode(scene)
+        try expectEqual(
+            try JSONDecoder.loom.decode(Scene.self, from: data).explicitnessLevel, .extreme
+        )
+    }
+
+    s.test("explicitnessLevel round-trips through SceneFile frontmatter") {
+        var scene = Scene.empty(title: "S")
+        scene.explicitnessLevel = .graphic
+        scene.prose = "Body."
+        let back = try SceneFile.decode(
+            SceneFile.encode(scene), contentPath: scene.contentPath
+        )
+        try expectEqual(back.explicitnessLevel, .graphic)
+    }
+
+    s.test("a SceneFile without an explicitnessLevel line decodes to nil") {
+        let id = UUID()
+        let text = "---\nid: \"\(id.uuidString)\"\ntitle: \"X\"\nstatus: \"draft\"\nsummaryDirty: false\n---\n\nBody."
+        try expectNil(
+            try SceneFile.decode(text, contentPath: "scenes/\(id.uuidString).md").explicitnessLevel
+        )
+    }
+
     s.test("framing is injected into the prompt for the current scene") {
         var project = Project(title: "T")
         let scene = Scene.empty(id: UUID(), title: "S")

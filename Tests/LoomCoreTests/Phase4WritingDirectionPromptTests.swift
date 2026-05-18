@@ -37,9 +37,16 @@ func phase4WritingDirectionPromptTests() -> TestSuite {
     }
 
     s.test("porn kind foregrounds explicit content") {
-        let d = WritingDirection(kind: .porn)
+        let d = WritingDirection(kind: .porn, explicitnessLevel: .graphic)
         let a = WritingDirectionPrompt.systemAddendum(d).lowercased()
         try expectTrue(a.contains("foreground") || a.contains("substance"))
+    }
+
+    s.test("a fadeToBlack scene suppresses the porn-foreground clause") {
+        let d = WritingDirection(kind: .porn, explicitnessLevel: .fadeToBlack)
+        let a = WritingDirectionPrompt.systemAddendum(d).lowercased()
+        try expectFalse(a.contains("foreground"))
+        try expectFalse(a.contains("substance"))
     }
 
     s.test("crude register adds register guidance") {
@@ -55,13 +62,13 @@ func phase4WritingDirectionPromptTests() -> TestSuite {
     }
 
     s.test("explicitForeground pacing adds pacing guidance") {
-        let d = WritingDirection(pacing: .explicitForeground)
+        let d = WritingDirection(explicitnessLevel: .graphic, pacing: .explicitForeground)
         let a = WritingDirectionPrompt.systemAddendum(d).lowercased()
         try expectTrue(a.contains("extend") || a.contains("sensory beat"))
     }
 
     s.test("never FTB policy adds an explicit no-fade clause") {
-        let d = WritingDirection(fadeToBlackPolicy: .never)
+        let d = WritingDirection(explicitnessLevel: .graphic, fadeToBlackPolicy: .never)
         let a = WritingDirectionPrompt.systemAddendum(d).lowercased()
         try expectTrue(a.contains("never fade") || a.contains("fade to black"))
     }
@@ -120,8 +127,25 @@ func phase4WritingDirectionPromptTests() -> TestSuite {
         try expectNotNil(WritingDirectionPrompt.cursorDirective(WritingDirection(explicitnessLevel: .graphic)))
     }
 
-    s.test("porn kind yields a cursor directive even at default explicitness") {
-        try expectNotNil(WritingDirectionPrompt.cursorDirective(WritingDirection(kind: .porn)))
+    s.test("porn kind yields a cursor directive when the scene depicts") {
+        try expectNotNil(WritingDirectionPrompt.cursorDirective(
+            WritingDirection(kind: .porn, explicitnessLevel: .onScreen)
+        ))
+    }
+
+    s.test("a fadeToBlack scene yields no cursor directive even in a porn project") {
+        try expectNil(WritingDirectionPrompt.cursorDirective(
+            WritingDirection(kind: .porn, explicitnessLevel: .fadeToBlack)
+        ))
+    }
+
+    s.test("effective() applies a scene's explicitness override") {
+        let base = WritingDirection(kind: .porn, explicitnessLevel: .extreme)
+        let toned = WritingDirectionPrompt.effective(base, sceneExplicitness: .fadeToBlack)
+        try expectEqual(toned.explicitnessLevel, .fadeToBlack)
+        try expectEqual(toned.kind, .porn)
+        let unchanged = WritingDirectionPrompt.effective(base, sceneExplicitness: nil)
+        try expectEqual(unchanged.explicitnessLevel, .extreme)
     }
 
     s.test("onScreen explicitness on a mainstream project yields no cursor directive") {
@@ -169,6 +193,26 @@ func phase4WritingDirectionPromptTests() -> TestSuite {
         let scene = Scene.empty(id: UUID(), title: "S")
         let result = PromptBuilder.build(makeWDContext(project: project, scene: scene))
         try expectNil(result.chiclets.first { $0.sourceKind == .directionDirective })
+    }
+
+    s.test("a scene's fadeToBlack override suppresses an extreme project's posture") {
+        var project = Project(title: "T")
+        project.settings.writingDirection = WritingDirection(
+            kind: .porn, explicitnessLevel: .extreme
+        )
+        var scene = Scene.empty(id: UUID(), title: "S")
+        scene.explicitnessLevel = .fadeToBlack
+        let result = PromptBuilder.build(makeWDContext(project: project, scene: scene))
+        try expectFalse(result.systemBlock.lowercased().contains("explicit fiction project"))
+        try expectNil(result.chiclets.first { $0.sourceKind == .directionDirective })
+    }
+
+    s.test("a scene's extreme override lifts a literary project's posture") {
+        let project = Project(title: "T")  // literary / fadeToBlack defaults
+        var scene = Scene.empty(id: UUID(), title: "S")
+        scene.explicitnessLevel = .extreme
+        let result = PromptBuilder.build(makeWDContext(project: project, scene: scene))
+        try expectTrue(result.systemBlock.lowercased().contains("extreme"))
     }
 
     return s

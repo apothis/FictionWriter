@@ -11,18 +11,37 @@ import Foundation
 /// (the repo memory note: prompt blacklists get paraphrase-evaded).
 public enum WritingDirectionPrompt {
 
+    /// The project's writing direction with a per-scene explicitness
+    /// override applied. `nil` override → the direction unchanged.
+    public static func effective(
+        _ direction: WritingDirection,
+        sceneExplicitness: ExplicitnessLevel?
+    ) -> WritingDirection {
+        guard let override = sceneExplicitness else { return direction }
+        var d = direction
+        d.explicitnessLevel = override
+        return d
+    }
+
     /// Posture text appended to the per-mode system prompt. Empty for a
     /// default (literary) project, so a brand-new project's prompt is
     /// unchanged.
     public static func systemAddendum(_ direction: WritingDirection) -> String {
         var clauses: [String] = []
 
+        // The effective explicitness is the master dial: when a scene
+        // (or the project) is `.fadeToBlack`, the explicit-foreground
+        // clauses are suppressed regardless of `kind` / `pacing` /
+        // FTB policy. The register clause is independent of this — it
+        // is a project-wide vocabulary choice.
+        let depicts = direction.explicitnessLevel != .fadeToBlack
+
         switch direction.kind {
-        case .porn:
+        case .porn where depicts:
             clauses.append("This is an explicit fiction project: graphic sensory and anatomical description is the substance of the scene, not an ornament to it. Treat explicit content as the foreground the prose is built around.")
-        case .erotica:
+        case .erotica where depicts:
             clauses.append("This is an erotica project: sexual desire and intimacy are central to the story. Give explicit scenes full, unhurried prose rather than implication.")
-        case .literary, .mainstream, .romance:
+        case .porn, .erotica, .literary, .mainstream, .romance:
             break
         }
 
@@ -38,15 +57,15 @@ public enum WritingDirectionPrompt {
         }
 
         switch direction.pacing {
-        case .explicitForeground:
+        case .explicitForeground where depicts:
             clauses.append("Pace explicit scenes as the structure of the work: extend sensory beats rather than cutting to the next plot moment.")
-        case .slowExplicit:
+        case .slowExplicit where depicts:
             clauses.append("Give explicit scenes extended, unhurried description; let the surrounding plot accommodate them.")
-        case .fastPlot, .balanced:
+        case .explicitForeground, .slowExplicit, .fastPlot, .balanced:
             break
         }
 
-        if direction.fadeToBlackPolicy == .never {
+        if direction.fadeToBlackPolicy == .never && depicts {
             clauses.append("Never fade to black: depict intimate scenes through to their natural end rather than closing the door.")
         }
 
@@ -89,6 +108,9 @@ public enum WritingDirectionPrompt {
     /// model reads it as authorial direction, not chat instruction.
     /// `nil` when the project warrants no reinforcement.
     public static func cursorDirective(_ direction: WritingDirection) -> String? {
+        // A `.fadeToBlack` scene/project gets no directive even in a
+        // porn/erotica project — the explicitness dial is the master.
+        guard direction.explicitnessLevel != .fadeToBlack else { return nil }
         let foreground = direction.kind == .porn || direction.kind == .erotica
         let intense = direction.explicitnessLevel == .graphic
             || direction.explicitnessLevel == .extreme
