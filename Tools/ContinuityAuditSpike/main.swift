@@ -358,6 +358,11 @@ if phase == "eval" {
             for run in 0..<evalRuns { tasks.append((name, m, run)) }
         }
         var perRunFindings: [String: [[ContinuityFinding]]] = [:]
+        // The engine uses `[weak self]` internally; if nothing holds a
+        // strong reference past `runTask`'s synchronous return it
+        // deallocates and the audit silently stalls (no completion ever
+        // fires). Hold the live engine here for the audit's duration.
+        var liveEngine: ContinuityAuditEngine?
 
         func renderEngine() -> String {
             var r = "## Engine end-to-end — \(evalRuns) runs per manuscript\n\n"
@@ -436,6 +441,7 @@ if phase == "eval" {
                 adjudicationProvider: kobold,
                 entities: [],
                 embedder: OllamaEmbedProvider(baseURL: URL(string: ollamaURL)!, model: embedModel))
+            liveEngine = engine
             let sceneInputs = m.scenes.map {
                 ContinuityAuditEngine.SceneInput(id: $0.id, prose: $0.prose)
             }
