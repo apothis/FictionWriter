@@ -80,6 +80,10 @@ public final class ContinuityAuditEngine {
     /// The similarity in force for this run — embedding-backed when an
     /// embedder ran, else `baseSimilarity`.
     private var activeSimilarity: (String, String) -> Double = ContinuityAuditEngine.tokenJaccard
+    /// True once `activeSimilarity` is embedding-backed — retrieval then
+    /// clusters on cosine (a higher threshold) instead of the default
+    /// content-word Jaccard.
+    private var usingEmbeddingSimilarity = false
 
     public init(
         extractor: ContinuityClaimExtracting,
@@ -116,6 +120,7 @@ public final class ContinuityAuditEngine {
         self.knowledgeCandidates = []
         self.findings = []
         self.activeSimilarity = baseSimilarity
+        self.usingEmbeddingSimilarity = false
 
         NotificationCenter.default.post(
             name: Self.didStartNotification, object: self,
@@ -175,6 +180,7 @@ public final class ContinuityAuditEngine {
                         }
                         return base(a, b)
                     }
+                    self.usingEmbeddingSimilarity = true
                 }
                 DebugLog.shared.write(
                     "[continuity-audit] claim-filter: -\(result.dedupDropped) dedup, -\(result.evidenceDropped) evidence")
@@ -183,9 +189,20 @@ public final class ContinuityAuditEngine {
         }
     }
 
+    /// Cosine-similarity threshold for embedding-backed retrieval
+    /// clustering — two claim values cluster (and so become a candidate
+    /// pair) at/above this. Matches the knowledge check's reveal-match
+    /// threshold; a contradiction is two near-paraphrase claims that
+    /// disagree on one element, so they stay well above it.
+    private static let retrievalCosineThreshold = 0.7
+
     private func retrieveAndAdjudicate() {
         let sceneOrder = scenes.map(\.id)
-        pairs = ContinuityConflictRetrieval.candidatePairs(claims: claims, sceneOrder: sceneOrder)
+        pairs = usingEmbeddingSimilarity
+            ? ContinuityConflictRetrieval.candidatePairs(
+                claims: claims, sceneOrder: sceneOrder,
+                similarity: activeSimilarity, threshold: Self.retrievalCosineThreshold)
+            : ContinuityConflictRetrieval.candidatePairs(claims: claims, sceneOrder: sceneOrder)
         DebugLog.shared.write("[continuity-audit] \(claims.count) claims → \(pairs.count) candidate pairs")
         adjudicatePair(0)
     }

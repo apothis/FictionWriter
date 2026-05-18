@@ -198,7 +198,9 @@ func continuityAuditEngineTests() -> TestSuite {
         let adj = StubAdjProvider()
         adj.responder = { _ in .success(contradictionJSON) }
         let embedder = StubEmbedder()
-        embedder.vectorFor = { $0.contains("green") ? onehot(0) : onehot(1) }
+        // All values embed identically: the two s1 green claims dedup,
+        // and the surviving green/brown pair still clusters in retrieval.
+        embedder.vectorFor = { _ in onehot(0) }
         let engine = ContinuityAuditEngine(
             extractor: ext, adjudicationProvider: adj, entities: [], embedder: embedder)
         var result: Result<[ContinuityFinding], Error>?
@@ -206,6 +208,27 @@ func continuityAuditEngineTests() -> TestSuite {
         drive(ext, adj)
         // The two paraphrase green claims collapse to one → one
         // candidate pair → one finding (without dedup it would be two).
+        try expectEqual(try result?.get().count, 1)
+    }
+
+    s.test("with an embedder, retrieval clusters claims by embedding similarity") {
+        let ext = StubExtractor()
+        // The two values share no content words — the default
+        // content-Jaccard would never pair them; only the embedding
+        // similarity can.
+        ext.claimsByScene = [
+            "s1": [attr("Mara", "ALPHA", scene: "s1")],
+            "s2": [attr("Mara", "OMEGA", scene: "s2")],
+        ]
+        let adj = StubAdjProvider()
+        adj.responder = { _ in .success(contradictionJSON) }
+        let embedder = StubEmbedder()
+        embedder.vectorFor = { _ in onehot(0) }
+        let engine = ContinuityAuditEngine(
+            extractor: ext, adjudicationProvider: adj, entities: [], embedder: embedder)
+        var result: Result<[ContinuityFinding], Error>?
+        engine.audit(scenes: scenes, projectURL: tempProject()) { result = $0 }
+        drive(ext, adj)
         try expectEqual(try result?.get().count, 1)
     }
 
