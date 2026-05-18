@@ -50,6 +50,16 @@ func phase4AntiSlopTests() -> TestSuite {
         try expectEqual(decoded.settings.antiSlopPhrases, [])
     }
 
+    s.test("GenerateRequest carries banned strings, defaulting to empty") {
+        let bare = GenerateRequest(prompt: "p", params: SamplerParams(), maxContextLength: 8192)
+        try expectEqual(bare.bannedStrings, [])
+        let banned = GenerateRequest(
+            prompt: "p", params: SamplerParams(), maxContextLength: 8192,
+            bannedStrings: ["a testament to", "her core"]
+        )
+        try expectEqual(banned.bannedStrings, ["a testament to", "her core"])
+    }
+
     s.test("createNewProject seeds the curated anti-slop list") {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("antislop-\(UUID().uuidString)")

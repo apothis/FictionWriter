@@ -182,7 +182,8 @@ public final class GenerationCoordinator {
             stopSequences: assembled.stopSequences,
             params: params,
             maxContextLength: session.project.settings.contextBudgetTokens,
-            maxLengthOverride: session.project.settings.generationDefaults.maxOutputTokens
+            maxLengthOverride: session.project.settings.generationDefaults.maxOutputTokens,
+            bannedStrings: session.project.settings.antiSlopPhrases
         )
 
         // Resolve client + kick off the stream. The project's
