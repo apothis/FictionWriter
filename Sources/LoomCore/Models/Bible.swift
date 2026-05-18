@@ -19,17 +19,22 @@ public struct Bible: Codable, Equatable {
     /// when the Sphiratrioth active-scenario pattern becomes
     /// user-facing; schema + prompt-injection plumbing here.
     public var lorebook: [LorebookEntry]
+    /// P2b — per-relationship Dynamic Sheets. Structured roles / wants
+    /// / limits / safeword / arc specs fed to the writer model.
+    public var dynamics: [DynamicSheet]
 
     public init(
         characters: [Character] = [],
         settings: [Setting] = [],
         objects: [BibleObject] = [],
-        lorebook: [LorebookEntry] = []
+        lorebook: [LorebookEntry] = [],
+        dynamics: [DynamicSheet] = []
     ) {
         self.characters = characters
         self.settings = settings
         self.objects = objects
         self.lorebook = lorebook
+        self.dynamics = dynamics
     }
 
     public static let empty = Bible()
@@ -40,5 +45,6 @@ public struct Bible: Codable, Equatable {
         self.settings = try c.decodeIfPresent([Setting].self, forKey: .settings) ?? []
         self.objects = try c.decodeIfPresent([BibleObject].self, forKey: .objects) ?? []
         self.lorebook = try c.decodeIfPresent([LorebookEntry].self, forKey: .lorebook) ?? []
+        self.dynamics = try c.decodeIfPresent([DynamicSheet].self, forKey: .dynamics) ?? []
     }
 }

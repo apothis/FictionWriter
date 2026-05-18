@@ -130,6 +130,7 @@ public enum ChicletKind: String, Codable, Equatable, CaseIterable {
     case fewShotStyleExample
     case directionDirective
     case sceneFraming
+    case dynamicSheet
 }
 
 // MARK: - Builder
@@ -402,6 +403,29 @@ public enum PromptBuilder {
                 sourceId: nil,
                 evictionPriority: 40
             ))
+        }
+
+        // P2b — Dynamic Sheet layer. alwaysOn sheets always; the rest
+        // when a participant appears in the recent prose. A structured
+        // roles / wants / limits / safeword / arc spec for the model.
+        let activeDynamics = DynamicSheetInjector.activated(
+            dynamics: context.project.bible.dynamics,
+            characters: context.project.bible.characters,
+            recentProse: matchProse
+        )
+        if !activeDynamics.isEmpty {
+            let text = DynamicSheetPrompt.render(activeDynamics)
+            if !text.isEmpty {
+                layers.append(Layer(
+                    kind: .dynamicSheet,
+                    label: "Dynamics (\(activeDynamics.count))",
+                    content: text,
+                    tokens: TokenEstimator.estimate(text),
+                    aboveCache: false,
+                    sourceId: nil,
+                    evictionPriority: 55
+                ))
+            }
         }
 
         // Phase 4 #7 sub-task 7 — [KNOWLEDGE-LEDGER] layer. Renders the
