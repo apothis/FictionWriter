@@ -530,6 +530,7 @@ public struct SnapshotCharacter: Codable, Equatable {
     public var customFields: [CharacterCustomField]
     public var injectionMode: InjectionMode
     public var kinks: [CharacterKink]
+    public var apparentAnatomy: String
     public var intimateAnatomy: String
 
     public init(from character: Character) {
@@ -552,6 +553,7 @@ public struct SnapshotCharacter: Codable, Equatable {
         self.customFields = character.customFields
         self.injectionMode = character.injectionMode
         self.kinks = character.kinks
+        self.apparentAnatomy = character.apparentAnatomy
         self.intimateAnatomy = character.intimateAnatomy
     }
 }

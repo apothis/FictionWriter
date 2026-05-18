@@ -39,11 +39,15 @@ public struct Character: Codable, Equatable {
     /// limit). Free-form names (no rigid taxonomy); rendered into the
     /// character's bible entry so the model writes them consistently.
     public var kinks: [CharacterKink]
-    /// Intimate / sexual anatomy detail. Deliberately NOT part of the
-    /// always-on bible description — it leaks into clothed,
-    /// non-explicit prose if always in context. Injected only when
-    /// the scene is depicted AND this character is shown undressed
-    /// (see `AnatomyGate`).
+    /// Apparent intimate anatomy — physical detail obvious even when
+    /// the character is clothed (build, breast size, hips…). Always
+    /// injected, like ordinary appearance: it does not leak, because
+    /// it is meant to be visible.
+    public var apparentAnatomy: String
+    /// Concealed intimate / sexual anatomy detail — detail NOT obvious
+    /// when clothed (nipples, genitals…). Deliberately kept out of the
+    /// always-on bible description; injected only when the scene is
+    /// depicted AND this character is shown undressed (see `AnatomyGate`).
     public var intimateAnatomy: String
 
     public init(
@@ -64,6 +68,7 @@ public struct Character: Codable, Equatable {
         customFields: [CharacterCustomField] = [],
         injectionMode: InjectionMode = .constant,
         kinks: [CharacterKink] = [],
+        apparentAnatomy: String = "",
         intimateAnatomy: String = ""
     ) {
         self.id = id
@@ -83,6 +88,7 @@ public struct Character: Codable, Equatable {
         self.customFields = customFields
         self.injectionMode = injectionMode
         self.kinks = kinks
+        self.apparentAnatomy = apparentAnatomy
         self.intimateAnatomy = intimateAnatomy
     }
 
@@ -105,6 +111,7 @@ public struct Character: Codable, Equatable {
         self.customFields = try c.decodeIfPresent([CharacterCustomField].self, forKey: .customFields) ?? []
         self.injectionMode = try c.decodeIfPresent(InjectionMode.self, forKey: .injectionMode) ?? .constant
         self.kinks = try c.decodeIfPresent([CharacterKink].self, forKey: .kinks) ?? []
+        self.apparentAnatomy = try c.decodeIfPresent(String.self, forKey: .apparentAnatomy) ?? ""
         self.intimateAnatomy = try c.decodeIfPresent(String.self, forKey: .intimateAnatomy) ?? ""
     }
 

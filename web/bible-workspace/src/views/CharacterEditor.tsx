@@ -218,15 +218,31 @@ export function CharacterEditor({
         </Section>
 
         <Section
-          title="Intimate anatomy"
-          hint="Sexual/intimate body detail. Deliberately kept OUT of the always-on description so it can't leak into clothed, non-explicit prose. Injected only when the scene is explicit (on-screen or higher) AND this character is shown undressed in the scene."
+          title="Anatomy"
+          hint="Two tiers. Apparent detail is always in context; concealed detail is gated so it can't leak into clothed, non-explicit prose."
         >
-          <Textarea
-            rows={4}
-            value={draft.intimateAnatomy ?? ""}
-            placeholder="Intimate anatomy detail — surfaces only once this character is undressed in an explicit scene."
-            onChange={(e) => update("intimateAnatomy", e.target.value)}
-          />
+          <Field
+            label="Apparent (visible when clothed)"
+            hint="Build, figure, breast size — detail obvious even dressed. Always injected, like ordinary appearance."
+          >
+            <Textarea
+              rows={3}
+              value={draft.apparentAnatomy ?? ""}
+              placeholder="e.g. tall, athletic build; full-figured."
+              onChange={(e) => update("apparentAnatomy", e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Concealed (visible only undressed)"
+            hint="Genital/intimate detail not obvious when clothed. Injected only when the scene is explicit (on-screen or higher) AND this character is shown undressed in the scene."
+          >
+            <Textarea
+              rows={4}
+              value={draft.intimateAnatomy ?? ""}
+              placeholder="Surfaces only once this character is undressed in an explicit scene."
+              onChange={(e) => update("intimateAnatomy", e.target.value)}
+            />
+          </Field>
         </Section>
 
         <Section title="Custom fields" hint="Free-form extension slots for fandom-specific or one-off metadata.">

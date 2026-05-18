@@ -30,6 +30,7 @@ public struct CharacterPatch: Codable, Equatable {
     public var customFields: [CharacterCustomField]?
     public var injectionMode: InjectionMode?
     public var kinks: [CharacterKink]?
+    public var apparentAnatomy: String?
     public var intimateAnatomy: String?
 
     public init(
@@ -47,6 +48,7 @@ public struct CharacterPatch: Codable, Equatable {
         customFields: [CharacterCustomField]? = nil,
         injectionMode: InjectionMode? = nil,
         kinks: [CharacterKink]? = nil,
+        apparentAnatomy: String? = nil,
         intimateAnatomy: String? = nil
     ) {
         self.name = name
@@ -63,6 +65,7 @@ public struct CharacterPatch: Codable, Equatable {
         self.customFields = customFields
         self.injectionMode = injectionMode
         self.kinks = kinks
+        self.apparentAnatomy = apparentAnatomy
         self.intimateAnatomy = intimateAnatomy
     }
 
@@ -85,6 +88,7 @@ public struct CharacterPatch: Codable, Equatable {
         if let v = customFields { c.customFields = v }
         if let v = injectionMode { c.injectionMode = v }
         if let v = kinks { c.kinks = v }
+        if let v = apparentAnatomy { c.apparentAnatomy = v }
         if let v = intimateAnatomy { c.intimateAnatomy = v }
         return c
     }

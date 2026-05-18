@@ -1022,6 +1022,13 @@ public enum PromptBuilder {
                 if !character.description.isEmpty {
                     out += "\n\(character.description)"
                 }
+                // Apparent anatomy — visible-when-clothed physical
+                // detail; always-on, like ordinary appearance.
+                let apparent = character.apparentAnatomy
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !apparent.isEmpty {
+                    out += "\n\(apparent)"
+                }
                 let kinkLine = formatKinks(character.kinks)
                 if !kinkLine.isEmpty {
                     out += "\nKinks — \(kinkLine)."

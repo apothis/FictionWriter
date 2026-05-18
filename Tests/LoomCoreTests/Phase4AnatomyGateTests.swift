@@ -15,13 +15,37 @@ func phase4AnatomyGateTests() -> TestSuite {
 
     // MARK: schema
 
-    s.test("intimateAnatomy defaults empty and round-trips") {
+    s.test("anatomy fields default empty and round-trip") {
         try expectEqual(Character.empty(name: "X").intimateAnatomy, "")
-        let data = try JSONEncoder.loomPretty.encode(mira())
-        try expectEqual(
-            try JSONDecoder.loom.decode(Character.self, from: data).intimateAnatomy,
-            "detailed anatomy notes"
-        )
+        try expectEqual(Character.empty(name: "X").apparentAnatomy, "")
+        var c = mira()
+        c.apparentAnatomy = "tall, broad-shouldered build"
+        let data = try JSONEncoder.loomPretty.encode(c)
+        let back = try JSONDecoder.loom.decode(Character.self, from: data)
+        try expectEqual(back.intimateAnatomy, "detailed anatomy notes")
+        try expectEqual(back.apparentAnatomy, "tall, broad-shouldered build")
+    }
+
+    s.test("apparent anatomy is always in the bible block — even a fadeToBlack scene") {
+        var project = Project(title: "T")
+        var c = Character(name: "Mira")
+        c.apparentAnatomy = "athletic, full-figured"
+        c.intimateAnatomy = "concealed detail text"
+        project.bible.characters = [c]
+        let scene = Scene.empty(id: UUID(), title: "S")
+        project.manuscript.orphanedSceneIds = [scene.id]
+        var sc = scene
+        sc.explicitnessLevel = .fadeToBlack
+        sc.prose = "Mira crossed the room."
+        let result = PromptBuilder.build(PromptContext(
+            mode: .continueProse, project: project, scenes: [scene.id: sc],
+            currentSceneId: scene.id, cursorOffset: (sc.prose as NSString).length,
+            selectionRange: nil, modelName: nil, contextBudgetTokens: 8192,
+            replyBudgetTokens: 1024
+        ))
+        // Apparent anatomy shows; concealed anatomy does not.
+        try expectTrue(result.fullPrompt.contains("athletic, full-figured"))
+        try expectFalse(result.fullPrompt.contains("concealed detail text"))
     }
 
     // MARK: AnatomyGate

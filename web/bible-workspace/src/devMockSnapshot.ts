@@ -42,8 +42,10 @@ function character(
             { name: "knife play", stance: "hardLimit" },
           ]
         : [],
+    apparentAnatomy:
+      id === CHANTAL ? "Tall, athletic, full-figured." : "",
     intimateAnatomy:
-      id === CHANTAL ? "Intimate anatomy detail for Chantal." : "",
+      id === CHANTAL ? "Concealed anatomy detail for Chantal." : "",
   };
 }
 

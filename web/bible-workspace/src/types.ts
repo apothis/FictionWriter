@@ -30,7 +30,9 @@ export interface Character {
   knownFactsBySceneId: Record<string, KnownFact[]>;
   // Per-character kink profile. Optional for legacy-payload tolerance.
   kinks?: CharacterKink[];
-  // Intimate/sexual anatomy detail — gated injection (never always-on).
+  // Apparent anatomy — visible when clothed; always injected.
+  apparentAnatomy?: string;
+  // Concealed anatomy — gated injection (never always-on).
   intimateAnatomy?: string;
 }
 
@@ -306,6 +308,7 @@ export interface CharacterPatch {
   customFields?: CharacterCustomField[];
   injectionMode?: "constant" | "keyed";
   kinks?: CharacterKink[];
+  apparentAnatomy?: string;
   intimateAnatomy?: string;
 }
 
