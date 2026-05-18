@@ -126,6 +126,35 @@ final class KoboldGenerateProvider: OllamaCallProvider {
     }
 }
 
+/// An Ollama `/api/embed` provider conforming to `KoboldEmbedding` —
+/// lets the engine's claim-filter pipeline run against a local text
+/// embedder (bge-large / mxbai-embed-large).
+final class OllamaEmbedProvider: KoboldEmbedding {
+    let baseURL: URL
+    let model: String
+    init(baseURL: URL, model: String) { self.baseURL = baseURL; self.model = model }
+    func embed(texts: [String], completion: @escaping (Result<[[Float]], Error>) -> Void) {
+        guard let url = URL(string: "/api/embed", relativeTo: baseURL)?.absoluteURL else {
+            completion(.failure(OllamaError.badURL)); return
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["model": model, "input": texts])
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 600
+        URLSession(configuration: cfg).dataTask(with: req) { data, _, err in
+            if let err = err { completion(.failure(err)); return }
+            guard let data = data,
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let rows = obj["embeddings"] as? [[Any]]
+            else { completion(.failure(OllamaError.unexpectedShape)); return }
+            completion(.success(rows.map { row in row.map { ($0 as? NSNumber)?.floatValue ?? 0 } }))
+        }.resume()
+    }
+}
+
 // Extraction goes through the production OllamaContinuityExtractor —
 // unconstrained generation + re-roll, the corrected path. The backend
 // is selectable: the small Ollama extractor, or the 24B Goetia writer
@@ -223,10 +252,13 @@ report += "- **Fixture**: \(fixture.scenes.count) scenes, \(fixture.gold_claims.
 if phase == "engine" {
     log("== ENGINE (end-to-end) ==")
     let kobold = KoboldGenerateProvider(baseURL: URL(string: koboldURL)!)
+    let embedModel = env["LOOM_SPIKE_EMBED_MODEL"] ?? "bge-large:latest"
+    let engineEmbedder = OllamaEmbedProvider(baseURL: URL(string: ollamaURL)!, model: embedModel)
     let engine = ContinuityAuditEngine(
         extractor: OllamaContinuityExtractor(provider: kobold),
         adjudicationProvider: kobold,
-        entities: []
+        entities: [],
+        embedder: engineEmbedder
     )
     let sceneInputs = fixture.scenes.map {
         ContinuityAuditEngine.SceneInput(id: $0.id, prose: $0.prose)
@@ -240,6 +272,7 @@ if phase == "engine" {
         let elapsed = Date().timeIntervalSince(started)
         var r = "# ContinuityAuditSpike — engine (end-to-end)\n\n"
         r += "- **Extraction + adjudication**: Goetia (24B) @ \(koboldURL)\n"
+        r += "- **Claim filter / knowledge similarity**: \(embedModel) @ \(ollamaURL)\n"
         r += "- **Scenes**: \(sceneInputs.count) · **Elapsed**: \(String(format: "%.0fs", elapsed))\n\n"
         switch result {
         case .failure(let e):
