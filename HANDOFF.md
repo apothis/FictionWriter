@@ -2698,23 +2698,17 @@ Phase 2** — no generation code consumed it. Then a build pass:
 All TDD red→green→commit. LOOM_NSFW.md §3.10 + LOOM_TECH_STACK.md
 updated.
 
-**Webview UI — DynamicSheet shipped.** The DynamicSheet editor landed
-in the `bible-workspace` webview: new `DYNAMICS` list section +
-`DynamicSheetEditor.tsx`, the `dynamics` snapshot field, and
-add/patch/delete bridge intents (`DynamicSheetPatch` + `ProjectSession`
-mutators + controller dispatch). Verified live in the dev preview
-(dev-mock dynamic renders; editor opens; no console errors).
-**1934 tests green. 11 commits on `main`.**
+**Webview UI — all three surfaces shipped.**
+- **DynamicSheet** — a new `DYNAMICS` list section + `DynamicSheetEditor.tsx`
+  in the `bible-workspace` webview; `dynamics` snapshot field +
+  add/patch/delete bridge intents.
+- **Scene framing + anti-slop** — a new Vite bundle (`projectTools`,
+  `LOOM_BUNDLE=projectTools`, `dist-tools/` → `Resources/ProjectTools`)
+  hosting both surfaces; `ProjectToolsWindowController` opens each as a
+  separate window from the Bible menu ("Edit Scene Framing…", "Edit
+  Anti-slop List…"). `ProjectToolsSnapshot` + `setSceneFraming` /
+  `setAntiSlopPhrases` intents + `ProjectSession` mutators.
 
-**Still pending — two webview surfaces.** User decided Scene-framing
-and anti-slop each get their own surface:
-- **Scene framing** — an editor-side webview panel showing the current
-  scene's `Scene.framing`. Needs a new Vite bundle (`LOOM_BUNDLE`
-  case in `vite.config.ts` + HTML entry + `scripts/build-bible-
-  workspace.sh` entry), a Swift window/panel controller, a bridge, and
-  an editor affordance (menu item) to open it for the current scene.
-- **Anti-slop list** — a settings webview editing
-  `ProjectSettings.antiSlopPhrases` (a string-list editor). Same
-  new-bundle scaffolding.
-Each is Planned-Project-wizard-scale build-system + new-window work —
-best as a dedicated session, not a tail-end push.
+All three verified live in the dev preview (render + no console
+errors). **1938 tests green. 14 commits on `main`.** The NSFW/craft
+tooling tranche (research → P0/P1/P2 → docs → UI) is complete.
