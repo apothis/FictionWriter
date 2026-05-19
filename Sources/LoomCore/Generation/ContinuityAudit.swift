@@ -311,19 +311,23 @@ public enum ContinuityAudit {
     ///
     /// The deterministic knowledge check (`ContinuityKnowledgeCheck`)
     /// already established the ordering — the LATER claim is the
-    /// *earliest* scene found that might reveal what the EARLIER claim
-    /// refers to. The adjudicator's one job is to **validate the
-    /// match**: do the two claims genuinely concern the same revealed
-    /// fact? It deliberately does NOT re-litigate "could the character
-    /// already know it" — that needs whole-story knowledge the pair
-    /// does not carry, and an earlier reveal, if one exists, is the
-    /// extraction's job to surface (it would then be the candidate
-    /// reveal instead). Narrowing the question this way fixed both the
-    /// §17 false positive *and* the over-conservative rejection of the
-    /// genuine violation.
+    /// earliest scene after the reference that might concern what the
+    /// EARLIER claim refers to. The adjudicator's one job is to decide
+    /// whether the two claims concern the **same specific fact**. It
+    /// deliberately does NOT re-litigate "could the character already
+    /// know it" — that needs whole-story knowledge the pair does not
+    /// carry.
+    ///
+    /// Two framing fixes (§24): the question is *proposition identity*,
+    /// not the shared subject/topic — claims about the same character or
+    /// place are not the same fact unless they assert the same thing;
+    /// and the LATER claim need not read as a literal first reveal,
+    /// because an extracted claim is usually a paraphrase that may
+    /// merely elaborate on or presuppose the fact. The old "establishes
+    /// the very fact" wording made the model reject those paraphrases.
     public static func buildKnowledgeAdjudicationPrompt(reference: Claim, reveal: Claim) -> String {
         return """
-        You are auditing a novel for continuity. A character refers to or knows a fact in an EARLIER scene. A LATER scene has been identified as the place that fact appears to be revealed. The ordering is already established — your one job is to decide whether the LATER claim genuinely reveals the SAME fact the EARLIER claim refers to.
+        You are auditing a novel for continuity. In an EARLIER scene a character refers to, or is shown knowing, a fact. A LATER scene has been flagged as a place that may concern that same fact. The scene ordering is already established — your one job is to decide whether the two claims concern the SAME SPECIFIC FACT.
 
         EARLIER — what the character knows or refers to (scene \(reference.sourceSceneId), \(reference.source.rawValue)):
         \(reference.value)
@@ -333,11 +337,13 @@ public enum ContinuityAudit {
         \(reveal.value)
         Evidence: "\(reveal.evidenceQuote)"
 
-        Choose one verdict:
-        - contradiction: the LATER claim establishes the very fact the EARLIER claim refers to — so the character refers to it before the story reveals it. A genuine continuity error.
-        - consistent: not an error — the LATER claim does not establish what the EARLIER one refers to; the two claims are about different things, or the LATER claim is unrelated.
+        Compare the specific proposition, not the shared subject or topic. Two claims about the same character, place, or object are NOT the same fact unless they assert the same thing about it — "X knows the King was poisoned" and "X served the King" share a subject but assert different facts.
 
-        Judge only whether the two claims concern the same revealed fact. Reply with one JSON object: verdict, confidence (0 to 1), and a one-sentence explanation.
+        Choose one verdict:
+        - contradiction: both claims concern the same specific fact, so the EARLIER character refers to it before the story has presented it — a genuine continuity error. The LATER claim need not be phrased as a first reveal; an extracted claim is usually a paraphrase, and it still counts if it states, elaborates on, or presupposes that same fact.
+        - consistent: the two claims concern different facts — even if they share a character, place, or topic — or the LATER claim does not concern the fact the EARLIER one refers to.
+
+        Reply with one JSON object: verdict, confidence (0 to 1), and a one-sentence explanation.
         """
     }
 

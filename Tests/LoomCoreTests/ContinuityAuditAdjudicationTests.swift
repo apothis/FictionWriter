@@ -82,6 +82,21 @@ func continuityAuditAdjudicationTests() -> TestSuite {
         try expectTrue(prompt.lowercased().contains("consistent"))
     }
 
+    s.test("the knowledge-adjudication prompt judges proposition identity, not shared topic") {
+        let reference = claim(.knowledgeState, subject: "Mara", value: "Mara knows the vault is empty",
+                              scene: "scene-2", source: .dialogue, quote: "the vault's empty")
+        let reveal = claim(.event, subject: "the vault", value: "The empty vault is discovered",
+                           scene: "scene-5", quote: "they found the vault bare")
+        let prompt = ContinuityAudit.buildKnowledgeAdjudicationPrompt(
+            reference: reference, reveal: reveal).lowercased()
+        // It must steer the model to compare the specific proposition, not
+        // merely the shared subject/topic — and accept paraphrased reveals.
+        try expectTrue(prompt.contains("specific"),
+                       "the prompt must tell the model to compare the specific fact, not the topic")
+        try expectTrue(prompt.contains("paraphrase"),
+                       "the prompt must say an extracted reveal may be a paraphrase, not a literal first reveal")
+    }
+
     s.test("the adjudication JSON schema constrains the verdict to its enum") {
         let schema = ContinuityAudit.adjudicationJSONSchema()
         let props = schema["properties"] as? [String: Any]
