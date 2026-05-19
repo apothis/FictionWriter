@@ -2737,15 +2737,24 @@ hardening:
   free-form name + stance into/curious/soft/hard limit). Rendered into
   the character's bible entry; editable in the CharacterEditor webview
   with a curated suggestion datalist.
-- **Intimate anatomy with leakage-safe gating** — `Character.intimateAnatomy`,
-  kept OUT of the always-on bible block (research 2026-05-19: in-context
-  detail leaks into clothed prose; structural fix only). `AnatomyGate`
-  injects it near the cursor only when the scene is depicted
-  (explicitness ≥ onScreen) AND the character is shown undressed —
-  detected per-character (name/alias + undress term co-occurring in a
-  paragraph), sticky scene-wide. Editable in the CharacterEditor webview.
+- **Intimate anatomy with leakage-safe gating** — two tiers:
+  `Character.apparentAnatomy` (visible-when-clothed; always-on) and
+  `Character.intimateAnatomy` (concealed; gated). `AnatomyGate` injects
+  the concealed tier only when the scene is depicted (explicitness ≥
+  onScreen) AND the character is shown undressed — detected
+  per-character (name/alias + undress term in a paragraph), with a
+  deterministic `Scene.undressedCharacterIds` author override for what
+  the heuristic misses. Editable in the CharacterEditor + scene-framing
+  webviews.
+- **Per-character kink suggestions** expanded to a curated 70-term list
+  (`lib/kinkSuggestions.ts`).
+- **AO3 work-framing panel** — `ProjectSettings.workFraming`: content
+  elements + authorial stance (played straight / subverted / critiqued).
+  `WorkFramingPrompt` feeds an anti-softening clause for "Dead Dove"
+  played-straight elements. New Work Framing tool in the project-tools
+  webview.
 
-**1992 tests green.**
+**2005 tests green.**
 
 ### 15.40 Session ledger — 2026-05-18/19 (Continuity Audit — eval harness + retrieval/filter tuning)
 
