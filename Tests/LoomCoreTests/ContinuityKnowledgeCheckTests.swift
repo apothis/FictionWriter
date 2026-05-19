@@ -160,6 +160,33 @@ func continuityKnowledgeCheckTests() -> TestSuite {
             ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim).count, 0)
     }
 
+    s.test("a negated knowledge reference ('does not know') is not an auditable violation") {
+        let claims = [
+            knows("Marco", "Marco does not know the truth #T", scene: "s2"),
+            reveal("x", "the truth #T", scene: "s4"),
+        ]
+        try expectEqual(
+            ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim).count, 0)
+    }
+
+    s.test("a bare topic-awareness reference ('knows about the X') is not an auditable violation") {
+        let claims = [
+            knows("Tomas", "Tomas knows about the lighthouse #LH", scene: "s2"),
+            reveal("x", "the lighthouse #LH", scene: "s4"),
+        ]
+        try expectEqual(
+            ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim).count, 0)
+    }
+
+    s.test("'knows about' followed by a proposition is still an auditable reference") {
+        let claims = [
+            knows("Lirien", "Lirien knows about the King's death being a poisoning #P", scene: "s2"),
+            reveal("x", "the King was poisoned #P", scene: "s4"),
+        ]
+        try expectEqual(
+            ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim).count, 1)
+    }
+
     s.test("claims in scenes outside the order are skipped") {
         let claims = [
             knows("Mara", "Mara knows it #X", scene: "s99"),

@@ -64,7 +64,9 @@ public enum ContinuityKnowledgeCheck {
         for (i, id) in sceneOrder.enumerated() { sceneIndex[id] = i }
 
         let knowledge = claims.filter {
-            $0.type == .knowledgeState && sceneIndex[$0.sourceSceneId] != nil
+            $0.type == .knowledgeState
+                && sceneIndex[$0.sourceSceneId] != nil
+                && !isTrivialReference($0.value)
         }
         let reveals = claims.filter {
             $0.type != .knowledgeState && sceneIndex[$0.sourceSceneId] != nil
@@ -97,5 +99,33 @@ public enum ContinuityKnowledgeCheck {
             }
         }
         return out
+    }
+
+    /// A knowledge_state claim that cannot be a knowledge-before-reveal
+    /// violation and so should not become a candidate (§24):
+    ///
+    /// - **Negated** — "X does not know P" is the *opposite* of the
+    ///   error; auditing it only produces false positives.
+    /// - **Bare topic-awareness** — "X knows about <a thing>" names a
+    ///   topic, not a specific fact. A real reference knows a
+    ///   proposition. The tell is a verb in the clause after "about";
+    ///   "knows about the lighthouse" has none, "knows about the King's
+    ///   death being a poisoning" does, so the latter is kept.
+    static func isTrivialReference(_ value: String) -> Bool {
+        let v = value.lowercased()
+        for negation in ["not know", "n't know", "no idea",
+                         "never knew", "no leave to know"] {
+            if v.contains(negation) { return true }
+        }
+        for marker in ["knows about ", "knew about ", "know about "] {
+            guard let r = v.range(of: marker) else { continue }
+            let rest = " " + v[r.upperBound...] + " "
+            let verbSignal = [" is ", " was ", " were ", " be ", " been ",
+                              " being ", " has ", " have ", " had ", " will "]
+            if !verbSignal.contains(where: { rest.contains($0) }) {
+                return true
+            }
+        }
+        return false
     }
 }
