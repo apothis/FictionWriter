@@ -987,3 +987,60 @@ no confidence signal. This is roughly the floor for a local model on
 genuine topical disambiguation. Further gains need either a better
 adjudication architecture or a stronger model — a broad research sweep
 is the chosen next step.
+
+## 25. Research sweep + chosen rearchitecture (2026-05-19)
+
+A three-agent prior-art sweep, briefed with §24's measured findings,
+was run on: (a) proposition matching beyond embedding cosine, (b)
+world-state tracking for the knowledge class, (c) LLM adjudication
+quality. All three independently pointed *away* from further tuning of
+the embedding-retrieval + pairwise-adjudication pipeline.
+
+**Key findings.**
+- **Embedding cosine is a bi-encoder — it scores topic, not
+  proposition.** A *cross-encoder* scores a pair jointly. NLI
+  cross-encoders additionally emit a `neutral` class that is exactly
+  "same topic, different proposition" — the §24 junk. Small DeBERTa-v3
+  NLI models (~400M) are the state of the art and run locally.
+- **`knowledge_violation` is a state-membership question** ("had fact P
+  entered character C's knowledge by scene N?"), not a similarity
+  question — which is *why* embedding retrieval fails on it. Prior art
+  (SCORE, EvolvTrip, EnigmaToM) tracks an incremental world-state.
+  Loom already built the machinery — `LedgerKnowledge` derives
+  per-character known facts by scene.
+- The verbalised-confidence dead end (§24) has a known fix — a linear
+  probe on adjudicator hidden states — but it is more involved;
+  deferred.
+
+**Chosen approach (user-confirmed 2026-05-19) — two parts, A before B.**
+
+*Part A — NLI cross-encoder proposition gate.* Export a DeBERTa-v3 NLI
+model to ONNX (Loom already links ONNX Runtime for GLiNER, and GLiNER
+already ships the DeBERTa-v3 tokenizer — the runtime precedent is
+near-identical). A new `NLIRuntime` / `NLICrossEncoder` scores each
+candidate claim pair; `ContinuityConflictRetrieval` and
+`ContinuityKnowledgeCheck` keep embedding retrieval for recall, then
+drop any pair the NLI scores `neutral`. Step A0 is a de-risk probe —
+run the model on §24's measured junk/real pairs and confirm `neutral`
+separates them before integrating.
+
+*Part B — world-state fact ledger for `knowledge_violation`.* Replace
+pairwise reference↔reveal matching with canonical fact nodes: walk
+non-knowledge claims in scene order, cluster those asserting the same
+proposition (using Part A's NLI scorer for proposition identity, not
+cosine) into fact nodes with a `firstAppearanceScene`; a
+`knowledge_state` reference at scene N is a violation when its fact
+node first appears after N. The LLM adjudicator becomes a confirmation
+backstop. Phase 2 (B3, deferred): per-character knowledge via
+`ScenePresence` + an off-page knowledge-transfer extraction pass —
+larger, couples the audit to the Bible model.
+
+Sequencing: A0 → A1–A4 → re-eval → B1–B2 → re-eval → decide on B3.
+
+**Key sources:** [Atomic-SNLI 2026](https://arxiv.org/html/2601.06528v1) ·
+[MoritzLaurer DeBERTa-v3 zeroshot-v2.0](https://huggingface.co/MoritzLaurer/deberta-v3-large-zeroshot-v2.0) ·
+[SCORE 2025](https://arxiv.org/html/2503.23512v1) ·
+[EvolvTrip 2025](https://arxiv.org/abs/2506.13641) ·
+[EnigmaToM 2025](https://arxiv.org/pdf/2503.03340) ·
+[Calibrating LLM Judges — linear probes](https://arxiv.org/html/2512.22245v1) ·
+[Auto-Prompt Ensemble for LLM Judge](https://arxiv.org/abs/2510.06538).
