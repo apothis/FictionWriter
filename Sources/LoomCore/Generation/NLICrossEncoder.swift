@@ -152,17 +152,32 @@ public final class NLICrossEncoder {
 
 public extension NLICrossEncoder {
 
+    /// Whether a candidate pair should pass the gate. Drops a pair only
+    /// when the model is *confident* it is neutral
+    /// (`P(neutral) ≥ neutralMax`). The first cut (label-based: drop
+    /// any pair whose argmax is `neutral`) dropped real attribute
+    /// contradictions whose probs were borderline (§26): paraphrased
+    /// extracted-claim contradictions don't always satisfy NLI's strict
+    /// logical-entailment frame, so the model can split 0.4/0.5/0.1 and
+    /// label-argmax `neutral` even though there is real contradiction
+    /// signal. Default `neutralMax: 0.7`.
+    static func shouldKeep(_ result: Result, neutralMax: Float = 0.7) -> Bool {
+        (result.probs[.neutral] ?? 0) < neutralMax
+    }
+
     /// Production hookup for `ContinuityAuditEngine.worldFactPairFilter`:
-    /// returns a closure that scores a candidate pair and keeps it iff
-    /// the NLI verdict is *not* `neutral`. A scoring failure falls open
-    /// (the pair is kept and the LLM adjudicates as before) — the gate
-    /// should never silently drop pairs because of an inference glitch.
-    func worldFactFilter() -> (ContinuityAudit.Claim, ContinuityAudit.Claim) -> Bool {
+    /// returns a closure that scores a candidate pair and applies
+    /// `shouldKeep`. A scoring failure falls open (the pair is kept and
+    /// the LLM adjudicates as before) — the gate should never silently
+    /// drop pairs because of an inference glitch.
+    func worldFactFilter(
+        neutralMax: Float = 0.7
+    ) -> (ContinuityAudit.Claim, ContinuityAudit.Claim) -> Bool {
         return { [weak self] earlier, later in
             guard let self = self else { return true }
             guard let r = try? self.score(premise: earlier.value, hypothesis: later.value)
             else { return true }
-            return r.label != .neutral
+            return Self.shouldKeep(r, neutralMax: neutralMax)
         }
     }
 }

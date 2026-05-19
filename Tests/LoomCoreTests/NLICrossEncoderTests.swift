@@ -72,6 +72,23 @@ func nliCrossEncoderTests() -> TestSuite {
         try expectEqual(r.label, .neutral)
     }
 
+    s.test("shouldKeep drops only confident-neutral pairs (P(neutral) ≥ neutralMax)") {
+        let confidentNeutral = NLICrossEncoder.Result(
+            label: .neutral,
+            probs: [.contradiction: 0.04, .entailment: 0.03, .neutral: 0.93])
+        let borderlineNeutral = NLICrossEncoder.Result(
+            label: .neutral,
+            probs: [.contradiction: 0.42, .entailment: 0.05, .neutral: 0.53])
+        let clearContradiction = NLICrossEncoder.Result(
+            label: .contradiction,
+            probs: [.contradiction: 0.95, .entailment: 0.01, .neutral: 0.04])
+
+        // Default 0.7: drop confident neutrals; keep borderline + clear matches.
+        try expectFalse(NLICrossEncoder.shouldKeep(confidentNeutral))
+        try expectTrue(NLICrossEncoder.shouldKeep(borderlineNeutral))
+        try expectTrue(NLICrossEncoder.shouldKeep(clearContradiction))
+    }
+
     s.test("softmax probabilities sum to 1 across the three labels") {
         guard let nli = try loadCrossEncoder() else { return }
         let r = try nli.score(premise: "the King died", hypothesis: "the King is alive")

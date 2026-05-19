@@ -500,7 +500,8 @@ if phase == "eval" {
                 adjudicationProvider: kobold,
                 entities: [],
                 embedder: OllamaEmbedProvider(baseURL: URL(string: ollamaURL)!, model: embedModel),
-                worldFactPairFilter: nliCrossEncoder?.worldFactFilter())
+                worldFactPairFilter: nliCrossEncoder?.worldFactFilter(
+                    neutralMax: Float(env["LOOM_SPIKE_NLI_NEUTRAL_MAX"] ?? "") ?? 0.7))
             liveEngine = engine
             let sceneInputs = m.scenes.map {
                 ContinuityAuditEngine.SceneInput(id: $0.id, prose: $0.prose)
