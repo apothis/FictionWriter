@@ -852,3 +852,44 @@ Next levers, unprioritised: multi-sample union extraction + Chao1
 (§21 step 2 — now empirically motivated by pass@k); the
 `knowledge_violation` collapse; precision recovery (retrieval cosine
 threshold / adjudication); GBNF constrained decoding (§21 step 3).
+
+## 23. `knowledge_violation` diagnosis (2026-05-19)
+
+The k=10 eval put `knowledge_violation` detection at **8%** — effectively
+non-functional, and it is the audit's differentiator class (§0). A
+code-level diagnosis (no fix applied yet):
+
+**Cause A — type-gating (confirmed, structural).**
+`ContinuityKnowledgeCheck.violations` filters
+`reveals = claims.filter { $0.type == .event }` and only considers
+claims typed `knowledge_state` as references. Type classification is
+~62% reliable (§15). So whenever the model types the *reveal* as
+`attribute` / `temporal` instead of `event`, or types the *reference*
+as anything but `knowledge_state`, the claim is invisible to the check
+— a candidate never forms. This is the *same* exact-type brittleness
+the §22 retrieval rewrite removed from the world-fact path, still
+present on the knowledge path. (A mistyped knowledge reference is also
+lost twice: the knowledge check needs `knowledge_state`, and the
+value-clustering retrieval explicitly *excludes* `knowledge_state`.)
+
+**Cause B — similarity threshold / framing (hypothesis).** The check
+matches a reference to a reveal at cosine `>= 0.7`. A knowledge claim
+("X knows / references P", often verbose) and its reveal ("P", terse,
+plainly asserted) are deliberately *differently framed*, so their
+embedding cosine can sit below 0.7 even when they concern the same
+fact. Needs verification when this is tuned.
+
+The check is a long conjunction — reference extracted + typed
+`knowledge_state` + reveal extracted + typed `event` + cosine ≥ 0.7 +
+reveal-after-reference ordering + adjudicator returns `contradiction` —
+seven conditions, several probabilistic; their product lands near the
+observed 8%.
+
+**Recommended fix.** Apply the §22 philosophy to the knowledge path:
+do not gate on the unreliable `type` label. Treat *any* non-reference
+claim as a candidate reveal (matched by proposition similarity, not by
+`type == .event`); retune or lower the threshold, or match on a
+normalised proposition; let the adjudicator be the precision gate. The
+ordering rule (reveal scene after reference scene) and the
+adjudication step stay. TDD against the four `knowledge_violation`
+contradictions in the eval fixture set.
