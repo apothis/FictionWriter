@@ -2746,3 +2746,47 @@ hardening:
   paragraph), sticky scene-wide. Editable in the CharacterEditor webview.
 
 **1992 tests green.**
+
+### 15.40 Session ledger — 2026-05-18/19 (Continuity Audit — eval harness + retrieval/filter tuning)
+
+A long multi-day session on the L10 Continuity Audit, picking up from
+the §20 open problems. Phase 1 was a wide research pass (four parallel
+agents — claim-extraction recall, multi-sample ensembling, constrained
+decoding, comparable systems); findings + the chosen plan are
+`LOOM_CONTINUITY_AUDIT.md` §21. Then the build:
+
+**Eval harness.** `ContinuityEvalMetrics` (LoomCore, pure-data, TDD) —
+stage-conditioned scoring + multi-run aggregation (mean ± CI, pass@k /
+pass^k) + Chao1 coverage. A medium hand-graded fixture set:
+`Tests/LoomCoreTests/Fixtures/ContinuityAuditEval/` — four manuscripts,
+40 planted contradictions. An `eval` phase on `ContinuityAuditSpike`
+(extraction / engine modes, k runs).
+
+**Diagnosis + fixes.** The first engine baseline read 17% end-to-end
+finding recall vs ~84% extraction recall. `DebugLog` stage counts
+localised the collapse: the claim-filter's evidence validation dropped
+~80 claims/audit (fragment-vs-sentence cosine misfire), and retrieval
+formed only 2–7 pairs/audit (exact `(type,subject)` keying defeated by
+subject/type drift). Fixes, all TDD red→green→commit:
+1. eval matcher — stem before word-Jaccard;
+2. `ContinuityConflictRetrieval` — cluster by value similarity, not an
+   exact key (type-tolerant, drift-tolerant; `event` now pairable);
+3. `ContinuityClaimFilter.validateEvidence` — verbatim-substring first,
+   cosine only as fallback (evidence drops ~80 → ~4);
+4. engine wires the embedding similarity into retrieval (pairs 2–7 → ~100);
+5. speaker-aware dialogue routing — `Claim.speaker` (additive,
+   forward-load), same-speaker dialogue pairs.
+
+**Definitive k=10 engine eval (2026-05-19):** finding recall **35% ±4**,
+precision **75% ±7**, F1 0.46; **pass@k 26/40** (caught in ≥1 of 10
+runs), pass^k 3/40. Per-run recall roughly doubled (~17% → 35%). The
+pass@k/per-run gap motivates multi-sample aggregation (§21 step 2).
+Open: `knowledge_violation` ≈ 8%, ~14/40 contradictions never caught,
+dialogue routing showed no measurable gain (speaker labelling
+unreliable). Full write-up + next levers: `LOOM_CONTINUITY_AUDIT.md`
+§22.
+
+**Process note.** This session ran concurrently with a second session
+(NSFW/craft tooling, §15.39) on the same `main` branch — different
+subsystems, no file conflicts, but shared-tree builds fail whenever
+either session is mid-edit.

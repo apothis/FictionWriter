@@ -1,18 +1,16 @@
 # Loom — Continuity Audit (design + plan)
 
-> **Status: Phase B built + architecturally validated; tuning ongoing
-> (2026-05-18).** Phase A spike cleared the feasibility gate (§13); Phase B
-> built the pipeline (§14), tuned extraction (§15), ran end to end (§16),
-> wired the claim-filter embedder (§17), and routed the knowledge check
-> through the adjudicator (§18). Repeated end-to-end runs (§19) give the
-> honest picture: the pipeline is architecturally sound (1855 tests green)
-> and surfaces real contradictions, but per-run coverage is **stochastic**
-> (extraction recall ~83%) and precision is imperfect — it is a usable
-> review aid, not yet polished. Remaining: sustained extraction
-> recall/precision tuning, then Phase C (Bible Workspace surface). This
-> document is the authoritative plan; it follows the `LOOM_*_SPIKE` /
-> `LOOM_PLANNED_PROJECT` pattern. Inventory pointer: **L10** in
-> [`LOOM_PLAN.md`](LOOM_PLAN.md).
+> **Status: Phase B built + tuned against an eval harness; tuning ongoing
+> (2026-05-19).** Phase A cleared the feasibility gate (§13); Phase B built
+> the pipeline (§14–18). §19–20 gave the honest stochastic picture and the
+> open problems; §21 is the research pass + plan; §22 is the eval harness
+> and the retrieval/filter tuning. Definitive k=10 engine eval: end-to-end
+> finding recall **35% ±4**, precision **75% ±7**, pass@k 26/40 — per-run
+> recall roughly doubled from the ~17% baseline. It is a usable review aid
+> that improves on re-run, not yet polished. Remaining: multi-sample
+> aggregation, the `knowledge_violation` collapse, precision recovery, then
+> Phase C (Bible Workspace surface). This document is the authoritative
+> plan. Inventory pointer: **L10** in [`LOOM_PLAN.md`](LOOM_PLAN.md).
 
 ## 0. What this is
 
@@ -777,3 +775,80 @@ steps 2–3 without dice-rolling.
 [Lost in Stories / ConStory-Bench, ACL 2026](https://arxiv.org/abs/2603.05890) ·
 [SCORE, 2025](https://arxiv.org/abs/2503.23512) ·
 [Stochasticity in Agentic Evaluations, 2025](https://arxiv.org/html/2512.06710v1).
+
+## 22. Eval harness + retrieval/filter tuning — results (2026-05-19)
+
+§21's step 1 (the eval harness) was built and then used to diagnose and
+tune the engine. Summary of the work and the definitive numbers.
+
+**The eval harness.** `ContinuityEvalMetrics` (LoomCore, pure-data, 26
+tests) — stage-conditioned scoring: extraction recall, adjudication
+P/R/F1, end-to-end finding P/R, multi-run aggregation (mean ± CI,
+pass@k / pass^k), Chao1 coverage. A medium fixture set —
+`Tests/LoomCoreTests/Fixtures/ContinuityAuditEval/`, four manuscripts
+(Lighthouse + three new: sci-fi, fantasy, thriller), **40 planted
+contradictions**, 111 gold claims, 58 gold pairs, each contradiction
+tagged `kind` + `scene_distance`. An `eval` phase on
+`ContinuityAuditSpike` drives the set k times (extraction mode or full
+engine mode) and scores it.
+
+**Baseline + diagnosis.** The first engine baseline measured end-to-end
+finding recall at **17%** against ~84% per-scene extraction recall — a
+~67-point collapse. `DebugLog` stage counts localised it: (a) the
+claim-filter's evidence validation dropped ~80 of ~200 claims/audit —
+short verbatim quotes embed far from the long sentences containing
+them, so a cosine-only check false-dropped them; (b) retrieval formed
+only 2–7 candidate pairs/audit — exact `(type, subject)` keying never
+matched when the model drifted a claim's subject or type.
+
+**Fixes (all TDD, committed).**
+1. Eval matcher — stem before word-Jaccard (inflectional variants were
+   scored as extraction misses).
+2. `ContinuityConflictRetrieval` — cluster by **value similarity**
+   (injected closure) instead of an exact `(type, subject)` key;
+   type-tolerant, drift-tolerant; `event` claims now pairable.
+3. `ContinuityClaimFilter.validateEvidence` — verbatim-substring check
+   first; the cosine fallback applies only to non-verbatim quotes.
+   Evidence drops fell from ~80 to ~4 per audit.
+4. Engine wires the embedding-backed similarity into retrieval
+   (cosine threshold 0.7); candidate pairs rose from 2–7 to ~100.
+5. Speaker-aware dialogue routing — claims carry a `speaker`; two
+   dialogue claims pair when they share a speaker (a character
+   contradicting themselves), never with narration.
+
+**Definitive k=10 engine eval (2026-05-19):**
+
+| metric | value |
+|---|---|
+| finding recall | **35% ±4** |
+| finding precision | **75% ±7** |
+| F1 | 0.46 |
+| pass@k — caught in ≥1 of 10 runs | **26/40 (65%)** |
+| pass^k — caught in every run | 3/40 |
+
+Per-run finding recall roughly **doubled** (≈17% → 35%) — the durable
+gain is the evidence-filter and retrieval-embedding fixes, both
+stage-count-verified. The k=3 runs along the way (19% / 45% / 35%) had
+CIs too wide to trust individually; k=10 (±4) is the real figure.
+
+**Honest state + open problems.**
+- **pass@k 26/40 (65%)** vs 35% per run — re-running an audit ~doubles
+  coverage. This empirically supports the §21 multi-sample-aggregation
+  direction (run k times, union findings, Chao1 completeness).
+- **`knowledge_violation` ≈ 8%** — nearly non-functional; needs its own
+  diagnosis.
+- **~14 of 40 contradictions never caught in 10 runs** — a hard floor
+  from extraction (both claims must surface together) and from
+  divergent claim phrasing that even embedding clustering misses.
+- **Dialogue routing showed no measurable gain** — the code is correct
+  and tested, but the extractor does not label `speaker` reliably or
+  consistently enough for same-speaker pairs to form. Revisit only with
+  a more reliable speaker signal.
+- Precision 75%; `tuesday_account` (44%) is the outlier — more
+  candidate pairs since the retrieval rewrite means more false
+  findings reach the adjudicator.
+
+Next levers, unprioritised: multi-sample union extraction + Chao1
+(§21 step 2 — now empirically motivated by pass@k); the
+`knowledge_violation` collapse; precision recovery (retrieval cosine
+threshold / adjudication); GBNF constrained decoding (§21 step 3).
