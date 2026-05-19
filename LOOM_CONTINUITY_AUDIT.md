@@ -893,3 +893,97 @@ normalised proposition; let the adjudicator be the precision gate. The
 ordering rule (reveal scene after reference scene) and the
 adjudication step stay. TDD against the four `knowledge_violation`
 contradictions in the eval fixture set.
+
+## 24. `knowledge_violation` fix campaign + model A/B (2026-05-19)
+
+§23's diagnosis was acted on. The knowledge path was rebuilt with seven
+TDD fixes, the writer model was A/B'd against alternatives, and two
+load-bearing assumptions were *measured* rather than guessed. Net
+result: `knowledge_violation` went from **0/4 → 3/4** on the eval
+fixtures. This section records the campaign and the honest ceiling it
+reached.
+
+**Seven pipeline fixes (all TDD, committed `07f07e8`…`7bda335`).**
+1. **Type-tolerant reveal matching** — the reveal side no longer gates
+   on `type == .event`; any non-`knowledge_state` claim is a candidate
+   reveal. (§23 cause A.)
+2. **No fuzzy-early-match veto** — the check picked the *globally*
+   earliest matching reveal then required it to be after the reference;
+   a topically-related claim in an early scene became the "earliest
+   reveal" and silently cleared the violation. Now only reveals strictly
+   *after* the reference scene are considered.
+3. **Match threshold 0.55 → 0.70** — §23 hypothesised real
+   reference→reveal cosines sit below 0.7; direct measurement disproved
+   it (real reveals 0.73–0.94, unrelated junk below 0.70). 0.55 flooded
+   the adjudicator with noise.
+4. **Task-fit verdict vocabulary** — a knowledge-before-reveal error has
+   the two claims *agreeing* about the fact, so it is not a logical
+   "contradiction"; reusing the `{contradiction, consistent}` enum made
+   the model map two agreeing claims to "consistent". A direct probe
+   showed the model recognised the same fact yet returned `consistent`
+   5/6 and 6/6 on real violations. A `KnowledgeVerdict {violation,
+   not_a_violation}` vocabulary (own schema, parser, prompt) flipped the
+   probe to 6/6, 3/6, 6/6.
+5. **Knowledge-specific schema + parser** — `knowledgeAdjudication`
+   path, separate from the world-fact `Adjudication`.
+6. **Scene-prose adjudication context** — the adjudicator now sees a
+   window of each claim's real scene prose, not two stripped one-line
+   claims (see the decisive measurement below).
+7. **Trivial-reference filter** — drops negated references ("X does not
+   know P") and bare topic-awareness ("X knows about the lighthouse" —
+   a topic, not a proposition) before candidate formation.
+
+Plus two infra fixes: the `ContinuityAuditSpike` eval harness now
+detects the instruct template from the loaded model name (so a
+model-vs-model A/B is fair), and `InstructTemplates.detect` now maps
+stock Mistral-Small-3.x (2501/2503/2506) to V7 Tekken.
+
+**Model A/B (k=1 screens, eval harness).** The writer model is Goetia
+(Mistral-Small-3 24B). Alternatives were tested for the audit task:
+
+| model | recall | precision | knowledge | attribute |
+|---|---|---|---|---|
+| Goetia 24B (writer) | 33% | 59% | 0/4 | 38% |
+| Qwen3.6-27B *(RP finetune)* | 23% | 63% | 0/4 | 25% |
+| Mistral-Small-24B abliterated | 44% | 57% | 1/4 | 31% |
+| **Gemma-4-31B abliterated** | **46%** | 43% | **3/4** | **56%** |
+
+A roleplay/uncensored finetune (Qwen3.6 "HauhauCS") was *worst* — RP
+tuning sacrifices instruction-following. Abliterated *instruct* models
+(refusals removed, reasoning intact) are the right class; Gemma-4-31B
+abliterated clearly won on `knowledge_violation` and `attribute_drift`.
+Uncensored matters because the manuscripts contain explicit/dark
+fiction — a refusing model degrades extraction.
+
+**Two decisive measurements (proven, not guessed).**
+- **Embedding cosine cannot separate a real knowledge violation from a
+  topical look-alike.** The two real pairs measured at 0.73 and 0.78;
+  five junk pairs scored *higher*, up to 0.83 (a junk pair sharing a
+  noun phrase out-scores a real violation). So the candidate set is
+  irreducibly topically-noisy — no similarity threshold cleans it, and
+  discrimination *must* be the adjudicator's job. This motivated fix 6.
+- **The adjudicator returns no usable confidence signal.** Abliterated
+  Gemma-4-31B reported `confidence: 1.0` on every probe call — real and
+  junk alike. A confidence floor is not possible.
+
+**Result (k=1, all four manuscripts).** Gemma-4-31B + the seven fixes:
+finding recall **46%**, precision **43%**, `knowledge_violation`
+**3/4** (lighthouse c2, ash_court c11, tuesday c11 caught; long_watch
+c7 missed), `attribute_drift` **56%**. Versus §22's k=10 baseline
+(recall 35%, knowledge ~8%) this is a real gain on the differentiator
+class — but every number here is **k=1 and noisy** (recall CI ±~24); a
+k=3+ definitive run has not been done.
+
+**Honest ceiling.** The knowledge path is no longer structurally broken
+(candidates form; the adjudicator is willing and correctly framed; it
+catches 3/4). The remaining cost is precision: of ~12 junk knowledge
+candidates per run the adjudicator wrongly stamps ~6 `violation`, of
+which ~2–3 are actually genuine same-fact pairs the eval fixture did
+not plant (fixture-completeness, cf. §19 FP2) and ~3–4 are real topical
+errors. There is **no remaining clean lever**: candidate quality can't
+be filtered by similarity (proven), the references are bare facts
+indistinguishable from real ones by surface form or type, and there is
+no confidence signal. This is roughly the floor for a local model on
+genuine topical disambiguation. Further gains need either a better
+adjudication architecture or a stronger model — a broad research sweep
+is the chosen next step.
