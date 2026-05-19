@@ -154,6 +154,25 @@ func koboldWrap(_ prompt: String) -> (text: String, stops: [String]) {
 }
 log("kobold model: \(koboldModelName.isEmpty ? "?" : koboldModelName) → template \(koboldTemplate.rawValue)")
 
+// MARK: - NLI proposition gate (§25 Part A)
+// Loads the exported NLI cross-encoder when the bundle is present.
+// `LOOM_SPIKE_NLI_GATE=0` disables it (for A/B with vs without).
+let nliCrossEncoder: NLICrossEncoder? = {
+    if env["LOOM_SPIKE_NLI_GATE"] == "0" { return nil }
+    let sem = DispatchSemaphore(value: 0)
+    var out: NLICrossEncoder? = nil
+    Task {
+        defer { sem.signal() }
+        do {
+            let envRT = try NLIRuntime.makeEnvironment()
+            out = try await NLICrossEncoder(env: envRT)
+        } catch { /* bundle missing — skip the gate silently */ }
+    }
+    sem.wait()
+    return out
+}()
+log("NLI gate: \(nliCrossEncoder == nil ? "disabled (no bundle or LOOM_SPIKE_NLI_GATE=0)" : "enabled")")
+
 guard let fixtureData = FileManager.default.contents(atPath: fixturePath),
       let fixture = try? JSONDecoder().decode(Fixture.self, from: fixtureData) else {
     log("FATAL: cannot load fixture at \(fixturePath)")
@@ -480,7 +499,8 @@ if phase == "eval" {
                 extractor: OllamaContinuityExtractor(provider: kobold),
                 adjudicationProvider: kobold,
                 entities: [],
-                embedder: OllamaEmbedProvider(baseURL: URL(string: ollamaURL)!, model: embedModel))
+                embedder: OllamaEmbedProvider(baseURL: URL(string: ollamaURL)!, model: embedModel),
+                worldFactPairFilter: nliCrossEncoder?.worldFactFilter())
             liveEngine = engine
             let sceneInputs = m.scenes.map {
                 ContinuityAuditEngine.SceneInput(id: $0.id, prose: $0.prose)
@@ -516,7 +536,8 @@ if phase == "engine" {
         extractor: OllamaContinuityExtractor(provider: kobold),
         adjudicationProvider: kobold,
         entities: [],
-        embedder: engineEmbedder
+        embedder: engineEmbedder,
+        worldFactPairFilter: nliCrossEncoder?.worldFactFilter()
     )
     let sceneInputs = fixture.scenes.map {
         ContinuityAuditEngine.SceneInput(id: $0.id, prose: $0.prose)

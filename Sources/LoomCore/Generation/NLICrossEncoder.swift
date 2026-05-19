@@ -149,3 +149,20 @@ public final class NLICrossEncoder {
         return sum > 0 ? exps.map { $0 / sum } : exps
     }
 }
+
+public extension NLICrossEncoder {
+
+    /// Production hookup for `ContinuityAuditEngine.worldFactPairFilter`:
+    /// returns a closure that scores a candidate pair and keeps it iff
+    /// the NLI verdict is *not* `neutral`. A scoring failure falls open
+    /// (the pair is kept and the LLM adjudicates as before) — the gate
+    /// should never silently drop pairs because of an inference glitch.
+    func worldFactFilter() -> (ContinuityAudit.Claim, ContinuityAudit.Claim) -> Bool {
+        return { [weak self] earlier, later in
+            guard let self = self else { return true }
+            guard let r = try? self.score(premise: earlier.value, hypothesis: later.value)
+            else { return true }
+            return r.label != .neutral
+        }
+    }
+}

@@ -146,6 +146,25 @@ func continuityAuditEngineTests() -> TestSuite {
         try expectEqual(findings[0].kind, .knowledgeViolation)
     }
 
+    s.test("worldFactPairFilter drops a candidate pair before adjudication") {
+        let ext = StubExtractor()
+        ext.claimsByScene = [
+            "s1": [attr("Mara", "green eyes", scene: "s1")],
+            "s2": [attr("Mara", "green-ish eyes", scene: "s2")],
+        ]
+        let adj = StubAdjProvider()
+        adj.responder = { _ in .success(contradictionJSON) }
+        // The filter rejects every world-fact pair — even an adjudicator
+        // that always returns `contradiction` produces zero findings.
+        let engine = ContinuityAuditEngine(
+            extractor: ext, adjudicationProvider: adj, entities: [],
+            worldFactPairFilter: { _, _ in false })
+        var result: Result<[ContinuityFinding], Error>?
+        engine.audit(scenes: scenes, projectURL: tempProject()) { result = $0 }
+        drive(ext, adj)
+        try expectEqual(try result?.get().count, 0)
+    }
+
     s.test("a knowledge candidate the adjudicator rejects produces no finding") {
         let ext = StubExtractor()
         ext.claimsByScene = knowledgeClaims()
