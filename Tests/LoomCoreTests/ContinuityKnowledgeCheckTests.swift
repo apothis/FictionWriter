@@ -96,7 +96,7 @@ func continuityKnowledgeCheckTests() -> TestSuite {
 
     s.test("within the earliest reveal scene the strongest match is the candidate") {
         func gradedSim(_ a: String, _ b: String) -> Double {
-            b.contains("strong") ? 0.9 : 0.6
+            b.contains("strong") ? 0.95 : 0.75
         }
         let claims = [
             knows("Mara", "Mara knows P", scene: "s2"),
@@ -107,6 +107,24 @@ func continuityKnowledgeCheckTests() -> TestSuite {
             claims: claims, sceneOrder: order, similarity: gradedSim)
         try expectEqual(v.count, 1)
         try expectEqual(v[0].revealClaim.value, "a strong match")
+    }
+
+    s.test("the default threshold rejects a weak (~0.65) match, accepts a strong (~0.75) one") {
+        // The default is tuned to ~0.70: measured real reveals sit at
+        // 0.73–0.94, unrelated junk below 0.70 (LOOM_CONTINUITY_AUDIT §24).
+        func sim2(_ a: String, _ b: String) -> Double { b.contains("strong") ? 0.75 : 0.65 }
+        let weak = [
+            knows("Mara", "Mara knows P", scene: "s2"),
+            reveal("x", "a weak match", scene: "s4"),
+        ]
+        try expectEqual(
+            ContinuityKnowledgeCheck.violations(claims: weak, sceneOrder: order, similarity: sim2).count, 0)
+        let strong = [
+            knows("Mara", "Mara knows P", scene: "s2"),
+            reveal("x", "a strong match", scene: "s4"),
+        ]
+        try expectEqual(
+            ContinuityKnowledgeCheck.violations(claims: strong, sceneOrder: order, similarity: sim2).count, 1)
     }
 
     s.test("a sub-threshold similarity does not count as a reveal of the proposition") {

@@ -50,15 +50,15 @@ public enum ContinuityKnowledgeCheck {
     /// similarity alone. Type classification is only ~62% reliable
     /// (`LOOM_CONTINUITY_AUDIT.md` §23), so gating reveals on
     /// `type == .event` made most reveals invisible; the adjudicator is
-    /// the precision gate. The threshold is lower than the world-fact
-    /// retrieval path's 0.7 because a knowledge reference ("X knows P",
-    /// verbose) and its reveal ("P", terse) are deliberately framed
-    /// differently and embed further apart.
+    /// the precision gate. The default threshold is 0.70: measured real
+    /// reference→reveal cosines sit at 0.73–0.94, while unrelated junk
+    /// pairs sit below 0.70 — a lower threshold floods the adjudicator
+    /// with noise (§24).
     public static func violations(
         claims: [ContinuityAudit.Claim],
         sceneOrder: [String],
         similarity: (String, String) -> Double,
-        threshold: Double = 0.55
+        threshold: Double = 0.70
     ) -> [Violation] {
         var sceneIndex: [String: Int] = [:]
         for (i, id) in sceneOrder.enumerated() { sceneIndex[id] = i }
