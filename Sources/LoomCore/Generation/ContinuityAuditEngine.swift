@@ -262,8 +262,18 @@ public final class ContinuityAuditEngine {
             return
         }
         let candidate = knowledgeCandidates[index]
+        // Show each claim with a window of its real scene prose:
+        // embedding cosine can't separate a real violation from a
+        // topical look-alike, so the adjudicator needs the actual text.
+        let refClaim = candidate.knowledgeClaim
+        let revClaim = candidate.revealClaim
+        let refContext = ContinuityAudit.evidenceContextWindow(
+            quote: refClaim.evidenceQuote, in: prose(of: refClaim.sourceSceneId))
+        let revContext = ContinuityAudit.evidenceContextWindow(
+            quote: revClaim.evidenceQuote, in: prose(of: revClaim.sourceSceneId))
         let prompt = ContinuityAudit.buildKnowledgeAdjudicationPrompt(
-            reference: candidate.knowledgeClaim, reveal: candidate.revealClaim)
+            reference: refClaim, reveal: revClaim,
+            referenceContext: refContext, revealContext: revContext)
         adjudicationProvider.call(
             prompt: prompt,
             schema: ContinuityAudit.knowledgeAdjudicationJSONSchema(),
@@ -318,6 +328,11 @@ public final class ContinuityAuditEngine {
     }
 
     // MARK: - Helpers
+
+    /// The prose of a scene by id, or empty if the scene is unknown.
+    private func prose(of sceneId: String) -> String {
+        scenes.first { $0.id == sceneId }?.prose ?? ""
+    }
 
     /// Run `work` on the main thread (inline when already on it, so
     /// the recursive stepping stays deterministic for synchronous

@@ -345,15 +345,20 @@ public enum ContinuityAudit {
     /// know it" — that needs whole-story knowledge the pair does not
     /// carry.
     ///
-    /// Three framing fixes (§24): the verdict words are task-fit
+    /// Four framing fixes (§24): the verdict words are task-fit
     /// (`violation` / `not_a_violation`) because the two claims *agree*
     /// about the fact, so reusing `contradiction`/`consistent` made the
     /// model read agreement as "consistent / no error"; the question is
-    /// *proposition identity*, not the shared subject/topic; and the
-    /// LATER claim need not read as a literal first reveal, because an
-    /// extracted claim is usually a paraphrase that may merely elaborate
-    /// on or presuppose the fact.
-    public static func buildKnowledgeAdjudicationPrompt(reference: Claim, reveal: Claim) -> String {
+    /// *proposition identity*, not the shared subject/topic; the LATER
+    /// claim need not read as a literal first reveal, because an
+    /// extracted claim is usually a paraphrase; and each claim is shown
+    /// with a window of its real scene prose, because embedding cosine
+    /// cannot separate a real violation from a topical look-alike — the
+    /// adjudicator needs the actual text to make that call.
+    public static func buildKnowledgeAdjudicationPrompt(
+        reference: Claim, reveal: Claim,
+        referenceContext: String, revealContext: String
+    ) -> String {
         return """
         You are auditing a novel for continuity errors of one specific kind: a character KNOWING something before the story has revealed it.
 
@@ -362,14 +367,16 @@ public enum ContinuityAudit {
         The two passages will AGREE about the fact — that agreement is expected, it is what links them. Agreement is NOT a reason to clear the error: the error IS that the character already knows the agreed fact. This is not a logical contradiction; it is a knowledge-timing error.
 
         EARLIER — what the character knows or refers to (scene \(reference.sourceSceneId), \(reference.source.rawValue)):
-        \(reference.value)
-        Evidence: "\(reference.evidenceQuote)"
+        Claim: \(reference.value)
+        Scene text:
+        \(referenceContext)
 
         LATER — where that fact is presented (scene \(reveal.sourceSceneId), \(reveal.source.rawValue)):
-        \(reveal.value)
-        Evidence: "\(reveal.evidenceQuote)"
+        Claim: \(reveal.value)
+        Scene text:
+        \(revealContext)
 
-        Compare the specific proposition, not the shared subject or topic. Two passages about the same character, place, or object concern different facts unless they assert the same thing — "X knows the King was poisoned" and "X served the King" share a subject but are different facts. The LATER passage need not read as a first reveal; an extracted claim is usually a paraphrase, and it still counts if it states, elaborates on, or presupposes that same fact.
+        Read the scene text, not just the one-line claims — the claims are extracted summaries and may be imprecise. Compare the specific proposition, not the shared subject or topic. Two passages about the same character, place, or object concern different facts unless they assert the same thing — "X knows the King was poisoned" and "X served the King" share a subject but are different facts. The LATER passage need not read as a first reveal; the fact still counts if the scene states, elaborates on, or presupposes it.
 
         Choose one verdict:
         - violation: the two passages concern the same specific fact, so the EARLIER character knows it before the LATER scene presents it.
@@ -377,6 +384,29 @@ public enum ContinuityAudit {
 
         Reply with one JSON object: verdict, confidence (0 to 1), and a one-sentence explanation.
         """
+    }
+
+    /// A context window of `prose` around `quote` — the evidence quote
+    /// plus up to `radius` characters of prose each side — so the
+    /// knowledge adjudicator judges against real scene text, not a
+    /// stripped one-line claim. Falls back to the prose head when the
+    /// quote is not a verbatim substring (extraction usually quotes
+    /// verbatim, but not always).
+    public static func evidenceContextWindow(
+        quote: String, in prose: String, radius: Int = 500
+    ) -> String {
+        let q = quote.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, let r = prose.range(of: q) else {
+            return String(prose.prefix(radius * 2))
+        }
+        let lo = prose.index(r.lowerBound, offsetBy: -radius, limitedBy: prose.startIndex)
+            ?? prose.startIndex
+        let hi = prose.index(r.upperBound, offsetBy: radius, limitedBy: prose.endIndex)
+            ?? prose.endIndex
+        var window = String(prose[lo..<hi])
+        if lo > prose.startIndex { window = "…" + window }
+        if hi < prose.endIndex { window += "…" }
+        return window
     }
 
     public static func adjudicationJSONSchema() -> [String: Any] {

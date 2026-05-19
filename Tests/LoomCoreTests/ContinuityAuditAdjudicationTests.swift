@@ -73,11 +73,11 @@ func continuityAuditAdjudicationTests() -> TestSuite {
                               scene: "scene-2", source: .dialogue, quote: "the vault's empty")
         let reveal = claim(.event, subject: "the vault", value: "The empty vault is discovered",
                            scene: "scene-5", quote: "they found the vault bare")
-        let prompt = ContinuityAudit.buildKnowledgeAdjudicationPrompt(reference: reference, reveal: reveal)
+        let prompt = ContinuityAudit.buildKnowledgeAdjudicationPrompt(
+            reference: reference, reveal: reveal,
+            referenceContext: "ref scene", revealContext: "reveal scene")
         try expectTrue(prompt.contains("Mara knows the vault is empty"))
         try expectTrue(prompt.contains("The empty vault is discovered"))
-        try expectTrue(prompt.contains("the vault's empty"))
-        try expectTrue(prompt.contains("they found the vault bare"))
         // it must offer the non-error way out
         try expectTrue(prompt.lowercased().contains("not_a_violation"))
     }
@@ -88,7 +88,8 @@ func continuityAuditAdjudicationTests() -> TestSuite {
         let reveal = claim(.event, subject: "the vault", value: "The empty vault is discovered",
                            scene: "scene-5", quote: "they found the vault bare")
         let prompt = ContinuityAudit.buildKnowledgeAdjudicationPrompt(
-            reference: reference, reveal: reveal).lowercased()
+            reference: reference, reveal: reveal,
+            referenceContext: "ref scene", revealContext: "reveal scene").lowercased()
         // The two claims agreeing about the fact IS the violation — the
         // model must not read agreement as "consistent / no error" (§24).
         try expectTrue(prompt.contains("agree"),
@@ -113,6 +114,34 @@ func continuityAuditAdjudicationTests() -> TestSuite {
         } catch {}
     }
 
+    s.test("evidenceContextWindow returns the quote framed by surrounding prose") {
+        let prose = String(repeating: "a ", count: 400) + "THE QUOTE HERE "
+            + String(repeating: "b ", count: 400)
+        let w = ContinuityAudit.evidenceContextWindow(quote: "THE QUOTE HERE", in: prose, radius: 120)
+        try expectTrue(w.contains("THE QUOTE HERE"))
+        try expectTrue(w.count < prose.count, "the window must be smaller than the full prose")
+        try expectTrue(w.contains("…"), "a window cut from longer prose is ellipsis-marked")
+    }
+
+    s.test("evidenceContextWindow falls back to the prose when the quote is absent") {
+        let w = ContinuityAudit.evidenceContextWindow(
+            quote: "not present", in: "a short scene of prose", radius: 120)
+        try expectTrue(w.contains("a short scene of prose"))
+    }
+
+    s.test("the knowledge-adjudication prompt carries the scene-context windows") {
+        let reference = claim(.knowledgeState, subject: "Mara", value: "Mara knows the vault is empty",
+                              scene: "scene-2", source: .dialogue, quote: "the vault's empty")
+        let reveal = claim(.event, subject: "the vault", value: "The empty vault is discovered",
+                           scene: "scene-5", quote: "they found the vault bare")
+        let prompt = ContinuityAudit.buildKnowledgeAdjudicationPrompt(
+            reference: reference, reveal: reveal,
+            referenceContext: "Mara whispered that the vault's empty, eyes down.",
+            revealContext: "They cracked the door and found the vault bare.")
+        try expectTrue(prompt.contains("Mara whispered that the vault's empty, eyes down."))
+        try expectTrue(prompt.contains("They cracked the door and found the vault bare."))
+    }
+
     s.test("the knowledge-adjudication JSON schema constrains the verdict to violation / not_a_violation") {
         let schema = ContinuityAudit.knowledgeAdjudicationJSONSchema()
         let props = schema["properties"] as? [String: Any]
@@ -126,13 +155,15 @@ func continuityAuditAdjudicationTests() -> TestSuite {
         let reveal = claim(.event, subject: "the vault", value: "The empty vault is discovered",
                            scene: "scene-5", quote: "they found the vault bare")
         let prompt = ContinuityAudit.buildKnowledgeAdjudicationPrompt(
-            reference: reference, reveal: reveal).lowercased()
+            reference: reference, reveal: reveal,
+            referenceContext: "ref scene", revealContext: "reveal scene").lowercased()
         // It must steer the model to compare the specific proposition, not
-        // merely the shared subject/topic — and accept paraphrased reveals.
+        // merely the shared subject/topic — and to read the scene text
+        // rather than trust the imprecise one-line claims.
         try expectTrue(prompt.contains("specific"),
                        "the prompt must tell the model to compare the specific fact, not the topic")
-        try expectTrue(prompt.contains("paraphrase"),
-                       "the prompt must say an extracted reveal may be a paraphrase, not a literal first reveal")
+        try expectTrue(prompt.contains("imprecise"),
+                       "the prompt must say the one-line claims are imprecise — read the scene text")
     }
 
     s.test("the adjudication JSON schema constrains the verdict to its enum") {
