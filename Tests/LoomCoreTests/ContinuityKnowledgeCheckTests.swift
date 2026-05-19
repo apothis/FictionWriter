@@ -68,14 +68,45 @@ func continuityKnowledgeCheckTests() -> TestSuite {
             ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim).count, 0)
     }
 
-    s.test("the earliest reveal decides — an early reveal clears a later one") {
+    s.test("an earlier reveal does not suppress a later one — adjudication decides legitimacy") {
+        // A reveal before the reference scene is ignored, not used to
+        // clear the violation: embedding similarity matches topic, not
+        // proposition identity, so a fuzzy early match must never veto
+        // a real later reveal. The adjudicator is the precision gate.
         let claims = [
             reveal("x", "the truth #T", scene: "s1"),
             knows("Mara", "Mara knows the truth #T", scene: "s3"),
             reveal("x", "the truth restated #T", scene: "s5"),
         ]
-        try expectEqual(
-            ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim).count, 0)
+        let v = ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim)
+        try expectEqual(v.count, 1)
+        try expectEqual(v[0].revealClaim.sourceSceneId, "s5")
+    }
+
+    s.test("the earliest reveal after the reference scene is the candidate") {
+        let claims = [
+            knows("Mara", "Mara knows P #P", scene: "s2"),
+            reveal("x", "P revealed #P", scene: "s5"),
+            reveal("x", "P revealed earlier #P", scene: "s3"),
+        ]
+        let v = ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim)
+        try expectEqual(v.count, 1)
+        try expectEqual(v[0].revealClaim.sourceSceneId, "s3")
+    }
+
+    s.test("within the earliest reveal scene the strongest match is the candidate") {
+        func gradedSim(_ a: String, _ b: String) -> Double {
+            b.contains("strong") ? 0.9 : 0.6
+        }
+        let claims = [
+            knows("Mara", "Mara knows P", scene: "s2"),
+            reveal("x", "a weak match", scene: "s4"),
+            reveal("y", "a strong match", scene: "s4"),
+        ]
+        let v = ContinuityKnowledgeCheck.violations(
+            claims: claims, sceneOrder: order, similarity: gradedSim)
+        try expectEqual(v.count, 1)
+        try expectEqual(v[0].revealClaim.value, "a strong match")
     }
 
     s.test("a sub-threshold similarity does not count as a reveal of the proposition") {

@@ -248,7 +248,11 @@ public final class ContinuityAuditEngine {
         // this the knowledge class produced false positives — §17).
         knowledgeCandidates = ContinuityKnowledgeCheck.violations(
             claims: claims, sceneOrder: sceneOrder, similarity: activeSimilarity)
-        DebugLog.shared.write("[continuity-audit] \(knowledgeCandidates.count) knowledge candidates")
+        let ksCount = claims.filter { $0.type == .knowledgeState }.count
+        DebugLog.shared.write("[continuity-audit] \(ksCount) knowledge_state claims → \(knowledgeCandidates.count) knowledge candidates")
+        for c in knowledgeCandidates {
+            DebugLog.shared.write("[continuity-audit]   kcand ref@\(c.knowledgeClaim.sourceSceneId)=\"\(c.knowledgeClaim.value)\" reveal@\(c.revealClaim.sourceSceneId)=\"\(c.revealClaim.value)\"")
+        }
         adjudicateKnowledge(0)
     }
 
@@ -269,12 +273,16 @@ public final class ContinuityAuditEngine {
             self.onMain {
                 switch result {
                 case .success(let raw):
-                    if let adj = try? ContinuityAudit.parseAdjudication(raw),
-                       adj.verdict == .contradiction {
-                        self.findings.append(ContinuityFindingAssembly.finding(
-                            knowledgeViolation: candidate,
-                            explanation: adj.explanation,
-                            confidence: adj.confidence))
+                    if let adj = try? ContinuityAudit.parseAdjudication(raw) {
+                        DebugLog.shared.write("[continuity-audit] knowledge candidate \(index) verdict=\(adj.verdict)")
+                        if adj.verdict == .contradiction {
+                            self.findings.append(ContinuityFindingAssembly.finding(
+                                knowledgeViolation: candidate,
+                                explanation: adj.explanation,
+                                confidence: adj.confidence))
+                        }
+                    } else {
+                        DebugLog.shared.write("[continuity-audit] knowledge candidate \(index) — adjudication parse failed")
                     }
                 case .failure(let error):
                     DebugLog.shared.write("[continuity-audit] knowledge candidate \(index) adjudication failed: \(error) — skipped")
