@@ -275,6 +275,33 @@ public enum ContinuityAudit {
         }
     }
 
+    /// Verdict vocabulary for the knowledge-violation adjudication.
+    /// Deliberately *not* the `Verdict` enum: a knowledge-before-reveal
+    /// error has the two claims *agreeing* about the fact, so it is not a
+    /// logical "contradiction", and a model maps two agreeing claims to
+    /// "consistent" — the wrong answer. Task-fit words flip the model
+    /// from ~0/6 to mostly-correct on real violations (§24).
+    public enum KnowledgeVerdict: String, Codable, Equatable, CaseIterable {
+        /// The two passages concern the same fact — the character knows
+        /// it before the story presents it. A genuine continuity error.
+        case violation
+        /// The two passages concern different facts. Not an error.
+        case notAViolation = "not_a_violation"
+    }
+
+    public struct KnowledgeAdjudication: Codable, Equatable {
+        public var verdict: KnowledgeVerdict
+        /// 0…1 — the model's confidence in the verdict.
+        public var confidence: Double
+        public var explanation: String
+
+        public init(verdict: KnowledgeVerdict, confidence: Double, explanation: String) {
+            self.verdict = verdict
+            self.confidence = confidence
+            self.explanation = explanation
+        }
+    }
+
     // MARK: - Adjudication prompt
 
     /// Build the pairwise-adjudication prompt. The model sees exactly
@@ -318,30 +345,35 @@ public enum ContinuityAudit {
     /// know it" — that needs whole-story knowledge the pair does not
     /// carry.
     ///
-    /// Two framing fixes (§24): the question is *proposition identity*,
-    /// not the shared subject/topic — claims about the same character or
-    /// place are not the same fact unless they assert the same thing;
-    /// and the LATER claim need not read as a literal first reveal,
-    /// because an extracted claim is usually a paraphrase that may
-    /// merely elaborate on or presuppose the fact. The old "establishes
-    /// the very fact" wording made the model reject those paraphrases.
+    /// Three framing fixes (§24): the verdict words are task-fit
+    /// (`violation` / `not_a_violation`) because the two claims *agree*
+    /// about the fact, so reusing `contradiction`/`consistent` made the
+    /// model read agreement as "consistent / no error"; the question is
+    /// *proposition identity*, not the shared subject/topic; and the
+    /// LATER claim need not read as a literal first reveal, because an
+    /// extracted claim is usually a paraphrase that may merely elaborate
+    /// on or presuppose the fact.
     public static func buildKnowledgeAdjudicationPrompt(reference: Claim, reveal: Claim) -> String {
         return """
-        You are auditing a novel for continuity. In an EARLIER scene a character refers to, or is shown knowing, a fact. A LATER scene has been flagged as a place that may concern that same fact. The scene ordering is already established — your one job is to decide whether the two claims concern the SAME SPECIFIC FACT.
+        You are auditing a novel for continuity errors of one specific kind: a character KNOWING something before the story has revealed it.
+
+        In an EARLIER scene a character refers to, or is shown knowing, a fact. A LATER scene has been flagged as a place that fact is presented. The scene ordering is already established. If the two passages concern the SAME SPECIFIC FACT, the character knew it before the story presented it — a continuity error.
+
+        The two passages will AGREE about the fact — that agreement is expected, it is what links them. Agreement is NOT a reason to clear the error: the error IS that the character already knows the agreed fact. This is not a logical contradiction; it is a knowledge-timing error.
 
         EARLIER — what the character knows or refers to (scene \(reference.sourceSceneId), \(reference.source.rawValue)):
         \(reference.value)
         Evidence: "\(reference.evidenceQuote)"
 
-        LATER — the candidate reveal (scene \(reveal.sourceSceneId), \(reveal.source.rawValue)):
+        LATER — where that fact is presented (scene \(reveal.sourceSceneId), \(reveal.source.rawValue)):
         \(reveal.value)
         Evidence: "\(reveal.evidenceQuote)"
 
-        Compare the specific proposition, not the shared subject or topic. Two claims about the same character, place, or object are NOT the same fact unless they assert the same thing about it — "X knows the King was poisoned" and "X served the King" share a subject but assert different facts.
+        Compare the specific proposition, not the shared subject or topic. Two passages about the same character, place, or object concern different facts unless they assert the same thing — "X knows the King was poisoned" and "X served the King" share a subject but are different facts. The LATER passage need not read as a first reveal; an extracted claim is usually a paraphrase, and it still counts if it states, elaborates on, or presupposes that same fact.
 
         Choose one verdict:
-        - contradiction: both claims concern the same specific fact, so the EARLIER character refers to it before the story has presented it — a genuine continuity error. The LATER claim need not be phrased as a first reveal; an extracted claim is usually a paraphrase, and it still counts if it states, elaborates on, or presupposes that same fact.
-        - consistent: the two claims concern different facts — even if they share a character, place, or topic — or the LATER claim does not concern the fact the EARLIER one refers to.
+        - violation: the two passages concern the same specific fact, so the EARLIER character knows it before the LATER scene presents it.
+        - not_a_violation: the two passages concern different facts, even if they share a character, place, or topic.
 
         Reply with one JSON object: verdict, confidence (0 to 1), and a one-sentence explanation.
         """
@@ -352,6 +384,21 @@ public enum ContinuityAudit {
             "type": "object",
             "properties": [
                 "verdict": ["type": "string", "enum": Verdict.allCases.map(\.rawValue)],
+                "confidence": ["type": "number"],
+                "explanation": ["type": "string"],
+            ],
+            "required": ["verdict", "confidence", "explanation"],
+        ]
+    }
+
+    /// JSON schema for the knowledge-violation adjudication — same shape
+    /// as `adjudicationJSONSchema`, but the verdict enum is the task-fit
+    /// `KnowledgeVerdict` vocabulary.
+    public static func knowledgeAdjudicationJSONSchema() -> [String: Any] {
+        return [
+            "type": "object",
+            "properties": [
+                "verdict": ["type": "string", "enum": KnowledgeVerdict.allCases.map(\.rawValue)],
                 "confidence": ["type": "number"],
                 "explanation": ["type": "string"],
             ],
@@ -386,6 +433,31 @@ public enum ContinuityAudit {
         }
         let confidence = min(1.0, max(0.0, item.confidence ?? 0.0))
         return Adjudication(
+            verdict: verdict,
+            confidence: confidence,
+            explanation: item.explanation ?? ""
+        )
+    }
+
+    /// Parse the model's knowledge-adjudication object. Same tolerance
+    /// as `parseAdjudication`; throws on an unknown / non-knowledge
+    /// verdict word.
+    public static func parseKnowledgeAdjudication(_ raw: String) throws -> KnowledgeAdjudication {
+        guard let first = raw.firstIndex(of: "{") else {
+            throw ParseError.noJSONObjectFound
+        }
+        let blocks = topLevelObjects(in: raw, from: first)
+        guard let objText = blocks.first,
+              let data = objText.data(using: .utf8),
+              let item = try? JSONDecoder().decode(RawAdjudication.self, from: data)
+        else {
+            throw ParseError.malformedJSON
+        }
+        guard let v = item.verdict, let verdict = KnowledgeVerdict(rawValue: v) else {
+            throw ParseError.malformedJSON
+        }
+        let confidence = min(1.0, max(0.0, item.confidence ?? 0.0))
+        return KnowledgeAdjudication(
             verdict: verdict,
             confidence: confidence,
             explanation: item.explanation ?? ""

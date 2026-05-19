@@ -266,16 +266,16 @@ public final class ContinuityAuditEngine {
             reference: candidate.knowledgeClaim, reveal: candidate.revealClaim)
         adjudicationProvider.call(
             prompt: prompt,
-            schema: ContinuityAudit.adjudicationJSONSchema(),
+            schema: ContinuityAudit.knowledgeAdjudicationJSONSchema(),
             options: OllamaChatOptions(temperature: 0.2)
         ) { [weak self] result in
             guard let self = self else { return }
             self.onMain {
                 switch result {
                 case .success(let raw):
-                    if let adj = try? ContinuityAudit.parseAdjudication(raw) {
-                        DebugLog.shared.write("[continuity-audit] knowledge candidate \(index) verdict=\(adj.verdict)")
-                        if adj.verdict == .contradiction {
+                    if let adj = try? ContinuityAudit.parseKnowledgeAdjudication(raw) {
+                        DebugLog.shared.write("[continuity-audit] knowledge candidate \(index) verdict=\(adj.verdict.rawValue)")
+                        if adj.verdict == .violation {
                             self.findings.append(ContinuityFindingAssembly.finding(
                                 knowledgeViolation: candidate,
                                 explanation: adj.explanation,

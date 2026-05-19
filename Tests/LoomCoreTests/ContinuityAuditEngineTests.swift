@@ -74,6 +74,9 @@ func continuityAuditEngineTests() -> TestSuite {
 
     let contradictionJSON = #"{"verdict":"contradiction","confidence":0.9,"explanation":"conflict"}"#
     let consistentJSON = #"{"verdict":"consistent","confidence":0.9,"explanation":"fine"}"#
+    // The knowledge path has its own verdict vocabulary (§24).
+    let violationJSON = #"{"verdict":"violation","confidence":0.9,"explanation":"same fact"}"#
+    let notAViolationJSON = #"{"verdict":"not_a_violation","confidence":0.9,"explanation":"different facts"}"#
 
     let scenes = [
         ContinuityAuditEngine.SceneInput(id: "s1", prose: "Scene one."),
@@ -132,7 +135,7 @@ func continuityAuditEngineTests() -> TestSuite {
         let ext = StubExtractor()
         ext.claimsByScene = knowledgeClaims()
         let adj = StubAdjProvider()
-        adj.responder = { _ in .success(contradictionJSON) }
+        adj.responder = { _ in .success(violationJSON) }
         let engine = ContinuityAuditEngine(
             extractor: ext, adjudicationProvider: adj, entities: [], similarity: secretSimilarity)
         var result: Result<[ContinuityFinding], Error>?
@@ -147,7 +150,7 @@ func continuityAuditEngineTests() -> TestSuite {
         let ext = StubExtractor()
         ext.claimsByScene = knowledgeClaims()
         let adj = StubAdjProvider()
-        adj.responder = { _ in .success(consistentJSON) }   // the FP-rejection path
+        adj.responder = { _ in .success(notAViolationJSON) }   // the FP-rejection path
         let engine = ContinuityAuditEngine(
             extractor: ext, adjudicationProvider: adj, entities: [], similarity: secretSimilarity)
         var result: Result<[ContinuityFinding], Error>?
@@ -245,7 +248,7 @@ func continuityAuditEngineTests() -> TestSuite {
                 source: .narration, evidenceQuote: "q")],
         ]
         let adj = StubAdjProvider()
-        adj.responder = { _ in .success(contradictionJSON) }
+        adj.responder = { _ in .success(violationJSON) }
         let embedder = StubEmbedder()
         // Both propositions share "SECRET" → same vector → cosine 1.
         embedder.vectorFor = { $0.contains("SECRET") ? onehot(2) : onehot(3) }

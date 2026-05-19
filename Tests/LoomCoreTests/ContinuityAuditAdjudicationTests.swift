@@ -78,8 +78,46 @@ func continuityAuditAdjudicationTests() -> TestSuite {
         try expectTrue(prompt.contains("The empty vault is discovered"))
         try expectTrue(prompt.contains("the vault's empty"))
         try expectTrue(prompt.contains("they found the vault bare"))
-        // it must offer a way out — the conservative / consistent verdict
-        try expectTrue(prompt.lowercased().contains("consistent"))
+        // it must offer the non-error way out
+        try expectTrue(prompt.lowercased().contains("not_a_violation"))
+    }
+
+    s.test("the knowledge-adjudication prompt says agreement is not a reason to clear the error") {
+        let reference = claim(.knowledgeState, subject: "Mara", value: "Mara knows the vault is empty",
+                              scene: "scene-2", source: .dialogue, quote: "the vault's empty")
+        let reveal = claim(.event, subject: "the vault", value: "The empty vault is discovered",
+                           scene: "scene-5", quote: "they found the vault bare")
+        let prompt = ContinuityAudit.buildKnowledgeAdjudicationPrompt(
+            reference: reference, reveal: reveal).lowercased()
+        // The two claims agreeing about the fact IS the violation — the
+        // model must not read agreement as "consistent / no error" (§24).
+        try expectTrue(prompt.contains("agree"),
+                       "the prompt must address that the two claims agreeing is expected, not a clear")
+    }
+
+    s.test("parseKnowledgeAdjudication decodes violation and not_a_violation") {
+        let v = try ContinuityAudit.parseKnowledgeAdjudication(
+            #"{"verdict":"violation","confidence":0.9,"explanation":"same fact"}"#)
+        try expectEqual(v.verdict, .violation)
+        try expectEqual(v.confidence, 0.9)
+        let n = try ContinuityAudit.parseKnowledgeAdjudication(
+            #"prose {"verdict":"not_a_violation","confidence":0.4,"explanation":"different facts"}"#)
+        try expectEqual(n.verdict, .notAViolation)
+    }
+
+    s.test("parseKnowledgeAdjudication throws on a non-knowledge verdict") {
+        do {
+            _ = try ContinuityAudit.parseKnowledgeAdjudication(
+                #"{"verdict":"contradiction","confidence":1,"explanation":"x"}"#)
+            try expectFalse(true, "expected a throw for a non-knowledge verdict word")
+        } catch {}
+    }
+
+    s.test("the knowledge-adjudication JSON schema constrains the verdict to violation / not_a_violation") {
+        let schema = ContinuityAudit.knowledgeAdjudicationJSONSchema()
+        let props = schema["properties"] as? [String: Any]
+        let verdictEnum = (props?["verdict"] as? [String: Any])?["enum"] as? [String]
+        try expectEqual(Set(verdictEnum ?? []), ["violation", "not_a_violation"])
     }
 
     s.test("the knowledge-adjudication prompt judges proposition identity, not shared topic") {
