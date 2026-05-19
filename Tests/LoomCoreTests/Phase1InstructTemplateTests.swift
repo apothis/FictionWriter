@@ -150,6 +150,14 @@ func phase1InstructTemplateTests() -> TestSuite {
         try expectEqual(InstructTemplates.detect(forModelName: "mistral-7b-instruct-v0.2"), .mistralV3)
     }
 
+    s.test("auto-detect: stock Mistral-Small-3.x (2501/2503/2506) → mistralV7") {
+        // Mistral Small 3 (2501), 3.1 (2503), 3.2 (2506) all use V7 Tekken
+        // — these names contain "mistral" but not "large"/a Nemo date code.
+        try expectEqual(InstructTemplates.detect(forModelName: "Mistral-Small-24B-Instruct-2501"), .mistralV7)
+        try expectEqual(InstructTemplates.detect(forModelName: "huihui-ai_Mistral-Small-24B-Instruct-2501-abliterated-Q6_K_L"), .mistralV7)
+        try expectEqual(InstructTemplates.detect(forModelName: "Mistral-Small-3.2-24B-Instruct-2506"), .mistralV7)
+    }
+
     s.test("auto-detect: Mistral-Small-24B finetune family → mistralV7") {
         // Drummer / MuXodious / Naphula / LatitudeGames finetunes of
         // Mistral-Small-3.x — none contain "mistral" in their filename,

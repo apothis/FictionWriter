@@ -52,12 +52,16 @@ public enum InstructTemplates {
         }
         if lower.contains("mistral") || lower.contains("ministral") {
             // Mistral Large / Ministral / 2407+ era → V7 (native system).
+            // Mistral Small 3.x (2501 / 2503 / 2506) also use V7 Tekken.
             // Older 7B / Nemo era → V3 (system folded into first [INST]).
             if lower.contains("large")
                 || lower.contains("ministral")
                 || lower.contains("2407")
                 || lower.contains("2410")
                 || lower.contains("2411")
+                || lower.contains("2501")
+                || lower.contains("2503")
+                || lower.contains("2506")
             {
                 return .mistralV7
             }
