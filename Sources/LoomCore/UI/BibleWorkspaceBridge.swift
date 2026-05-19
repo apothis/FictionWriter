@@ -149,6 +149,8 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     case setAntiSlopPhrases(phrases: [String])
     // Per-scene deterministic undress markers (intimate-anatomy gate).
     case setSceneUndressed(sceneId: UUID, characterIds: [UUID])
+    // AO3-style work framing — content elements + authorial stance.
+    case setWorkFraming(elements: [FramedElement])
     case deleteKnownFact(characterId: UUID, sceneId: UUID, factId: UUID)
     case acceptSuggestion(factId: UUID)
     case rejectSuggestion(factId: UUID)
@@ -226,7 +228,7 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
-        case body, nsfw, framing, phrases, characterIds
+        case body, nsfw, framing, phrases, characterIds, workFraming
         case proposalId, accepted, demoteConflicting
         case x, y
         case fromCharacterId, toCharacterId, edgeKind, status, notes
@@ -245,6 +247,7 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case setSceneFraming
         case setAntiSlopPhrases
         case setSceneUndressed
+        case setWorkFraming
         case deleteKnownFact
         case acceptSuggestion
         case rejectSuggestion
@@ -312,6 +315,9 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             try c.encode(Kind.setSceneUndressed.rawValue, forKey: .kind)
             try c.encode(sceneId, forKey: .sceneId)
             try c.encode(characterIds, forKey: .characterIds)
+        case .setWorkFraming(let elements):
+            try c.encode(Kind.setWorkFraming.rawValue, forKey: .kind)
+            try c.encode(elements, forKey: .workFraming)
         case .deleteKnownFact(let characterId, let sceneId, let factId):
             try c.encode(Kind.deleteKnownFact.rawValue, forKey: .kind)
             try c.encode(characterId, forKey: .characterId)
@@ -463,6 +469,9 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
             let sceneId = try c.decode(UUID.self, forKey: .sceneId)
             let characterIds = try c.decode([UUID].self, forKey: .characterIds)
             self = .setSceneUndressed(sceneId: sceneId, characterIds: characterIds)
+        case .setWorkFraming:
+            let elements = try c.decode([FramedElement].self, forKey: .workFraming)
+            self = .setWorkFraming(elements: elements)
         case .deleteKnownFact:
             let characterId = try c.decode(UUID.self, forKey: .characterId)
             let sceneId = try c.decode(UUID.self, forKey: .sceneId)

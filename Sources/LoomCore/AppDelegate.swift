@@ -363,6 +363,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         antiSlop.target = self
         antiSlop.toolTip = "Edit the project's curated anti-slop phrase list."
         bibleMenu.addItem(antiSlop)
+        let workFraming = NSMenuItem(
+            title: "Edit Work Framing…",
+            action: #selector(openWorkFramingClicked),
+            keyEquivalent: "")
+        workFraming.target = self
+        workFraming.toolTip = "Declare the work's dark content elements and your authorial stance on each (AO3 'Dead Dove'–style)."
+        bibleMenu.addItem(workFraming)
         bibleMenu.addItem(.separator())
         // Phase 7.b.6 — trigger for the Scene-Template Generation
         // feature. Lives in the Bible menu because it consumes a
@@ -869,6 +876,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             session: AppState.shared.currentSession, mode: .antiSlop
         )
         antiSlopWindow?.showAndActivate()
+    }
+
+    private var workFramingWindow: ProjectToolsWindowController?
+
+    @objc private func openWorkFramingClicked() {
+        if let existing = workFramingWindow, existing.window?.isVisible == true {
+            existing.showAndActivate()
+            return
+        }
+        workFramingWindow = ProjectToolsWindowController(
+            session: AppState.shared.currentSession, mode: .workFraming
+        )
+        workFramingWindow?.showAndActivate()
     }
 
     // MARK: - File menu actions

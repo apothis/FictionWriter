@@ -136,6 +136,10 @@ public struct ProjectSettings: Codable, Equatable {
     /// project creation). Currently a data resource only — the
     /// transport wiring to KoboldCpp `banned_strings` is deferred.
     public var antiSlopPhrases: [String]
+    /// AO3-style work framing — dark content elements + the author's
+    /// stance on each. `playedStraight` elements feed an anti-softening
+    /// clause into the system prompt.
+    public var workFraming: [FramedElement]
 
     public init(
         serverProfileId: UUID? = nil,
@@ -149,7 +153,8 @@ public struct ProjectSettings: Codable, Equatable {
         pov: POVStyle = .thirdPersonLimited,
         tense: NarrativeTense = .past,
         targetWordCount: Int? = nil,
-        antiSlopPhrases: [String] = []
+        antiSlopPhrases: [String] = [],
+        workFraming: [FramedElement] = []
     ) {
         self.serverProfileId = serverProfileId
         self.contextBudgetTokens = contextBudgetTokens
@@ -163,6 +168,7 @@ public struct ProjectSettings: Codable, Equatable {
         self.tense = tense
         self.targetWordCount = targetWordCount
         self.antiSlopPhrases = antiSlopPhrases
+        self.workFraming = workFraming
     }
 
     public static let defaults = ProjectSettings()
@@ -181,6 +187,7 @@ public struct ProjectSettings: Codable, Equatable {
         self.tense = try c.decodeIfPresent(NarrativeTense.self, forKey: .tense) ?? .past
         self.targetWordCount = try c.decodeIfPresent(Int.self, forKey: .targetWordCount)
         self.antiSlopPhrases = try c.decodeIfPresent([String].self, forKey: .antiSlopPhrases) ?? []
+        self.workFraming = try c.decodeIfPresent([FramedElement].self, forKey: .workFraming) ?? []
     }
 }
 

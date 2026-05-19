@@ -63,7 +63,7 @@ export function postIntent(intent: { kind: string; [k: string]: unknown }): void
 if (import.meta.env.DEV && !window.webkit?.messageHandlers?.loom) {
   void import("./devMock").then(({ devMockSnapshot }) => {
     window.loomTools.applyToolsSnapshot(
-      devMockSnapshot(window.location.hash.includes("antislop")),
+      devMockSnapshot(window.location.hash),
     );
   });
 }

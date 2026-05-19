@@ -22,6 +22,8 @@ public struct ProjectToolsSnapshot: Codable, Equatable {
     /// Framing tool only — characters marked undressed in this scene
     /// (uppercase UUID strings).
     public let undressedCharacterIds: [String]
+    /// Work-framing tool only — the project's framed content elements.
+    public let workFraming: [FramedElement]
 
     public init(
         tool: String,
@@ -31,7 +33,8 @@ public struct ProjectToolsSnapshot: Codable, Equatable {
         antiSlopPhrases: [String] = [],
         projectTitle: String = "",
         sceneCharacters: [ToolsCharacter] = [],
-        undressedCharacterIds: [String] = []
+        undressedCharacterIds: [String] = [],
+        workFraming: [FramedElement] = []
     ) {
         self.tool = tool
         self.sceneId = sceneId
@@ -41,6 +44,7 @@ public struct ProjectToolsSnapshot: Codable, Equatable {
         self.projectTitle = projectTitle
         self.sceneCharacters = sceneCharacters
         self.undressedCharacterIds = undressedCharacterIds
+        self.workFraming = workFraming
     }
 
     /// Build the snapshot for the scene-framing tool.
@@ -68,6 +72,15 @@ public struct ProjectToolsSnapshot: Codable, Equatable {
             tool: "antislop",
             antiSlopPhrases: project.settings.antiSlopPhrases,
             projectTitle: project.title
+        )
+    }
+
+    /// Build the snapshot for the work-framing tool.
+    public static func workFraming(project: Project) -> ProjectToolsSnapshot {
+        ProjectToolsSnapshot(
+            tool: "workframing",
+            projectTitle: project.title,
+            workFraming: project.settings.workFraming
         )
     }
 }

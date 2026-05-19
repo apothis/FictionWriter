@@ -6,8 +6,15 @@ export interface ToolsCharacter {
   name: string;
 }
 
+export type ContentStance = "playedStraight" | "subverted" | "critiqued";
+
+export interface FramedElement {
+  name: string;
+  stance: ContentStance;
+}
+
 export interface ProjectToolsSnapshot {
-  tool: "framing" | "antislop";
+  tool: "framing" | "antislop" | "workframing";
   sceneId: string | null;
   sceneTitle: string;
   framing: string;
@@ -16,4 +23,6 @@ export interface ProjectToolsSnapshot {
   // Framing tool only — the cast, plus who's marked undressed.
   sceneCharacters: ToolsCharacter[];
   undressedCharacterIds: string[];
+  // Work-framing tool only — framed content elements.
+  workFraming: FramedElement[];
 }

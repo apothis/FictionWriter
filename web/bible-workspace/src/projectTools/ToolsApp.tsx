@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
-import type { ProjectToolsSnapshot } from "./types";
+import type {
+  ContentStance,
+  FramedElement,
+  ProjectToolsSnapshot,
+} from "./types";
 import { postIntent, subscribeToToolsSnapshots } from "./bridge";
 import { Input } from "../components/ui/Input";
+import { Select } from "../components/ui/Select";
 import { Textarea } from "../components/ui/Textarea";
 import { Button } from "../components/ui/Button";
 import { useDebouncedCallback } from "../lib/useDebouncedCallback";
@@ -24,6 +29,9 @@ export function ToolsApp() {
 
   if (snapshot.tool === "antislop") {
     return <AntiSlopEditor snapshot={snapshot} />;
+  }
+  if (snapshot.tool === "workframing") {
+    return <WorkFramingEditor snapshot={snapshot} />;
   }
   return <FramingEditor snapshot={snapshot} />;
 }
@@ -174,6 +182,117 @@ function AntiSlopEditor({ snapshot }: { snapshot: ProjectToolsSnapshot }) {
           ))}
           <Button variant="ghost" onClick={() => commit([...phrases, ""])}>
             + Add phrase
+          </Button>
+        </div>
+        <p className="mt-4 text-[10px] uppercase tracking-wider text-loom-fg-tertiary">
+          Edits autosave
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// MARK: - Work framing (AO3 "Dead Dove")
+
+const STANCES: { value: ContentStance; label: string }[] = [
+  { value: "playedStraight", label: "played straight (Dead Dove)" },
+  { value: "subverted", label: "subverted" },
+  { value: "critiqued", label: "critiqued by the narrative" },
+];
+
+const CONTENT_SUGGESTIONS = [
+  "non-consent",
+  "dubious consent",
+  "graphic violence",
+  "major character death",
+  "torture",
+  "abuse",
+  "self-harm",
+  "suicide",
+  "incest",
+  "infidelity",
+  "kidnapping",
+  "an irredeemable protagonist",
+  "an unhappy ending",
+];
+
+function WorkFramingEditor({ snapshot }: { snapshot: ProjectToolsSnapshot }) {
+  const [elements, setElements] = useState<FramedElement[]>(snapshot.workFraming);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setElements(snapshot.workFraming), [snapshot.projectTitle]);
+
+  const send = useDebouncedCallback((next: FramedElement[]) => {
+    postIntent({ kind: "setWorkFraming", elements: next });
+  }, 300);
+
+  function commit(next: FramedElement[]) {
+    setElements(next);
+    send(next);
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <header className="border-b border-loom-border px-6 py-3">
+        <h1 className="text-sm font-medium text-loom-fg">Work Framing</h1>
+        <p className="mt-0.5 text-xs text-loom-fg-tertiary">
+          {snapshot.projectTitle}
+        </p>
+      </header>
+      <div className="flex-1 overflow-auto px-6 py-5">
+        <p className="mb-3 text-xs leading-relaxed text-loom-fg-secondary">
+          Declare the dark content this work contains and your authorial
+          stance on each. "Played straight" (the AO3 "Dead Dove" convention)
+          tells the model to depict it directly — not subvert, redeem, or
+          moralise it. Subverted and critiqued elements are recorded for your
+          own framing; only played-straight ones reach the prompt.
+        </p>
+        <datalist id="content-suggestions">
+          {CONTENT_SUGGESTIONS.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <div className="space-y-2">
+          {elements.map((el, i) => (
+            <div key={i} className="flex gap-2">
+              <Input
+                value={el.name}
+                placeholder="content element"
+                list="content-suggestions"
+                onChange={(e) => {
+                  const next = [...elements];
+                  next[i] = { ...el, name: e.target.value };
+                  commit(next);
+                }}
+              />
+              <Select
+                value={el.stance}
+                onChange={(e) => {
+                  const next = [...elements];
+                  next[i] = { ...el, stance: e.target.value as ContentStance };
+                  commit(next);
+                }}
+              >
+                {STANCES.map((st) => (
+                  <option key={st.value} value={st.value}>{st.label}</option>
+                ))}
+              </Select>
+              <Button
+                variant="ghost"
+                onClick={() => commit(elements.filter((_, j) => j !== i))}
+                aria-label="Remove element"
+              >
+                ✕
+              </Button>
+            </div>
+          ))}
+          <Button
+            variant="ghost"
+            onClick={() =>
+              commit([...elements, { name: "", stance: "playedStraight" }])
+            }
+          >
+            + Add element
           </Button>
         </div>
         <p className="mt-4 text-[10px] uppercase tracking-wider text-loom-fg-tertiary">

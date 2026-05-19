@@ -17,6 +17,8 @@ public final class ProjectToolsWindowController: NSWindowController,
         case sceneFraming(sceneId: UUID)
         /// Edit the project's anti-slop phrase list.
         case antiSlop
+        /// Edit the project's AO3-style work framing.
+        case workFraming
     }
 
     private let session: ProjectSession
@@ -54,6 +56,9 @@ public final class ProjectToolsWindowController: NSWindowController,
         case .antiSlop:
             window.title = "Anti-slop List"
             window.setFrameAutosaveName("Loom.AntiSlopWindow")
+        case .workFraming:
+            window.title = "Work Framing"
+            window.setFrameAutosaveName("Loom.WorkFramingWindow")
         }
         window.contentView = webView
         window.minSize = NSSize(width: 480, height: 400)
@@ -101,6 +106,8 @@ public final class ProjectToolsWindowController: NSWindowController,
             )
         case .antiSlop:
             snap = .antiSlop(project: session.project)
+        case .workFraming:
+            snap = .workFraming(project: session.project)
         }
         do {
             let js = try BibleWorkspaceBridge.encodeProjectToolsSnapshotPush(snap)
@@ -144,6 +151,9 @@ public final class ProjectToolsWindowController: NSWindowController,
         case .setSceneUndressed(let sceneId, let characterIds):
             session.setSceneUndressed(id: sceneId, to: characterIds)
             DebugLog.shared.write("[tools] setSceneUndressed scene=\(sceneId) count=\(characterIds.count)")
+        case .setWorkFraming(let elements):
+            session.setWorkFraming(elements)
+            DebugLog.shared.write("[tools] setWorkFraming count=\(elements.count)")
         default:
             DebugLog.shared.write("[tools] ignoring non-tools intent")
         }

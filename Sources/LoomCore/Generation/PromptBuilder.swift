@@ -279,7 +279,9 @@ public enum PromptBuilder {
         let systemContent = systemPromptFor(
             mode: context.mode,
             continueWordTarget: WritingDirectionPrompt.continueWordTarget(direction)
-        ) + WritingDirectionPrompt.systemAddendum(direction)
+        )
+            + WritingDirectionPrompt.systemAddendum(direction)
+            + WorkFramingPrompt.systemAddendum(context.project.settings.workFraming)
         layers.append(Layer(
             kind: .system,
             label: "System",

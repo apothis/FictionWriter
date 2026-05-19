@@ -977,6 +977,12 @@ public final class ProjectSession {
         DebugLog.shared.write("[settings] antiSlopPhrases count=\(phrases.count)")
     }
 
+    public func setWorkFraming(_ elements: [FramedElement]) {
+        project.settings.workFraming = elements
+        markDirty()
+        DebugLog.shared.write("[settings] workFraming count=\(elements.count)")
+    }
+
     public func setAuthorsNote(_ note: String) {
         project.settings.authorsNote = note
         markDirty()
