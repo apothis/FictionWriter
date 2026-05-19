@@ -32,6 +32,11 @@ public struct Scene: Codable, Equatable {
     /// here fully suppresses the explicit-foreground posture for the
     /// scene regardless of the project's writing direction.
     public var explicitnessLevel: ExplicitnessLevel?
+    /// Characters the author has explicitly marked undressed in this
+    /// scene — a deterministic signal for the intimate-anatomy gate
+    /// (`AnatomyGate`), used alongside the prose-keyword heuristic so
+    /// a pronoun-only undressing the scan would miss can still unlock.
+    public var undressedCharacterIds: [UUID]
     public var generatedSpans: [GeneratedSpan]   // Phase 1.k persistence
     public var snapshots: [Snapshot]             // Phase 2+ persistence
     public var extraFrontmatter: [String: String] // forward-compat sink
@@ -44,7 +49,8 @@ public struct Scene: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, title, pov, location, status, conflict, outcome
         case summary, summaryDirty, targetWordCount, contentPath
-        case notes, framing, explicitnessLevel, generatedSpans, snapshots, extraFrontmatter
+        case notes, framing, explicitnessLevel, undressedCharacterIds
+        case generatedSpans, snapshots, extraFrontmatter
         // prose intentionally excluded
     }
 
@@ -63,6 +69,7 @@ public struct Scene: Codable, Equatable {
         notes: String = "",
         framing: String = "",
         explicitnessLevel: ExplicitnessLevel? = nil,
+        undressedCharacterIds: [UUID] = [],
         generatedSpans: [GeneratedSpan] = [],
         snapshots: [Snapshot] = [],
         extraFrontmatter: [String: String] = [:],
@@ -82,6 +89,7 @@ public struct Scene: Codable, Equatable {
         self.notes = notes
         self.framing = framing
         self.explicitnessLevel = explicitnessLevel
+        self.undressedCharacterIds = undressedCharacterIds
         self.generatedSpans = generatedSpans
         self.snapshots = snapshots
         self.extraFrontmatter = extraFrontmatter
@@ -105,6 +113,7 @@ public struct Scene: Codable, Equatable {
         self.notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         self.framing = try c.decodeIfPresent(String.self, forKey: .framing) ?? ""
         self.explicitnessLevel = try c.decodeIfPresent(ExplicitnessLevel.self, forKey: .explicitnessLevel)
+        self.undressedCharacterIds = try c.decodeIfPresent([UUID].self, forKey: .undressedCharacterIds) ?? []
         self.generatedSpans = try c.decodeIfPresent([GeneratedSpan].self, forKey: .generatedSpans) ?? []
         self.snapshots = try c.decodeIfPresent([Snapshot].self, forKey: .snapshots) ?? []
         self.extraFrontmatter = try c.decodeIfPresent([String: String].self, forKey: .extraFrontmatter) ?? [:]

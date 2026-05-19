@@ -16,6 +16,8 @@ export function devMockSnapshot(antislop: boolean): ProjectToolsSnapshot {
         "her core",
       ],
       projectTitle: "Dev Mock Project",
+      sceneCharacters: [],
+      undressedCharacterIds: [],
     };
   }
   return {
@@ -26,5 +28,10 @@ export function devMockSnapshot(antislop: boolean): ProjectToolsSnapshot {
       "Hate-sex dynamic between Chantal and Marek; neither will say it first. High tension, crude register.",
     antiSlopPhrases: [],
     projectTitle: "Dev Mock Project",
+    sceneCharacters: [
+      { id: "11111111-1111-1111-1111-111111111111", name: "Chantal" },
+      { id: "33333333-3333-3333-3333-333333333333", name: "Marek" },
+    ],
+    undressedCharacterIds: ["11111111-1111-1111-1111-111111111111"],
   };
 }

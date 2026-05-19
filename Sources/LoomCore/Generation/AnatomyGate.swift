@@ -29,10 +29,16 @@ public enum AnatomyGate {
     ]
 
     /// True when `character`'s intimate anatomy should be injected.
+    ///
+    /// `explicitlyUndressedIds` is the author's deterministic signal
+    /// (`Scene.undressedCharacterIds`): a character in that set is
+    /// treated as undressed without needing a prose-keyword match —
+    /// it catches a pronoun-only undressing the scan would miss.
     public static func shouldInject(
         character: Character,
         sceneProseSoFar: String,
-        explicitnessLevel: ExplicitnessLevel
+        explicitnessLevel: ExplicitnessLevel,
+        explicitlyUndressedIds: [UUID] = []
     ) -> Bool {
         guard !character.intimateAnatomy
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -43,6 +49,7 @@ public enum AnatomyGate {
         case .fadeToBlack, .suggestive:
             return false
         }
+        if explicitlyUndressedIds.contains(character.id) { return true }
         return isUndressed(character: character, in: sceneProseSoFar)
     }
 

@@ -94,7 +94,11 @@ public final class ProjectToolsWindowController: NSWindowController,
                 DebugLog.shared.write("[tools] pushSnapshot — scene \(sceneId) missing")
                 return
             }
-            snap = .framing(scene: scene, projectTitle: session.project.title)
+            snap = .framing(
+                scene: scene,
+                characters: session.project.bible.characters,
+                projectTitle: session.project.title
+            )
         case .antiSlop:
             snap = .antiSlop(project: session.project)
         }
@@ -137,6 +141,9 @@ public final class ProjectToolsWindowController: NSWindowController,
         case .setAntiSlopPhrases(let phrases):
             session.setAntiSlopPhrases(phrases)
             DebugLog.shared.write("[tools] setAntiSlopPhrases count=\(phrases.count)")
+        case .setSceneUndressed(let sceneId, let characterIds):
+            session.setSceneUndressed(id: sceneId, to: characterIds)
+            DebugLog.shared.write("[tools] setSceneUndressed scene=\(sceneId) count=\(characterIds.count)")
         default:
             DebugLog.shared.write("[tools] ignoring non-tools intent")
         }

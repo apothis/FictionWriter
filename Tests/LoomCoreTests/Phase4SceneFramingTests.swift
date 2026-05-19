@@ -85,6 +85,18 @@ func phase4SceneFramingTests() -> TestSuite {
         try expectEqual(back.explicitnessLevel, .graphic)
     }
 
+    s.test("undressedCharacterIds defaults empty and round-trips via SceneFile") {
+        try expectEqual(Scene.empty(title: "S").undressedCharacterIds, [])
+        let a = UUID(), b = UUID()
+        var scene = Scene.empty(title: "S")
+        scene.undressedCharacterIds = [a, b]
+        scene.prose = "Body."
+        let back = try SceneFile.decode(
+            SceneFile.encode(scene), contentPath: scene.contentPath
+        )
+        try expectEqual(back.undressedCharacterIds, [a, b])
+    }
+
     s.test("a SceneFile without an explicitnessLevel line decodes to nil") {
         let id = UUID()
         let text = "---\nid: \"\(id.uuidString)\"\ntitle: \"X\"\nstatus: \"draft\"\nsummaryDirty: false\n---\n\nBody."

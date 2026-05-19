@@ -50,6 +50,11 @@ public enum SceneFile {
         if let level = scene.explicitnessLevel {
             lines.append("explicitnessLevel: \(quote(level.rawValue))")
         }
+        // Frontmatter is scalar-only — the UUID list is comma-joined.
+        if !scene.undressedCharacterIds.isEmpty {
+            let joined = scene.undressedCharacterIds.map(\.uuidString).joined(separator: ",")
+            lines.append("undressedCharacterIds: \(quote(joined))")
+        }
         lines.append("summaryDirty: \(scene.summaryDirty ? "true" : "false")")
 
         // Forward-compat: emit any extra keys not owned by Loom in
@@ -92,13 +97,16 @@ public enum SceneFile {
         let framing = frontmatter["framing"] ?? ""
         let explicitnessLevel = frontmatter["explicitnessLevel"]
             .flatMap { ExplicitnessLevel(rawValue: $0) }
+        let undressedCharacterIds: [UUID] = (frontmatter["undressedCharacterIds"] ?? "")
+            .split(separator: ",")
+            .compactMap { UUID(uuidString: $0.trimmingCharacters(in: .whitespaces)) }
 
         // Extra: every key not in the Loom-owned set lands here. The set
         // must mirror the encode side exactly.
         let owned: Set<String> = [
             "id", "title", "pov", "location", "status",
             "targetWordCount", "conflict", "outcome", "summary", "framing",
-            "explicitnessLevel", "summaryDirty",
+            "explicitnessLevel", "undressedCharacterIds", "summaryDirty",
         ]
         var extra: [String: String] = [:]
         for (key, value) in frontmatter where !owned.contains(key) {
@@ -119,6 +127,7 @@ public enum SceneFile {
             contentPath: contentPath,
             framing: framing,
             explicitnessLevel: explicitnessLevel,
+            undressedCharacterIds: undressedCharacterIds,
             extraFrontmatter: extra,
             prose: split.body
         )

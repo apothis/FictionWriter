@@ -147,6 +147,8 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
     // P2 project-tools webview — per-scene framing + anti-slop list.
     case setSceneFraming(sceneId: UUID, framing: String)
     case setAntiSlopPhrases(phrases: [String])
+    // Per-scene deterministic undress markers (intimate-anatomy gate).
+    case setSceneUndressed(sceneId: UUID, characterIds: [UUID])
     case deleteKnownFact(characterId: UUID, sceneId: UUID, factId: UUID)
     case acceptSuggestion(factId: UUID)
     case rejectSuggestion(factId: UUID)
@@ -224,7 +226,7 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, patch, name, characterId, sceneId, factId
-        case body, nsfw, framing, phrases
+        case body, nsfw, framing, phrases, characterIds
         case proposalId, accepted, demoteConflicting
         case x, y
         case fromCharacterId, toCharacterId, edgeKind, status, notes
@@ -242,6 +244,7 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case deleteDynamicSheet
         case setSceneFraming
         case setAntiSlopPhrases
+        case setSceneUndressed
         case deleteKnownFact
         case acceptSuggestion
         case rejectSuggestion
@@ -305,6 +308,10 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .setAntiSlopPhrases(let phrases):
             try c.encode(Kind.setAntiSlopPhrases.rawValue, forKey: .kind)
             try c.encode(phrases, forKey: .phrases)
+        case .setSceneUndressed(let sceneId, let characterIds):
+            try c.encode(Kind.setSceneUndressed.rawValue, forKey: .kind)
+            try c.encode(sceneId, forKey: .sceneId)
+            try c.encode(characterIds, forKey: .characterIds)
         case .deleteKnownFact(let characterId, let sceneId, let factId):
             try c.encode(Kind.deleteKnownFact.rawValue, forKey: .kind)
             try c.encode(characterId, forKey: .characterId)
@@ -452,6 +459,10 @@ public enum BibleWorkspaceIntent: Codable, Equatable {
         case .setAntiSlopPhrases:
             let phrases = try c.decode([String].self, forKey: .phrases)
             self = .setAntiSlopPhrases(phrases: phrases)
+        case .setSceneUndressed:
+            let sceneId = try c.decode(UUID.self, forKey: .sceneId)
+            let characterIds = try c.decode([UUID].self, forKey: .characterIds)
+            self = .setSceneUndressed(sceneId: sceneId, characterIds: characterIds)
         case .deleteKnownFact:
             let characterId = try c.decode(UUID.self, forKey: .characterId)
             let sceneId = try c.decode(UUID.self, forKey: .sceneId)

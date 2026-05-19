@@ -356,6 +356,14 @@ public final class ProjectSession {
         DebugLog.shared.write("[scene] framing id=\(id) len=\(framing.count)")
     }
 
+    public func setSceneUndressed(id: UUID, to characterIds: [UUID]) {
+        guard var scene = scenes[id] else { return }
+        scene.undressedCharacterIds = characterIds
+        scenes[id] = scene
+        markDirty()
+        DebugLog.shared.write("[scene] undressed id=\(id) count=\(characterIds.count)")
+    }
+
     public func setSceneStatus(id: UUID, to status: SceneStatus) {
         guard var scene = scenes[id] else { return }
         scene.status = status

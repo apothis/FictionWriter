@@ -16,6 +16,12 @@ public struct ProjectToolsSnapshot: Codable, Equatable {
     /// Anti-slop tool only — the project's curated phrase list.
     public let antiSlopPhrases: [String]
     public let projectTitle: String
+    /// Framing tool only — the project's characters (for the
+    /// per-character undress markers).
+    public let sceneCharacters: [ToolsCharacter]
+    /// Framing tool only — characters marked undressed in this scene
+    /// (uppercase UUID strings).
+    public let undressedCharacterIds: [String]
 
     public init(
         tool: String,
@@ -23,7 +29,9 @@ public struct ProjectToolsSnapshot: Codable, Equatable {
         sceneTitle: String = "",
         framing: String = "",
         antiSlopPhrases: [String] = [],
-        projectTitle: String = ""
+        projectTitle: String = "",
+        sceneCharacters: [ToolsCharacter] = [],
+        undressedCharacterIds: [String] = []
     ) {
         self.tool = tool
         self.sceneId = sceneId
@@ -31,16 +39,26 @@ public struct ProjectToolsSnapshot: Codable, Equatable {
         self.framing = framing
         self.antiSlopPhrases = antiSlopPhrases
         self.projectTitle = projectTitle
+        self.sceneCharacters = sceneCharacters
+        self.undressedCharacterIds = undressedCharacterIds
     }
 
     /// Build the snapshot for the scene-framing tool.
-    public static func framing(scene: Scene, projectTitle: String) -> ProjectToolsSnapshot {
+    public static func framing(
+        scene: Scene,
+        characters: [Character],
+        projectTitle: String
+    ) -> ProjectToolsSnapshot {
         ProjectToolsSnapshot(
             tool: "framing",
             sceneId: scene.id.uuidString,
             sceneTitle: scene.title,
             framing: scene.framing,
-            projectTitle: projectTitle
+            projectTitle: projectTitle,
+            sceneCharacters: characters.map {
+                ToolsCharacter(id: $0.id.uuidString, name: $0.name)
+            },
+            undressedCharacterIds: scene.undressedCharacterIds.map(\.uuidString)
         )
     }
 
@@ -51,5 +69,16 @@ public struct ProjectToolsSnapshot: Codable, Equatable {
             antiSlopPhrases: project.settings.antiSlopPhrases,
             projectTitle: project.title
         )
+    }
+}
+
+/// Minimal character projection for the project-tools webview.
+public struct ToolsCharacter: Codable, Equatable {
+    public let id: String
+    public let name: String
+
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
     }
 }

@@ -32,15 +32,35 @@ export function ToolsApp() {
 
 function FramingEditor({ snapshot }: { snapshot: ProjectToolsSnapshot }) {
   const [draft, setDraft] = useState(snapshot.framing);
+  const [undressed, setUndressed] = useState<string[]>(
+    snapshot.undressedCharacterIds,
+  );
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => setDraft(snapshot.framing), [snapshot.sceneId]);
+  useEffect(() => {
+    setDraft(snapshot.framing);
+    setUndressed(snapshot.undressedCharacterIds);
+  }, [snapshot.sceneId]);
 
   const send = useDebouncedCallback((text: string) => {
     if (snapshot.sceneId) {
       postIntent({ kind: "setSceneFraming", sceneId: snapshot.sceneId, framing: text });
     }
   }, 300);
+
+  function toggleUndressed(id: string) {
+    const next = undressed.includes(id)
+      ? undressed.filter((c) => c !== id)
+      : [...undressed, id];
+    setUndressed(next);
+    if (snapshot.sceneId) {
+      postIntent({
+        kind: "setSceneUndressed",
+        sceneId: snapshot.sceneId,
+        characterIds: next,
+      });
+    }
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -57,7 +77,7 @@ function FramingEditor({ snapshot }: { snapshot: ProjectToolsSnapshot }) {
           authorial direction. Unlike Notes, this reaches the model.
         </p>
         <Textarea
-          rows={16}
+          rows={12}
           value={draft}
           placeholder="e.g. A first-time scene between established characters; tender, slow, earthy register. She is nervous; he is letting her set the pace."
           onChange={(e) => {
@@ -65,7 +85,34 @@ function FramingEditor({ snapshot }: { snapshot: ProjectToolsSnapshot }) {
             send(e.target.value);
           }}
         />
-        <p className="mt-3 text-[10px] uppercase tracking-wider text-loom-fg-tertiary">
+        {snapshot.sceneCharacters.length > 0 && (
+          <div className="mt-5">
+            <h2 className="text-xs font-medium text-loom-fg">
+              Undressed in this scene
+            </h2>
+            <p className="mt-0.5 mb-2 text-[11px] leading-relaxed text-loom-fg-tertiary">
+              Marks a character undressed so their concealed anatomy can be
+              used. A deterministic signal — use it when the prose undresses
+              someone without the obvious words (the auto-detector may miss it).
+            </p>
+            <div className="space-y-1">
+              {snapshot.sceneCharacters.map((c) => (
+                <label
+                  key={c.id}
+                  className="flex items-center gap-2 text-sm text-loom-fg"
+                >
+                  <input
+                    type="checkbox"
+                    checked={undressed.includes(c.id)}
+                    onChange={() => toggleUndressed(c.id)}
+                  />
+                  <span>{c.name || "(unnamed)"}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+        <p className="mt-4 text-[10px] uppercase tracking-wider text-loom-fg-tertiary">
           Edits autosave
         </p>
       </div>

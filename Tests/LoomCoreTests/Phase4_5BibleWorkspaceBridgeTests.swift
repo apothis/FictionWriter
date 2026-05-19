@@ -286,10 +286,24 @@ func phase4_5BibleWorkspaceBridgeTests() -> TestSuite {
     s.test("ProjectToolsSnapshot.framing carries the scene's framing text") {
         var scene = Scene.empty(title: "The Beach")
         scene.framing = "what's at stake"
-        let snap = ProjectToolsSnapshot.framing(scene: scene, projectTitle: "P")
+        let mira = Character(name: "Mira")
+        scene.undressedCharacterIds = [mira.id]
+        let snap = ProjectToolsSnapshot.framing(
+            scene: scene, characters: [mira], projectTitle: "P"
+        )
         try expectEqual(snap.tool, "framing")
         try expectEqual(snap.framing, "what's at stake")
         try expectEqual(snap.sceneId, scene.id.uuidString)
+        try expectEqual(snap.sceneCharacters.map(\.name), ["Mira"])
+        try expectEqual(snap.undressedCharacterIds, [mira.id.uuidString])
+    }
+
+    s.test("setSceneUndressed intent round-trips through encode/decode") {
+        let intent = BibleWorkspaceIntent.setSceneUndressed(
+            sceneId: UUID(), characterIds: [UUID(), UUID()]
+        )
+        let data = try JSONEncoder().encode(intent)
+        try expectEqual(try BibleWorkspaceBridge.decodeIntent(data), intent)
     }
 
     s.test("ProjectToolsSnapshot.antiSlop carries the project's phrase list") {

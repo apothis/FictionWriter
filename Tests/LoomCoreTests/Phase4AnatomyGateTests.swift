@@ -80,6 +80,27 @@ func phase4AnatomyGateTests() -> TestSuite {
         ))
     }
 
+    s.test("an explicit undress marker injects without a prose keyword") {
+        let m = mira()
+        // No undress word in the prose — the heuristic would miss it.
+        let prose = "Mira and Cole had finally stopped talking."
+        try expectFalse(AnatomyGate.shouldInject(
+            character: m, sceneProseSoFar: prose, explicitnessLevel: .graphic
+        ))
+        try expectTrue(AnatomyGate.shouldInject(
+            character: m, sceneProseSoFar: prose, explicitnessLevel: .graphic,
+            explicitlyUndressedIds: [m.id]
+        ))
+    }
+
+    s.test("an explicit marker still respects the explicitness gate") {
+        let m = mira()
+        try expectFalse(AnatomyGate.shouldInject(
+            character: m, sceneProseSoFar: "anything", explicitnessLevel: .fadeToBlack,
+            explicitlyUndressedIds: [m.id]
+        ))
+    }
+
     s.test("an alias also triggers the undress detection") {
         try expectTrue(AnatomyGate.isUndressed(
             character: mira(), in: "Mir was undressed by then."

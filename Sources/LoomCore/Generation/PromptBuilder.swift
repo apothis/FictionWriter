@@ -615,7 +615,8 @@ public enum PromptBuilder {
                 AnatomyGate.shouldInject(
                     character: $0,
                     sceneProseSoFar: proseSoFar,
-                    explicitnessLevel: direction.explicitnessLevel
+                    explicitnessLevel: direction.explicitnessLevel,
+                    explicitlyUndressedIds: scene.undressedCharacterIds
                 )
             }
             if !unlocked.isEmpty {
