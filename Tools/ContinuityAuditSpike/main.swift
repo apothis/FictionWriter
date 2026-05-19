@@ -117,6 +117,43 @@ let adjBackend = env["LOOM_SPIKE_ADJ_BACKEND"] ?? "ollama"
 let adjModel = env["LOOM_SPIKE_ADJ_MODEL"] ?? extractModel
 let koboldURL = env["LOOM_SPIKE_KOBOLD_URL"] ?? "http://192.168.1.201:5001"
 
+// Kobold instruct template — detected from the loaded model name so the
+// model-vs-model A/B wraps prompts in the right chat format (Mistral for
+// Goetia, ChatML for Qwen, Gemma for Gemma). The wrong template degrades
+// a model and would make the comparison invalid. Override with
+// LOOM_SPIKE_KOBOLD_TEMPLATE if a model's filename defeats detection.
+let koboldModelName: String = {
+    guard let url = URL(string: "/api/v1/model", relativeTo: URL(string: koboldURL)!)?.absoluteURL
+    else { return "" }
+    let sem = DispatchSemaphore(value: 0)
+    var name = ""
+    URLSession.shared.dataTask(with: url) { data, _, _ in
+        defer { sem.signal() }
+        if let data = data,
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let r = obj["result"] as? String { name = r }
+    }.resume()
+    sem.wait()
+    return name
+}()
+let koboldTemplate: InstructTemplate = {
+    if let override = env["LOOM_SPIKE_KOBOLD_TEMPLATE"],
+       let t = InstructTemplate(rawValue: override) { return t }
+    return InstructTemplates.detect(forModelName: koboldModelName) ?? .mistralV7
+}()
+
+/// Wrap a bare prompt in the detected model family's instruct template.
+/// Returns the wrapped text and the family's stop sequences.
+func koboldWrap(_ prompt: String) -> (text: String, stops: [String]) {
+    let adapter = InstructTemplates.adapter(for: koboldTemplate)
+    // ChatML / Qwen 3.x: suppress default chain-of-thought via an empty
+    // think block in the prefill (the PromptBuilder.prefillFor pattern).
+    let prefill = koboldTemplate == .chatml ? "<think>\n\n</think>\n\n" : ""
+    return (adapter.wrap(system: "", userBody: prompt, prefill: prefill),
+            adapter.stopSequences)
+}
+log("kobold model: \(koboldModelName.isEmpty ? "?" : koboldModelName) → template \(koboldTemplate.rawValue)")
+
 guard let fixtureData = FileManager.default.contents(atPath: fixturePath),
       let fixture = try? JSONDecoder().decode(Fixture.self, from: fixtureData) else {
     log("FATAL: cannot load fixture at \(fixturePath)")
@@ -142,11 +179,12 @@ final class KoboldGenerateProvider: OllamaCallProvider {
         guard let url = URL(string: "/api/v1/generate", relativeTo: baseURL)?.absoluteURL else {
             completion(.failure(.badURL)); return
         }
+        let wrapped = koboldWrap(prompt)
         let body: [String: Any] = [
-            "prompt": "[INST]\(prompt)[/INST]",
+            "prompt": wrapped.text,
             "max_length": options.numPredict, "max_context_length": 8192,
             "temperature": 0.2, "top_p": 0.9, "min_p": 0.05, "rep_pen": 1.05,
-            "stop_sequence": ["[INST]", "</s>"],
+            "stop_sequence": wrapped.stops,
         ]
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -231,11 +269,12 @@ func callOllama(_ client: OllamaClient, prompt: String, schema: [String: Any]) -
 func callKobold(prompt: String) -> String? {
     guard let url = URL(string: "/api/v1/generate", relativeTo: URL(string: koboldURL)!)?.absoluteURL
     else { return nil }
+    let wrapped = koboldWrap(prompt)
     let body: [String: Any] = [
-        "prompt": "[INST]\(prompt)[/INST]",
+        "prompt": wrapped.text,
         "max_length": 512, "max_context_length": 8192,
         "temperature": 0.2, "top_p": 0.9, "min_p": 0.05, "rep_pen": 1.05,
-        "stop_sequence": ["[INST]", "</s>"],
+        "stop_sequence": wrapped.stops,
     ]
     var req = URLRequest(url: url)
     req.httpMethod = "POST"
@@ -279,8 +318,9 @@ func jaccard(_ a: String, _ b: String) -> Double {
 // MARK: - Report
 
 var report = "# ContinuityAuditSpike\n\n"
-report += "- **Extraction**: \(extractBackend == "kobold" ? "Goetia (24B) @ \(koboldURL)" : "\(extractModel) @ \(ollamaURL)")\n"
-report += "- **Adjudication**: \(adjBackend == "kobold" ? "Goetia @ \(koboldURL)" : "\(adjModel) @ \(ollamaURL)")\n"
+let koboldDesc = "\(koboldModelName.isEmpty ? "?" : koboldModelName) [\(koboldTemplate.rawValue)] @ \(koboldURL)"
+report += "- **Extraction**: \(extractBackend == "kobold" ? koboldDesc : "\(extractModel) @ \(ollamaURL)")\n"
+report += "- **Adjudication**: \(adjBackend == "kobold" ? koboldDesc : "\(adjModel) @ \(ollamaURL)")\n"
 report += "- **Fixture**: \(fixture.scenes.count) scenes, \(fixture.gold_claims.count) gold claims, \(fixture.gold_pairs.count) gold pairs\n\n"
 
 // MARK: - Eval phase — multi-run eval harness (LOOM_CONTINUITY_AUDIT §21)
@@ -311,7 +351,7 @@ if phase == "eval" {
     var er = "# ContinuityAuditSpike — eval harness\n\n"
     er += "- **Mode**: \(evalMode) · **Runs**: \(evalRuns)\n"
     er += "- **Manuscripts**: \(manuscripts.map { $0.0 }.joined(separator: ", "))\n"
-    er += "- **Extraction**: \(extractBackend == "kobold" ? "Goetia @ \(koboldURL)" : "\(extractModel) @ \(ollamaURL)")\n\n"
+    er += "- **Extraction**: \(extractBackend == "kobold" ? koboldDesc : "\(extractModel) @ \(ollamaURL)")\n\n"
 
     func fmtCI(_ a: ContinuityEvalMetrics.Aggregate) -> String {
         let half = (a.ci95High - a.ci95Low) / 2
