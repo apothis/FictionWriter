@@ -191,9 +191,10 @@ public final class ContinuityAuditEngine {
 
     /// Cosine-similarity threshold for embedding-backed retrieval
     /// clustering — two claim values cluster (and so become a candidate
-    /// pair) at/above this. Matches the knowledge check's reveal-match
-    /// threshold; a contradiction is two near-paraphrase claims that
-    /// disagree on one element, so they stay well above it.
+    /// pair) at/above this. A contradiction is two near-paraphrase
+    /// claims that disagree on one element, so they stay well above it.
+    /// The knowledge check uses a lower threshold of its own (a
+    /// reference and its reveal are framed differently — §23).
     private static let retrievalCosineThreshold = 0.7
 
     private func retrieveAndAdjudicate() {

@@ -89,6 +89,28 @@ func continuityKnowledgeCheckTests() -> TestSuite {
                 claims: claims, sceneOrder: order, similarity: sim, threshold: 1.1).count, 0)
     }
 
+    s.test("a reveal mistyped as attribute is still matched (type-tolerant)") {
+        let attrReveal = ContinuityAudit.Claim(
+            type: .attribute, subject: "x", attributeKey: "", value: "the truth #T",
+            sourceSceneId: "s4", source: .narration, evidenceQuote: "q")
+        let claims = [
+            knows("Mara", "Mara knows the truth #T", scene: "s2"),
+            attrReveal,
+        ]
+        let v = ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim)
+        try expectEqual(v.count, 1)
+        try expectEqual(v[0].revealClaim.sourceSceneId, "s4")
+    }
+
+    s.test("another knowledge_state claim is not itself treated as a reveal") {
+        let claims = [
+            knows("Mara", "Mara knows the truth #T", scene: "s2"),
+            knows("Innes", "Innes knows the truth #T", scene: "s4"),
+        ]
+        try expectEqual(
+            ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim).count, 0)
+    }
+
     s.test("claims in scenes outside the order are skipped") {
         let claims = [
             knows("Mara", "Mara knows it #X", scene: "s99"),

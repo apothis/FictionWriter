@@ -5,9 +5,9 @@ import Foundation
 ///
 /// A `knowledgeState` claim says a character references / knows
 /// proposition P in scene S. It is a continuity error when P's
-/// **earliest reveal** — the first `event` claim asserting P — lands
-/// in a scene *after* S: the character knew something the story had
-/// not told them yet.
+/// **earliest reveal** — the first non-knowledge claim asserting P —
+/// lands in a scene *after* S: the character knew something the story
+/// had not told them yet.
 ///
 /// Proposition matching (does this knowledge claim refer to the same
 /// fact as this reveal?) is semantic, so it is delegated to an
@@ -35,11 +35,21 @@ public enum ContinuityKnowledgeCheck {
     /// Find knowledge-before-reveal violations. `similarity` returns a
     /// 0…1 score that two proposition texts describe the same fact;
     /// a reveal counts when its score meets `threshold`.
+    ///
+    /// The reveal side is *type-tolerant*: any claim not typed
+    /// `knowledgeState` is a candidate reveal, matched by proposition
+    /// similarity alone. Type classification is only ~62% reliable
+    /// (`LOOM_CONTINUITY_AUDIT.md` §23), so gating reveals on
+    /// `type == .event` made most reveals invisible; the adjudicator is
+    /// the precision gate. The threshold is lower than the world-fact
+    /// retrieval path's 0.7 because a knowledge reference ("X knows P",
+    /// verbose) and its reveal ("P", terse) are deliberately framed
+    /// differently and embed further apart.
     public static func violations(
         claims: [ContinuityAudit.Claim],
         sceneOrder: [String],
         similarity: (String, String) -> Double,
-        threshold: Double = 0.7
+        threshold: Double = 0.55
     ) -> [Violation] {
         var sceneIndex: [String: Int] = [:]
         for (i, id) in sceneOrder.enumerated() { sceneIndex[id] = i }
@@ -48,7 +58,7 @@ public enum ContinuityKnowledgeCheck {
             $0.type == .knowledgeState && sceneIndex[$0.sourceSceneId] != nil
         }
         let reveals = claims.filter {
-            $0.type == .event && sceneIndex[$0.sourceSceneId] != nil
+            $0.type != .knowledgeState && sceneIndex[$0.sourceSceneId] != nil
         }
 
         var out: [Violation] = []
