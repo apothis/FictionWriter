@@ -245,6 +245,93 @@ func continuityFactLedgerTests() -> TestSuite {
         try expectEqual(l.nodes[1].members, [c2])
     }
 
+    // MARK: - SameFactLLMJudge — production wrapper around an OllamaCallProvider
+
+    final class StubLLM: OllamaCallProvider {
+        var responder: (String) -> Result<String, OllamaError> = { _ in .success("") }
+        private var pending: [(String, (Result<String, OllamaError>) -> Void)] = []
+        var prompts: [String] = []
+        var hasPending: Bool { !pending.isEmpty }
+        func call(
+            prompt: String, schema: [String: Any], options: OllamaChatOptions,
+            completion: @escaping (Result<String, OllamaError>) -> Void
+        ) {
+            prompts.append(prompt)
+            pending.append((prompt, completion))
+        }
+        func drain() {
+            let p = pending; pending = []
+            for (pr, c) in p { c(responder(pr)) }
+        }
+    }
+
+    let cA = claim(value: "the vault is empty", scene: "s1")
+    let cB = claim(value: "the empty vault", scene: "s2")
+
+    s.test("SameFactLLMJudge builds the same-fact prompt, parses same_fact, completes success") {
+        let llm = StubLLM()
+        llm.responder = { _ in
+            .success(#"{"verdict":"same_fact","confidence":0.9,"explanation":"paraphrase"}"#)
+        }
+        let j = SameFactLLMJudge(provider: llm)
+        var got: ContinuityAudit.SameFactJudgment?
+        var err: Error?
+        j.judge(claimA: cA, claimB: cB) { result in
+            switch result {
+            case .success(let v): got = v
+            case .failure(let e): err = e
+            }
+        }
+        while llm.hasPending { llm.drain() }
+        try expectNil(err)
+        let g = try expectNotNil(got)
+        try expectEqual(g.verdict, .sameFact)
+        try expectEqual(g.confidence, 0.9)
+        // sanity — the prompt carried both claim values
+        try expectTrue(llm.prompts.first?.contains("the vault is empty") == true)
+        try expectTrue(llm.prompts.first?.contains("the empty vault") == true)
+    }
+
+    s.test("SameFactLLMJudge parses different_fact and completes success") {
+        let llm = StubLLM()
+        llm.responder = { _ in
+            .success(#"{"verdict":"different_fact","confidence":0.4,"explanation":"unrelated"}"#)
+        }
+        let j = SameFactLLMJudge(provider: llm)
+        var got: ContinuityAudit.SameFactJudgment?
+        j.judge(claimA: cA, claimB: cB) { result in got = try? result.get() }
+        while llm.hasPending { llm.drain() }
+        try expectEqual(try expectNotNil(got).verdict, .differentFact)
+    }
+
+    s.test("SameFactLLMJudge maps a parse failure to .failure") {
+        let llm = StubLLM()
+        llm.responder = { _ in .success("not a json at all") }
+        let j = SameFactLLMJudge(provider: llm)
+        var got: ContinuityAudit.SameFactJudgment?
+        var err: Error?
+        j.judge(claimA: cA, claimB: cB) { result in
+            switch result { case .success(let v): got = v; case .failure(let e): err = e }
+        }
+        while llm.hasPending { llm.drain() }
+        try expectNil(got)
+        try expectNotNil(err)
+    }
+
+    s.test("SameFactLLMJudge propagates an LLM transport failure") {
+        let llm = StubLLM()
+        llm.responder = { _ in .failure(.transport("boom")) }
+        let j = SameFactLLMJudge(provider: llm)
+        var got: ContinuityAudit.SameFactJudgment?
+        var err: Error?
+        j.judge(claimA: cA, claimB: cB) { result in
+            switch result { case .success(let v): got = v; case .failure(let e): err = e }
+        }
+        while llm.hasPending { llm.drain() }
+        try expectNil(got)
+        try expectNotNil(err)
+    }
+
     s.test("claims whose scene is not in flatSceneIds are skipped") {
         let kept = claim(value: "v1", scene: "s1")
         let orphan = claim(value: "v2", scene: "scene-removed-from-manuscript")
