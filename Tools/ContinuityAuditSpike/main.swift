@@ -709,11 +709,20 @@ if phase == "eval" {
             let (name, m, run) = tasks[i]
             log("  engine: \(name) run \(run + 1)/\(evalRuns) …")
             let kobold = KoboldGenerateProvider(baseURL: URL(string: koboldURL)!)
+            // §25 Part B: build a world-state fact ledger via a
+            // same-fact LLM judge, then resolve knowledge_violation
+            // by firstAppearanceScene. Enabled by default; set
+            // LOOM_SPIKE_PART_B=0 to fall back to the legacy
+            // similarity-threshold path (for A/B comparison).
+            let usePartB = (env["LOOM_SPIKE_PART_B"] ?? "1") != "0"
+            let judge: SameFactJudging? = usePartB
+                ? SameFactLLMJudge(provider: kobold) : nil
             let engine = ContinuityAuditEngine(
                 extractor: OllamaContinuityExtractor(provider: kobold),
                 adjudicationProvider: kobold,
                 entities: [],
-                embedder: OllamaEmbedProvider(baseURL: URL(string: ollamaURL)!, model: embedModel))
+                embedder: OllamaEmbedProvider(baseURL: URL(string: ollamaURL)!, model: embedModel),
+                judge: judge)
             liveEngine = engine
             let sceneInputs = m.scenes.map {
                 ContinuityAuditEngine.SceneInput(id: $0.id, prose: $0.prose)
@@ -745,11 +754,14 @@ if phase == "engine" {
     let kobold = KoboldGenerateProvider(baseURL: URL(string: koboldURL)!)
     let embedModel = env["LOOM_SPIKE_EMBED_MODEL"] ?? "bge-large:latest"
     let engineEmbedder = OllamaEmbedProvider(baseURL: URL(string: ollamaURL)!, model: embedModel)
+    let usePartB = (env["LOOM_SPIKE_PART_B"] ?? "1") != "0"
+    let judge: SameFactJudging? = usePartB ? SameFactLLMJudge(provider: kobold) : nil
     let engine = ContinuityAuditEngine(
         extractor: OllamaContinuityExtractor(provider: kobold),
         adjudicationProvider: kobold,
         entities: [],
-        embedder: engineEmbedder
+        embedder: engineEmbedder,
+        judge: judge
     )
     let sceneInputs = fixture.scenes.map {
         ContinuityAuditEngine.SceneInput(id: $0.id, prose: $0.prose)
