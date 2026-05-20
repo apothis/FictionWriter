@@ -1173,3 +1173,24 @@ LLM's verdict, not Jaccard, for the actual fact-ledger construction.
 
 **Probe outputs.** `Tools/ContinuityAuditSpike/probe/{claims.json,
 pairs.json, results.json, report.md}`.
+
+**Model comparison — Goetia 24B (2026-05-20).** The same probe was
+re-run against Goetia (Mistral-Small-3 24B, the writer model already
+loaded for prose generation), to test whether canonicalisation can use
+the writer's model and avoid a Gemma/Goetia swap during an audit.
+
+| model | same_fact | different_fact | real same-fact accuracy |
+|---|---|---|---|
+| Gemma-4-31B abliterated | 19/25 (76%) | 33/33 (100%) | 19/19 (100%) |
+| Goetia 24B v1.3 | 20/25 (80%) | 33/33 (100%) | 20/20 (100%) |
+
+Goetia's 5 same-fact "misses" are again all model-fixes-the-labels:
+e.g. `"Mara moved her green eyes over the boats"` (an action that
+mentions eye colour) vs `"Mara's eyes are green"` (the colour attribute
+itself) — Goetia returns `different_fact` at confidence 0.90–0.95 with
+explanations like *"action vs. attribute."* Both models are 100% on
+genuine paraphrases and 100% on topical-noise pairs.
+
+**Operational implication.** Part B can canonicalise on Goetia. The
+audit and the writer share a model — no Kobold model swap during a
+real audit. Outputs at `Tools/ContinuityAuditSpike/probe-goetia/`.
