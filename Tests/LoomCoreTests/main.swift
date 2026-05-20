@@ -246,6 +246,7 @@ let suites: [TestSuite] = [
     continuityAuditExtractionTests(),
     continuityAuditAdjudicationTests(),
     continuitySameFactTests(),
+    continuityFactLedgerTests(),
     continuityConflictRetrievalTests(),
     continuitySubjectResolverTests(),
     continuityKnowledgeCheckTests(),
