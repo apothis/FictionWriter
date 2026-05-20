@@ -1194,3 +1194,125 @@ genuine paraphrases and 100% on topical-noise pairs.
 **Operational implication.** Part B can canonicalise on Goetia. The
 audit and the writer share a model — no Kobold model swap during a
 real audit. Outputs at `Tools/ContinuityAuditSpike/probe-goetia/`.
+
+## 28. Part B built and ripped out — a negative result on Goetia (2026-05-20)
+
+§25 Part B was built end-to-end in two forms, measured against the
+legacy similarity-threshold path on the same eval set, and reverted.
+The §27 probe over-promised: a green probe didn't translate to a
+working production component. This section records the chain of
+evidence so the lesson is preserved.
+
+### Build (two shapes, both committed then reverted)
+
+**v1 — global FactLedger.** Single-pass online clustering of all
+non-knowledge claims via the same-fact judge, with a token-Jaccard
+≥ 0.1 prefilter to bound cost. For each `knowledge_state` claim k,
+look up fact nodes whose `firstAppearanceScene` falls after k's
+scene. TDD'd (19 tests across 4 files). The initial implementation
+used completion-passing recursion across both `step` (claims walk)
+and `matchAgainst` (ledger walk), which crashed on the first k=1
+eval with `EXC_BAD_ACCESS — Thread stack size exceeded` at depth
+~9300 on URLSession's 544K-stack delegate queue. Rewritten as an
+explicit `advance()` state machine with two nested `while` loops —
+stack depth bounded to one frame per outstanding judge call.
+
+**v2 — per-knowledge-claim cosine top-K.** v1 was both slow
+(O(N²): ~30–60 min ledger build per manuscript, projected ~36 hr per
+audit on an 80k-word novel) *and* the global clustering allowed
+false-positive same-fact merges to silently suppress real violations
+by setting `firstAppearanceScene` before the reference. v2 dropped
+the global ledger: per knowledge claim k, cosine-rank all
+non-knowledge claims (embeddings already exist from
+`ContinuityClaimFilterPipeline`), take top-K=10, sort by scene order,
+walk via the same-fact judge. First match's scene determines outcome.
+Cost: O(knowledge_claims × K) judge calls — minutes per manuscript
+on lighthouse-sized inputs.
+
+### Measurement (k=1, all four manuscripts, Goetia 24B)
+
+| metric | §24 Gemma-4-31B legacy | Goetia legacy | Goetia Part B v1 | Goetia Part B v2 |
+|---|---|---|---|---|
+| recall | 46% | **44%** | 38% | 35% |
+| precision | 43% | 53% | 65% | **67%** |
+| F1 | 0.46 | **0.47** | 0.46 | 0.46 |
+| **knowledge_violation** | **3/4** | **1/4** | 0/4 | 0/4 |
+| attribute_drift | 56% | 50% | 44% | 38% |
+| timeline_conflict | 20% | 20% | 30% | 30% |
+| spatial_conflict | 20% | 60% | 40% | 60% |
+
+Two findings:
+
+1. **Goetia legacy < Gemma-4-31B legacy on knowledge_violation
+   (1/4 vs 3/4).** §24's 3/4 result was substantially Gemma-specific.
+   The writer-model A/B in §24 chose Goetia for *prose generation*;
+   for *knowledge_violation specifically*, Gemma-4-31B abliterated
+   was the better audit model.
+2. **Goetia Part B < Goetia legacy across the board.** Recall down
+   8–9 points, attribute_drift down 6–12 points, knowledge_violation
+   down to 0/4. The extra precursor LLM gate (same-fact judge between
+   cosine retrieval and the final adjudicator) over-rejects real
+   reference/reveal pairs in production. The legacy single-gate path
+   (`cosine ≥ 0.7 → knowledge adjudicator`) gives the adjudicator more
+   to work with — it sees scene-prose context, applies the §24 task-fit
+   verdict vocabulary, and decides per pair; whereas Part B vetoes
+   candidates upstream before the adjudicator can correct.
+
+### Why §27's probe didn't predict §28
+
+The probe scored same-fact on pairs the eval matcher's word-Jaccard
+clustered (≥ 0.34 to gold). Those are *easy* pairs — they share
+substantial surface. In production, a knowledge_state reference
+("X knows P") and a narration reveal ("P happened") often share
+*no surface*: their cosine sits in the 0.73–0.94 band (§24) but their
+Jaccard is below the §27 prefilter floor and very far from 1.0.
+
+§26's open lesson reasserts: a *capability* probe on filtered/clean
+inputs is necessary but not sufficient. The §27 sample was
+representative-of-the-cluster but not representative-of-the-task. The
+discriminating cases for production are exactly the
+ref/reveal-cross-form pairs the §27 sampling never touched.
+
+### Disposition (user-confirmed 2026-05-20) — REVERTED
+
+All Part B code removed: `SameFactVerdict` / `SameFactJudgment` /
+`buildSameFactPrompt` / `sameFactJSONSchema` / `parseSameFact` in
+`ContinuityAudit.swift`; `SameFactJudging` protocol +
+`SameFactLLMJudge` impl; the global-ledger `FactNode` /
+`FactLedger.build`; the per-k cosine `violations()` overload; the
+engine wiring for both; the spike's `phase=probe` block and judge
+plumbing; all related tests. Files restored to commit `05a9e2c`.
+`2022/2022` tests passing, matching the pre-Part-B count exactly.
+
+Probe artifacts under `Tools/ContinuityAuditSpike/probe/`,
+`probe-goetia/`, `eval-partB-*`, `eval-legacy-*` preserved as
+evidence.
+
+### Where this leaves L10 (knowledge_violation specifically)
+
+- **Current best:** legacy path on Gemma-4-31B abliterated (§24's
+  3/4 at k=1). Goetia is the default writer model; for the audit on
+  Goetia the headline is 1/4.
+- **Open option:** per-audit model routing. Goetia for the world-fact
+  retrieval/adjudication path (where it matches Gemma per §24's
+  A/B), Gemma-4-31B abliterated for the knowledge-adjudication
+  prompt. Not implemented; would need to extend
+  `ContinuityAuditEngine`'s init to take two providers and route by
+  prompt type. Manual model swap on KoboldCpp is the bottleneck —
+  L10's `LOOM_TECH_STACK` notes the Ollama-vs-KoboldCpp
+  model-server flexibility direction as a separate deferred idea.
+- **Not worth re-spiking:** any "extra precursor LLM gate" between
+  candidate retrieval and the final adjudicator. The §28
+  measurement shows that direction systematically hurts recall on
+  Goetia; the legacy single-adjudicator-as-precision-gate shape is
+  the right one.
+
+### Open lesson
+
+A probe that scores well on filtered/clean inputs predicts capability,
+not behaviour. Before committing to build *anything* downstream of an
+LLM-extracted-claim pipeline, the de-risk probe must sample the
+production stage's *worst-case* outputs (low-Jaccard ref/reveal pairs,
+mismatched extraction styles), not just its *typical* outputs (high-
+Jaccard clustered pairs). §28 cost ~2 days of build + ~10 hr of
+compute. The probe should have looked harder.
