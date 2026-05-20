@@ -302,35 +302,6 @@ public enum ContinuityAudit {
         }
     }
 
-    /// Proposition-identity verdict — does claim A assert the same
-    /// specific fact as claim B? §25 Part B's world-state fact ledger
-    /// needs to cluster extracted claims into canonical fact nodes;
-    /// embedding cosine fails on this (§24 — junk pairs out-score real
-    /// pairs) and NLI fails on it (§26 — extracted paraphrases come
-    /// back `neutral`). Task-fit vocabulary, same shape as
-    /// `KnowledgeVerdict`.
-    public enum SameFactVerdict: String, Codable, Equatable, CaseIterable {
-        /// The two claims assert the same specific proposition — even
-        /// if phrased differently. They should cluster into one fact.
-        case sameFact = "same_fact"
-        /// The two claims assert different propositions, even if they
-        /// share a subject, topic, or surface terms.
-        case differentFact = "different_fact"
-    }
-
-    public struct SameFactJudgment: Codable, Equatable {
-        public var verdict: SameFactVerdict
-        /// 0…1 — the model's confidence in the verdict.
-        public var confidence: Double
-        public var explanation: String
-
-        public init(verdict: SameFactVerdict, confidence: Double, explanation: String) {
-            self.verdict = verdict
-            self.confidence = confidence
-            self.explanation = explanation
-        }
-    }
-
     // MARK: - Adjudication prompt
 
     /// Build the pairwise-adjudication prompt. The model sees exactly
@@ -492,83 +463,6 @@ public enum ContinuityAudit {
         }
         let confidence = min(1.0, max(0.0, item.confidence ?? 0.0))
         return Adjudication(
-            verdict: verdict,
-            confidence: confidence,
-            explanation: item.explanation ?? ""
-        )
-    }
-
-    /// Build the same-fact judgment prompt — §25 Part B's
-    /// proposition-identity primitive. The model sees two extracted
-    /// claims (which are paraphrases of the source prose, often noisy)
-    /// and decides whether they assert the *same specific proposition*.
-    ///
-    /// The framing inherits the §24 lessons that worked for
-    /// `KnowledgeVerdict`: task-fit vocabulary (`same_fact` /
-    /// `different_fact`, not the wrong-shape contradiction enum),
-    /// explicit statement that two claims about the same subject can
-    /// be different propositions (the §24 junk pattern), and the
-    /// "same topic, different fact" verdict offered positively so the
-    /// model has the right escape hatch.
-    public static func buildSameFactPrompt(claimA: Claim, claimB: Claim) -> String {
-        func render(_ c: Claim, label: String) -> String {
-            """
-            \(label) (scene \(c.sourceSceneId), \(c.type.rawValue), \(c.source.rawValue)):
-            \(c.value)
-            Evidence: "\(c.evidenceQuote)"
-            """
-        }
-        return """
-        You are clustering claims extracted from a novel into canonical facts. Below are two claims. Decide whether they assert the SAME SPECIFIC PROPOSITION about the story world.
-
-        \(render(claimA, label: "CLAIM A"))
-
-        \(render(claimB, label: "CLAIM B"))
-
-        Compare the specific proposition each claim asserts, not the shared subject or topic. Two claims about the same character, place, or object are different facts unless they assert the same thing — "the vault is on the fourteenth floor" and "the vault is empty" share a subject but are different propositions. The two claims may be paraphrases — different wording of the same assertion still counts as the same fact.
-
-        Choose one verdict:
-        - same_fact: both claims assert the same specific proposition. They paraphrase the same underlying fact and should cluster into one canonical fact node.
-        - different_fact: the claims assert different propositions, even if they share a character, place, or topic.
-
-        Reply with one JSON object: verdict, confidence (0 to 1), and a one-sentence explanation.
-        """
-    }
-
-    /// JSON schema for the same-fact judgment — same shape as the
-    /// other adjudication schemas, verdict constrained to the
-    /// `SameFactVerdict` vocabulary.
-    public static func sameFactJSONSchema() -> [String: Any] {
-        return [
-            "type": "object",
-            "properties": [
-                "verdict": ["type": "string", "enum": SameFactVerdict.allCases.map(\.rawValue)],
-                "confidence": ["type": "number"],
-                "explanation": ["type": "string"],
-            ],
-            "required": ["verdict", "confidence", "explanation"],
-        ]
-    }
-
-    /// Parse the model's same-fact judgment object. Same tolerance as
-    /// `parseAdjudication`; throws on an unknown / non-same-fact
-    /// verdict word.
-    public static func parseSameFact(_ raw: String) throws -> SameFactJudgment {
-        guard let first = raw.firstIndex(of: "{") else {
-            throw ParseError.noJSONObjectFound
-        }
-        let blocks = topLevelObjects(in: raw, from: first)
-        guard let objText = blocks.first,
-              let data = objText.data(using: .utf8),
-              let item = try? JSONDecoder().decode(RawAdjudication.self, from: data)
-        else {
-            throw ParseError.malformedJSON
-        }
-        guard let v = item.verdict, let verdict = SameFactVerdict(rawValue: v) else {
-            throw ParseError.malformedJSON
-        }
-        let confidence = min(1.0, max(0.0, item.confidence ?? 0.0))
-        return SameFactJudgment(
             verdict: verdict,
             confidence: confidence,
             explanation: item.explanation ?? ""

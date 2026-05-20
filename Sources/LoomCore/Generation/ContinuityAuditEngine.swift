@@ -66,15 +66,6 @@ public final class ContinuityAuditEngine {
     /// `ContinuityClaimFilterPipeline` (dedup + evidence validation)
     /// and the knowledge check gets an embedding-backed similarity.
     private let embedder: KoboldEmbedding?
-    /// Optional §25 Part B same-fact judge. When present, the
-    /// knowledge stage replaces the legacy similarity-threshold
-    /// matching with a world-state fact ledger: claims are clustered
-    /// into canonical fact nodes via the judge, and a
-    /// `knowledge_state` reference becomes a candidate when its fact
-    /// node's `firstAppearanceScene` lands after the reference. When
-    /// nil the engine uses the legacy path. Both paths still feed the
-    /// LLM adjudicator as a confirmation backstop.
-    private let judge: SameFactJudging?
 
     public private(set) var isRunning = false
 
@@ -93,24 +84,18 @@ public final class ContinuityAuditEngine {
     /// clusters on cosine (a higher threshold) instead of the default
     /// content-word Jaccard.
     private var usingEmbeddingSimilarity = false
-    /// Embeddings of every surviving claim value, captured from the
-    /// `ContinuityClaimFilterPipeline` pass. Used by §25 Part B's
-    /// per-knowledge-claim cosine ranking. Empty when no embedder ran.
-    private var claimEmbeddings: [String: [Float]] = [:]
 
     public init(
         extractor: ContinuityClaimExtracting,
         adjudicationProvider: OllamaCallProvider,
         entities: [ContinuitySubjectResolver.KnownEntity],
         embedder: KoboldEmbedding? = nil,
-        judge: SameFactJudging? = nil,
         similarity: @escaping (String, String) -> Double = ContinuityAuditEngine.tokenJaccard
     ) {
         self.extractor = extractor
         self.adjudicationProvider = adjudicationProvider
         self.entities = entities
         self.embedder = embedder
-        self.judge = judge
         self.baseSimilarity = similarity
     }
 
@@ -196,7 +181,6 @@ public final class ContinuityAuditEngine {
                         return base(a, b)
                     }
                     self.usingEmbeddingSimilarity = true
-                    self.claimEmbeddings = emb
                 }
                 DebugLog.shared.write(
                     "[continuity-audit] claim-filter: -\(result.dedupDropped) dedup, -\(result.evidenceDropped) evidence")
@@ -256,44 +240,15 @@ public final class ContinuityAuditEngine {
 
     // MARK: - Stage 5: knowledge check + adjudication
 
-    /// §25 Part B (redesigned, 2026-05-20). For each knowledge_state
-    /// claim, the check cosine-ranks non-knowledge claims and asks
-    /// the same-fact judge on the top-K. Default K=10 — comfortably
-    /// covers the real reveal (§24 measured ref↔reveal cosines at
-    /// 0.73–0.94 — top-10 will contain it) while bounding cost to
-    /// `knowledge_claims × K` LLM calls per audit.
-    private static let partBTopK = 10
-
     private func adjudicationDone() {
         let sceneOrder = scenes.map(\.id)
-        let ksCount = claims.filter { $0.type == .knowledgeState }.count
-        if let judge = judge {
-            let nonKnowledge = claims.filter { $0.type != .knowledgeState }
-            let knowledgeClaims = claims.filter { $0.type == .knowledgeState }
-            DebugLog.shared.write("[continuity-audit] Part B: per-k cosine top-\(Self.partBTopK) over \(nonKnowledge.count) candidate claims for \(ksCount) knowledge_state references …")
-            ContinuityKnowledgeCheck.violations(
-                knowledgeClaims: knowledgeClaims,
-                candidateClaims: nonKnowledge,
-                embeddings: claimEmbeddings,
-                sceneOrder: sceneOrder,
-                judge: judge,
-                topK: Self.partBTopK
-            ) { [weak self] violations in
-                guard let self = self else { return }
-                self.onMain {
-                    self.knowledgeCandidates = violations
-                    DebugLog.shared.write("[continuity-audit] Part B: \(ksCount) knowledge_state claims → \(violations.count) knowledge candidates")
-                    for c in violations {
-                        DebugLog.shared.write("[continuity-audit]   kcand ref@\(c.knowledgeClaim.sourceSceneId)=\"\(c.knowledgeClaim.value)\" reveal@\(c.revealClaim.sourceSceneId)=\"\(c.revealClaim.value)\"")
-                    }
-                    self.adjudicateKnowledge(0)
-                }
-            }
-            return
-        }
-        // Legacy similarity-threshold path.
+        // The knowledge check produces *candidates* — a loose similarity
+        // match. Each is then adjudicated by the LLM, so a loose match
+        // is never a finding on its own (the §3 architecture; without
+        // this the knowledge class produced false positives — §17).
         knowledgeCandidates = ContinuityKnowledgeCheck.violations(
             claims: claims, sceneOrder: sceneOrder, similarity: activeSimilarity)
+        let ksCount = claims.filter { $0.type == .knowledgeState }.count
         DebugLog.shared.write("[continuity-audit] \(ksCount) knowledge_state claims → \(knowledgeCandidates.count) knowledge candidates")
         for c in knowledgeCandidates {
             DebugLog.shared.write("[continuity-audit]   kcand ref@\(c.knowledgeClaim.sourceSceneId)=\"\(c.knowledgeClaim.value)\" reveal@\(c.revealClaim.sourceSceneId)=\"\(c.revealClaim.value)\"")

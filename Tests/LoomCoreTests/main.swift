@@ -245,7 +245,6 @@ let suites: [TestSuite] = [
     plannedProjectOutlineDraftCoordinatorTests(),
     continuityAuditExtractionTests(),
     continuityAuditAdjudicationTests(),
-    continuitySameFactTests(),
     continuityConflictRetrievalTests(),
     continuitySubjectResolverTests(),
     continuityKnowledgeCheckTests(),
