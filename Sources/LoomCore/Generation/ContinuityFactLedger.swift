@@ -51,5 +51,99 @@ public extension ContinuityAudit {
         public init(nodes: [FactNode] = []) {
             self.nodes = nodes
         }
+
+        /// Build a ledger by single-pass online clustering.
+        ///
+        /// Claims are processed in scene order (the position of
+        /// `claim.sourceSceneId` in `flatSceneIds`); claims whose
+        /// scene is not in `flatSceneIds` are skipped. For each
+        /// claim, every existing node whose representative passes
+        /// `shouldCompare(rep, candidate)` is sent to the judge in
+        /// node order — the first `same_fact` verdict attaches the
+        /// candidate to that node, and the walk moves on. If no
+        /// existing node matches, the candidate seeds a new node.
+        ///
+        /// `shouldCompare` is the cheap LLM-call prefilter — pairs
+        /// it rejects are treated as `different_fact` without
+        /// asking the judge. The §27 probe established this is
+        /// essential for cost; a real audit pumps ~75+ claims
+        /// through and the judge call is the only expensive op.
+        public static func build(
+            claims: [Claim],
+            flatSceneIds: [String],
+            judge: SameFactJudging,
+            shouldCompare: @escaping (Claim, Claim) -> Bool,
+            completion: @escaping (FactLedger) -> Void
+        ) {
+            // Order claims by scene-index; drop orphans (claim.scene
+            // not in flatSceneIds — a scene was removed and the
+            // claim is stale).
+            let sceneIndex = Dictionary(uniqueKeysWithValues:
+                flatSceneIds.enumerated().map { ($0.element, $0.offset) })
+            let ordered = claims
+                .enumerated()
+                .compactMap { (i, c) -> (idx: Int, originalIdx: Int, claim: Claim)? in
+                    guard let s = sceneIndex[c.sourceSceneId] else { return nil }
+                    return (s, i, c)
+                }
+                // stable scene order with input order as the tiebreak —
+                // claims from the same scene are processed in the
+                // order they arrived in the input array.
+                .sorted { lhs, rhs in
+                    lhs.idx != rhs.idx ? lhs.idx < rhs.idx : lhs.originalIdx < rhs.originalIdx
+                }
+                .map(\.claim)
+
+            var ledger = FactLedger()
+
+            func step(_ i: Int) {
+                if i >= ordered.count { completion(ledger); return }
+                let candidate = ordered[i]
+                matchAgainst(candidate, nodeIndex: 0) { matchedIndex in
+                    if let m = matchedIndex {
+                        ledger.nodes[m].members.append(candidate)
+                    } else {
+                        ledger.nodes.append(FactNode(
+                            representative: candidate,
+                            firstAppearanceScene: candidate.sourceSceneId,
+                            members: [candidate]))
+                    }
+                    step(i + 1)
+                }
+            }
+
+            func matchAgainst(
+                _ candidate: Claim, nodeIndex i: Int,
+                completion done: @escaping (Int?) -> Void
+            ) {
+                if i >= ledger.nodes.count { done(nil); return }
+                let rep = ledger.nodes[i].representative
+                if !shouldCompare(rep, candidate) {
+                    matchAgainst(candidate, nodeIndex: i + 1, completion: done)
+                    return
+                }
+                judge.judge(claimA: rep, claimB: candidate) { result in
+                    let verdict = (try? result.get())?.verdict ?? .differentFact
+                    if verdict == .sameFact { done(i); return }
+                    matchAgainst(candidate, nodeIndex: i + 1, completion: done)
+                }
+            }
+
+            step(0)
+        }
     }
+}
+
+/// The async same-fact judgment primitive. Production code calls a
+/// `KoboldSameFactJudge` (LLM-backed); tests use a deferred stub. The
+/// completion is invoked with `.success(judgment)` or `.failure(...)`;
+/// on `.failure` the builder treats the pair as `different_fact`
+/// (fail-soft — a transient kobold error must not corrupt the ledger
+/// by accidentally merging two different facts).
+public protocol SameFactJudging {
+    func judge(
+        claimA: ContinuityAudit.Claim,
+        claimB: ContinuityAudit.Claim,
+        completion: @escaping (Result<ContinuityAudit.SameFactJudgment, Error>) -> Void
+    )
 }
