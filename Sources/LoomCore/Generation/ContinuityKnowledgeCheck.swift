@@ -101,6 +101,83 @@ public enum ContinuityKnowledgeCheck {
         return out
     }
 
+    /// §25 Part B — find violations against a pre-built `FactLedger`.
+    ///
+    /// The deterministic core: for each knowledge claim at scene N,
+    /// ask the same-fact judge whether any fact node's representative
+    /// asserts the *same proposition*; a fact node whose
+    /// `firstAppearanceScene` falls *after* N is a violation (the
+    /// character knows a fact the story has not yet introduced). The
+    /// LLM adjudicator can run downstream as a confirmation backstop;
+    /// this function returns the candidate set.
+    ///
+    /// Trivial references (negations, bare topic-awareness) are
+    /// dropped before the judge is consulted — same screen as the
+    /// legacy `violations(claims:sceneOrder:similarity:)` form.
+    ///
+    /// `shouldCompare(rep, k)` is the cheap LLM-call prefilter,
+    /// mirroring `FactLedger.build`. Pairs it rejects are treated as
+    /// `different_fact`. Completion fires once with the full
+    /// violation set; the function is fail-soft on judge errors.
+    public static func violations(
+        knowledgeClaims: [ContinuityAudit.Claim],
+        ledger: ContinuityAudit.FactLedger,
+        sceneOrder: [String],
+        judge: SameFactJudging,
+        shouldCompare: @escaping (ContinuityAudit.Claim, ContinuityAudit.Claim) -> Bool,
+        completion: @escaping ([Violation]) -> Void
+    ) {
+        var sceneIndex: [String: Int] = [:]
+        for (i, id) in sceneOrder.enumerated() { sceneIndex[id] = i }
+
+        let auditable = knowledgeClaims.filter {
+            $0.type == .knowledgeState
+                && sceneIndex[$0.sourceSceneId] != nil
+                && !isTrivialReference($0.value)
+        }
+
+        var out: [Violation] = []
+
+        func step(_ i: Int) {
+            if i >= auditable.count { completion(out); return }
+            let k = auditable[i]
+            let kIdx = sceneIndex[k.sourceSceneId]!
+            findMatch(k, kIdx: kIdx, nodeIndex: 0) { matched in
+                if let node = matched {
+                    out.append(Violation(knowledgeClaim: k, revealClaim: node.representative))
+                }
+                step(i + 1)
+            }
+        }
+
+        func findMatch(
+            _ k: ContinuityAudit.Claim, kIdx: Int, nodeIndex i: Int,
+            completion done: @escaping (ContinuityAudit.FactNode?) -> Void
+        ) {
+            if i >= ledger.nodes.count { done(nil); return }
+            let node = ledger.nodes[i]
+            // Only a fact whose *first appearance* is later than the
+            // reference scene is a candidate violation. Earlier first
+            // appearance means the fact entered the story before the
+            // character referenced it — not auditable here.
+            guard let nIdx = sceneIndex[node.firstAppearanceScene], nIdx > kIdx else {
+                findMatch(k, kIdx: kIdx, nodeIndex: i + 1, completion: done)
+                return
+            }
+            if !shouldCompare(node.representative, k) {
+                findMatch(k, kIdx: kIdx, nodeIndex: i + 1, completion: done)
+                return
+            }
+            judge.judge(claimA: node.representative, claimB: k) { result in
+                let verdict = (try? result.get())?.verdict ?? .differentFact
+                if verdict == .sameFact { done(node); return }
+                findMatch(k, kIdx: kIdx, nodeIndex: i + 1, completion: done)
+            }
+        }
+
+        step(0)
+    }
+
     /// A knowledge_state claim that cannot be a knowledge-before-reveal
     /// violation and so should not become a candidate (§24):
     ///
