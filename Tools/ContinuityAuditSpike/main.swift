@@ -323,6 +323,239 @@ report += "- **Extraction**: \(extractBackend == "kobold" ? koboldDesc : "\(extr
 report += "- **Adjudication**: \(adjBackend == "kobold" ? koboldDesc : "\(adjModel) @ \(ollamaURL)")\n"
 report += "- **Fixture**: \(fixture.scenes.count) scenes, \(fixture.gold_claims.count) gold claims, \(fixture.gold_pairs.count) gold pairs\n\n"
 
+// MARK: - Probe phase — §25 Part B same-fact judgment de-risk
+//
+// Sources real extracted-claim pairs from one eval manuscript (default
+// `lighthouse`), labels them mechanically using the gold contradictions
+// (within-cluster = `same_fact`, cross-cluster at the same gold site =
+// `different_fact`), runs the same-fact prompt on each, and reports a
+// confusion matrix. The §26 lesson: this is the production-noisy probe
+// the NLI path never did — the inputs are the actual extracted
+// paraphrases the audit will feed Part B's canonicalisation step, not
+// gold reference strings.
+//
+//   LOOM_PROBE_MANUSCRIPT    default lighthouse
+//   LOOM_PROBE_EXTRACT_RUNS  default 3 (gives ~2-3 paraphrases per cluster)
+//   LOOM_PROBE_OUT_DIR       default Tools/ContinuityAuditSpike/probe/
+//   LOOM_PROBE_MATCH_THRESHOLD  default 0.34 (eval matcher's threshold)
+
+if phase == "probe" {
+    let probeManuscriptId = env["LOOM_PROBE_MANUSCRIPT"] ?? "lighthouse"
+    let probeRuns = Int(env["LOOM_PROBE_EXTRACT_RUNS"] ?? "") ?? 3
+    let probeOutDir = env["LOOM_PROBE_OUT_DIR"]
+        ?? "Tools/ContinuityAuditSpike/probe"
+    let matchThreshold = Double(env["LOOM_PROBE_MATCH_THRESHOLD"] ?? "") ?? 0.34
+    let evalDir = env["LOOM_EVAL_FIXTURE_DIR"]
+        ?? "Tests/LoomCoreTests/Fixtures/ContinuityAuditEval"
+
+    let fm = FileManager.default
+    try? fm.createDirectory(atPath: probeOutDir, withIntermediateDirectories: true)
+
+    guard let files = try? fm.contentsOfDirectory(atPath: evalDir) else {
+        log("FATAL: cannot list eval fixture dir \(evalDir)"); exit(1)
+    }
+    var picked: EvalManuscript? = nil
+    for file in files.sorted() where file.hasSuffix(".json") {
+        guard let data = fm.contents(atPath: evalDir + "/" + file),
+              let m = try? JSONDecoder().decode(EvalManuscript.self, from: data),
+              m.id == probeManuscriptId else { continue }
+        picked = m
+        break
+    }
+    guard let manuscript = picked else {
+        log("FATAL: no eval manuscript with id=\(probeManuscriptId) in \(evalDir)"); exit(1)
+    }
+    log("== PROBE: same-fact judgment ==")
+    log("  manuscript: \(manuscript.id) (\(manuscript.scenes.count) scenes, \(manuscript.gold_contradictions.count) gold contradictions)")
+    log("  extraction: \(extractBackend == "kobold" ? koboldDesc : "\(extractModel) @ \(ollamaURL)") · runs=\(probeRuns)")
+    log("  adjudication: \(adjBackend == "kobold" ? koboldDesc : "\(adjModel) @ \(ollamaURL)")")
+    log("  out dir: \(probeOutDir)")
+
+    // --- 1. Multi-run extraction. Same call path as the production
+    // audit — `extractClaims` already uses `OllamaContinuityExtractor`
+    // with the chosen backend. Multiple runs give us paraphrases per
+    // underlying fact, which is what makes same-fact pairs available.
+    struct ExtractedClaim: Codable {
+        let run: Int
+        let scene: String
+        let type: String
+        let subject: String
+        let attribute_key: String
+        let value: String
+        let source: String
+        let evidence_quote: String
+    }
+    var extracted: [ExtractedClaim] = []
+    for run in 0..<probeRuns {
+        for scene in manuscript.scenes {
+            log("  extract: \(manuscript.id)/\(scene.id) run \(run + 1)/\(probeRuns) …")
+            let claims = extractClaims(prose: scene.prose, sceneId: scene.id)
+            for c in claims {
+                extracted.append(ExtractedClaim(
+                    run: run, scene: scene.id,
+                    type: c.type.rawValue, subject: c.subject,
+                    attribute_key: c.attributeKey, value: c.value,
+                    source: c.source.rawValue, evidence_quote: c.evidenceQuote))
+            }
+        }
+    }
+    log("  extracted total: \(extracted.count) claims (\(probeRuns) runs × \(manuscript.scenes.count) scenes)")
+    let claimsPath = probeOutDir + "/claims.json"
+    if let data = try? JSONEncoder().encode(extracted) {
+        try? data.write(to: URL(fileURLWithPath: claimsPath))
+        log("  wrote \(claimsPath)")
+    }
+
+    // --- 2. Label pairs using gold contradictions. A non-knowledge
+    // contradiction g links `value_a` in `scene_a` to `value_b` in
+    // `scene_b`. The eval matcher's Jaccard ≥ 0.34 against the gold
+    // value defines cluster membership — same procedure that scores
+    // recall, so the labels track the eval's own truth.
+    struct LabelledPair: Codable {
+        let id: String
+        let label: String          // same_fact | different_fact
+        let goldId: String
+        let claimA: ExtractedClaim
+        let claimB: ExtractedClaim
+    }
+    func clusterMembership(_ c: ExtractedClaim, valueGold: String, sceneGold: String)
+        -> Bool
+    {
+        c.scene == sceneGold && jaccard(c.value, valueGold) >= matchThreshold
+    }
+    var pairs: [LabelledPair] = []
+    var sameFactCount = 0, differentFactCount = 0
+    // Skip knowledge_violation — it is the Part B target, not the
+    // class we're canonicalising; the gold value_a there is a
+    // reference, not a fact assertion.
+    for g in manuscript.gold_contradictions where g.kind != "knowledge_violation" {
+        let clusterA = extracted.filter { clusterMembership($0, valueGold: g.value_a, sceneGold: g.scene_a) }
+        let clusterB = extracted.filter { clusterMembership($0, valueGold: g.value_b, sceneGold: g.scene_b) }
+        // within-cluster same-fact pairs
+        for cluster in [clusterA, clusterB] {
+            for i in 0..<cluster.count {
+                for j in (i + 1)..<cluster.count {
+                    pairs.append(LabelledPair(
+                        id: "\(g.id)-sf-\(pairs.count)",
+                        label: "same_fact",
+                        goldId: g.id,
+                        claimA: cluster[i], claimB: cluster[j]))
+                    sameFactCount += 1
+                }
+            }
+        }
+        // cross-cluster different-fact pairs (same topic, different proposition)
+        for a in clusterA {
+            for b in clusterB {
+                pairs.append(LabelledPair(
+                    id: "\(g.id)-df-\(pairs.count)",
+                    label: "different_fact",
+                    goldId: g.id,
+                    claimA: a, claimB: b))
+                differentFactCount += 1
+            }
+        }
+    }
+    log("  pairs: \(pairs.count) total · same_fact=\(sameFactCount) · different_fact=\(differentFactCount)")
+    let pairsPath = probeOutDir + "/pairs.json"
+    if let data = try? JSONEncoder().encode(pairs) {
+        try? data.write(to: URL(fileURLWithPath: pairsPath))
+        log("  wrote \(pairsPath)")
+    }
+    guard !pairs.isEmpty else {
+        log("FATAL: no labelled pairs — extraction recall on lighthouse may be too thin")
+        exit(1)
+    }
+
+    // --- 3. Score each pair with the same-fact prompt against the
+    // adjudication backend (Kobold + Gemma-4-31B in the standard
+    // probe configuration).
+    func extractedToClaim(_ e: ExtractedClaim) -> ContinuityAudit.Claim {
+        ContinuityAudit.Claim(
+            type: ContinuityAudit.ClaimType(rawValue: e.type) ?? .event,
+            subject: e.subject, attributeKey: e.attribute_key, value: e.value,
+            sourceSceneId: e.scene,
+            source: ContinuityAudit.ClaimSource(rawValue: e.source) ?? .narration,
+            evidenceQuote: e.evidence_quote)
+    }
+    func sameFactRaw(prompt: String) -> String? {
+        adjBackend == "kobold"
+            ? callKobold(prompt: prompt)
+            : callOllama(ollamaAdj, prompt: prompt, schema: ContinuityAudit.sameFactJSONSchema())
+    }
+    struct Verdict: Codable {
+        let pairId: String
+        let label: String
+        let predicted: String
+        let confidence: Double
+        let explanation: String
+        let raw: String
+    }
+    var verdicts: [Verdict] = []
+    for (i, pair) in pairs.enumerated() {
+        log("  probe: pair \(i + 1)/\(pairs.count) [\(pair.label)] …")
+        let prompt = ContinuityAudit.buildSameFactPrompt(
+            claimA: extractedToClaim(pair.claimA),
+            claimB: extractedToClaim(pair.claimB))
+        let raw = sameFactRaw(prompt: prompt) ?? ""
+        if let j = try? ContinuityAudit.parseSameFact(raw) {
+            verdicts.append(Verdict(
+                pairId: pair.id, label: pair.label,
+                predicted: j.verdict.rawValue, confidence: j.confidence,
+                explanation: j.explanation, raw: raw))
+        } else {
+            verdicts.append(Verdict(
+                pairId: pair.id, label: pair.label,
+                predicted: "ERROR", confidence: 0, explanation: "", raw: raw))
+        }
+    }
+    let resultsPath = probeOutDir + "/results.json"
+    if let data = try? JSONEncoder().encode(verdicts) {
+        try? data.write(to: URL(fileURLWithPath: resultsPath))
+        log("  wrote \(resultsPath)")
+    }
+
+    // --- 4. Confusion + headline. The probe goes/no-goes on whether
+    // the predicted verdict tracks the label cleanly.
+    var confusion: [String: [String: Int]] = [
+        "same_fact": ["same_fact": 0, "different_fact": 0, "ERROR": 0],
+        "different_fact": ["same_fact": 0, "different_fact": 0, "ERROR": 0],
+    ]
+    for v in verdicts {
+        var row = confusion[v.label] ?? [:]
+        row[v.predicted, default: 0] += 1
+        confusion[v.label] = row
+    }
+    let sfRow = confusion["same_fact"]!
+    let dfRow = confusion["different_fact"]!
+    let sfCorrect = sfRow["same_fact"]!
+    let sfTotal = sameFactCount
+    let dfCorrect = dfRow["different_fact"]!
+    let dfTotal = differentFactCount
+    let sfRate = sfTotal == 0 ? 0 : Double(sfCorrect) / Double(sfTotal)
+    let dfRate = dfTotal == 0 ? 0 : Double(dfCorrect) / Double(dfTotal)
+
+    var pr = "# ContinuityAuditSpike — same-fact probe (\(manuscript.id))\n\n"
+    pr += "- **Manuscript**: \(manuscript.id) · \(manuscript.scenes.count) scenes · \(manuscript.gold_contradictions.count) gold contradictions\n"
+    pr += "- **Extraction**: \(extractBackend == "kobold" ? koboldDesc : "\(extractModel) @ \(ollamaURL)") · runs=\(probeRuns)\n"
+    pr += "- **Adjudication**: \(adjBackend == "kobold" ? koboldDesc : "\(adjModel) @ \(ollamaURL)")\n"
+    pr += "- **Pairs**: \(pairs.count) (same_fact=\(sameFactCount), different_fact=\(differentFactCount))\n\n"
+    pr += "## Confusion (rows = label, cols = predicted)\n\n"
+    pr += "| label \\ pred | same_fact | different_fact | ERROR |\n|---|---|---|---|\n"
+    pr += "| same_fact | \(sfRow["same_fact"]!) | \(sfRow["different_fact"]!) | \(sfRow["ERROR"]!) |\n"
+    pr += "| different_fact | \(dfRow["same_fact"]!) | \(dfRow["different_fact"]!) | \(dfRow["ERROR"]!) |\n\n"
+    pr += "## Headline\n\n"
+    pr += "- **same_fact agreement**: \(sfCorrect)/\(sfTotal) = \(Int(sfRate * 100))%\n"
+    pr += "- **different_fact agreement**: \(dfCorrect)/\(dfTotal) = \(Int(dfRate * 100))%\n"
+    pr += "- **separation**: \(String(format: "%.2f", sfRate - dfRate)) (1.0 = perfect, 0.0 = no signal)\n\n"
+
+    print(pr)
+    let mdPath = probeOutDir + "/report.md"
+    try? pr.write(toFile: mdPath, atomically: true, encoding: .utf8)
+    log("  wrote \(mdPath)")
+    exit(0)
+}
+
 // MARK: - Eval phase — multi-run eval harness (LOOM_CONTINUITY_AUDIT §21)
 
 if phase == "eval" {
