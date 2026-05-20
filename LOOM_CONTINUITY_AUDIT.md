@@ -1105,3 +1105,71 @@ Whenever a research-driven component sits downstream of a noisy
 production stage, the de-risk has to use the noisy stage's actual
 output, not the clean reference data — otherwise the probe answers a
 question the production pipeline never asks.
+
+## 27. Same-fact judgment probe — GO for Part B (2026-05-20)
+
+§25 Part B needs a proposition-identity primitive to cluster extracted
+claims into canonical fact nodes. Embedding cosine fails on this (§24)
+and NLI fails on this (§26), so the remaining direction is to ask the
+LLM directly: *"do these two claims assert the same specific
+proposition?"* §24's `KnowledgeVerdict` work already gave us a
+template — task-fit vocabulary, JSON schema, tolerant parser — and a
+weak prior that the model handles same-fact judgment on extracted
+claims (the knowledge adjudicator caught 3/4 on the eval).
+
+This time the probe was designed under §26's open lesson: feed the
+*production stage's actual noisy output*, not gold reference strings.
+
+**Build (TDD, committed).** A `SameFactVerdict {same_fact,
+different_fact}` enum, `buildSameFactPrompt(claimA, claimB)`,
+`sameFactJSONSchema`, `parseSameFact`. 10 unit tests added (2032/2032
+passing). A spike `phase=probe` runs k=3 extraction on one eval
+manuscript through the production extractor, labels pairs mechanically
+against the gold contradictions (within-cluster = `same_fact`,
+cross-cluster at the same gold site = `different_fact` — same Jaccard
+≥ 0.34 the eval matcher uses), runs the same-fact prompt on each pair,
+and reports a 2×2 confusion.
+
+**Probe — lighthouse, Gemma-4-31B abliterated, 58 pairs.**
+
+| label \ pred | same_fact | different_fact |
+|---|---|---|
+| same_fact (n=25) | 19 | 6 |
+| different_fact (n=33) | **0** | **33** |
+
+- **0/33 false same-fact clusterings on the topical-noise pairs.**
+  This is the §24 failure case (junk pairs scoring 0.83 above real
+  pairs at 0.73) and the §26 failure case (NLI returning `neutral` on
+  paraphrases). The same-fact prompt is the first method in the entire
+  campaign to clear it.
+- **19/25 same-fact agreement at first glance, but the 6 "misses" are
+  the model fixing the labels.** Every miss is `"Mara's eyes were
+  brown"` vs `"Mara's eyes were steady"` — same subject, same surface
+  form, *different propositions* (eye colour vs. eye demeanor). The
+  mechanical labeller's word-Jaccard sees the shared "Mara"/"eyes"
+  and clusters them; the model correctly returns `different_fact` at
+  confidence 1.0 with explanations like *"color vs. quality/manner."*
+  Real same-fact agreement is 19/19 = 100% on genuine paraphrases.
+
+**Disposition — GO.** This is the cleanest signal across the
+§24–§26 campaign on the proposition-identity problem. Build Part B
+with `SameFactVerdict` as the canonicalisation primitive: walk
+non-knowledge claims in scene order, single-pass online clustering
+("does this claim assert the same proposition as any existing fact
+node's representative?"), create a new fact node on no match, attach
+`firstAppearanceScene` to each node. A `knowledge_state` reference
+at scene N becomes a violation when its fact node's
+`firstAppearanceScene` is later than N. The LLM adjudicator becomes a
+confirmation backstop (not the load-bearing precision gate it has been
+since §24).
+
+**Caveats.** k=1, lighthouse only — 25+33 pairs is small. The
+uniformity of the negative result (0/33 false merges) is the strongest
+signal; same-fact recall has wider CIs and warrants confirmation on
+another manuscript once Part B is built. The 6 mechanical-label errors
+also mean the eval matcher's Jaccard threshold isn't itself a
+proposition-identity test — Part B's clustering will need to use the
+LLM's verdict, not Jaccard, for the actual fact-ledger construction.
+
+**Probe outputs.** `Tools/ContinuityAuditSpike/probe/{claims.json,
+pairs.json, results.json, report.md}`.
