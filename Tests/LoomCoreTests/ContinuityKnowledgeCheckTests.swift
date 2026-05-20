@@ -196,13 +196,20 @@ func continuityKnowledgeCheckTests() -> TestSuite {
             ContinuityKnowledgeCheck.violations(claims: claims, sceneOrder: order, similarity: sim).count, 0)
     }
 
-    // MARK: - §25 Part B — FactLedger-backed violations
+    // MARK: - §25 Part B (redesigned) — per-knowledge-claim cosine top-K + same-fact verify
+    //
+    // Replaces the global FactLedger approach. For each knowledge_state
+    // claim k, the function cosine-ranks all non-knowledge claims,
+    // takes the top-K, walks them in scene order, and asks the
+    // same-fact judge. The first same-fact match's scene determines
+    // the violation outcome:
+    //   - first appearance > k.scene → violation candidate
+    //   - first appearance ≤ k.scene → no violation (already established)
+    //   - no match in top-K → no violation flagged
+    //
+    // Cost: O(knowledge_claims × top_K) judge calls — independent of
+    // total non-knowledge claim count. Scales to large manuscripts.
 
-    /// Deferred stub mirroring the one in ContinuityFactLedgerTests.
-    /// The verdict comes from `responder(rep, candidate)`. Test calls
-    /// `drain()` to fire completions; the synthetic similarity is
-    /// "same tag → same_fact" so tests can express clusters via the
-    /// `#TAG` convention used elsewhere in this file.
     final class StubJudge: SameFactJudging {
         var responder: (ContinuityAudit.Claim, ContinuityAudit.Claim)
             -> ContinuityAudit.SameFactVerdict = { _, _ in .differentFact }
@@ -226,7 +233,11 @@ func continuityKnowledgeCheckTests() -> TestSuite {
     }
     func driveJudge(_ j: StubJudge) { while j.hasPending { j.drain() } }
 
-    // "Same fact" iff the two values share a `#TAG`.
+    // "Same fact" iff the two values share a `#TAG`. Used with a
+    // matching synthetic embedder: each `#TAG` is one dimension of
+    // a one-hot vector, so cosine = 1.0 when tags match and 0.0
+    // otherwise — mirrors the real flow where cosine ranks
+    // topical candidates and the LLM judges proposition identity.
     let tagJudgeResponder: (ContinuityAudit.Claim, ContinuityAudit.Claim)
         -> ContinuityAudit.SameFactVerdict = { a, b in
         func tags(_ t: String) -> Set<String> {
@@ -235,21 +246,37 @@ func continuityKnowledgeCheckTests() -> TestSuite {
         return tags(a.value).isDisjoint(with: tags(b.value)) ? .differentFact : .sameFact
     }
 
-    func node(_ claim: ContinuityAudit.Claim) -> ContinuityAudit.FactNode {
-        ContinuityAudit.FactNode(
-            representative: claim, firstAppearanceScene: claim.sourceSceneId, members: [claim])
+    // Synthetic embedder: one-hot per #TAG. Multiple tags average
+    // (after normalisation). Tag → dimension is a simple hash.
+    let dim = 16
+    func tagEmbedding(_ value: String) -> [Float] {
+        var v = [Float](repeating: 0, count: dim)
+        let tags = value.split(separator: " ").map(String.init).filter { $0.hasPrefix("#") }
+        if tags.isEmpty { return v }
+        for t in tags {
+            let h = abs(t.hashValue) % dim
+            v[h] = 1
+        }
+        // Normalise so cosineSim works
+        let norm = (v.map { $0 * $0 }.reduce(0, +)).squareRoot()
+        return norm == 0 ? v : v.map { $0 / norm }
+    }
+    func embeddingsFor(_ claims: [ContinuityAudit.Claim]) -> [String: [Float]] {
+        var out: [String: [Float]] = [:]
+        for c in claims { out[c.value] = tagEmbedding(c.value) }
+        return out
     }
 
-    s.test("a knowledge claim at scene N matches a fact node first appearing at N+m → violation") {
+    s.test("a knowledge claim at scene N with a same-fact candidate at scene > N → violation") {
         let k = knows("Mara", "Mara knows the money is missing #MONEY", scene: "s2")
         let r = reveal("fund", "the money is missing #MONEY", scene: "s4")
-        let ledger = ContinuityAudit.FactLedger(nodes: [node(r)])
         let judge = StubJudge()
         judge.responder = tagJudgeResponder
         var got: [ContinuityKnowledgeCheck.Violation]?
         ContinuityKnowledgeCheck.violations(
-            knowledgeClaims: [k], ledger: ledger, sceneOrder: order,
-            judge: judge, shouldCompare: { _, _ in true }
+            knowledgeClaims: [k], candidateClaims: [r],
+            embeddings: embeddingsFor([k, r]),
+            sceneOrder: order, judge: judge, topK: 5
         ) { got = $0 }
         driveJudge(judge)
         let v = try expectNotNil(got)
@@ -258,62 +285,61 @@ func continuityKnowledgeCheckTests() -> TestSuite {
         try expectEqual(v[0].revealClaim.sourceSceneId, "s4")
     }
 
-    s.test("a knowledge claim whose matching fact node first appeared earlier → no violation") {
+    s.test("a knowledge claim whose same-fact candidate is in an earlier scene → no violation") {
         let r = reveal("Cole", "Cole's brother drowned #DROWN", scene: "s2")
         let k = knows("Mara", "Mara knows Cole's brother drowned #DROWN", scene: "s3")
-        let ledger = ContinuityAudit.FactLedger(nodes: [node(r)])
         let judge = StubJudge()
         judge.responder = tagJudgeResponder
         var got: [ContinuityKnowledgeCheck.Violation]?
         ContinuityKnowledgeCheck.violations(
-            knowledgeClaims: [k], ledger: ledger, sceneOrder: order,
-            judge: judge, shouldCompare: { _, _ in true }
+            knowledgeClaims: [k], candidateClaims: [r],
+            embeddings: embeddingsFor([k, r]),
+            sceneOrder: order, judge: judge, topK: 5
         ) { got = $0 }
         driveJudge(judge)
         try expectEqual(try expectNotNil(got).count, 0)
     }
 
-    s.test("a knowledge claim with no matching fact node yields no violation") {
+    s.test("a knowledge claim with no same-fact candidate yields no violation") {
         let k = knows("Mara", "Mara knows it #X", scene: "s2")
         let other = reveal("y", "something else #Y", scene: "s4")
-        let ledger = ContinuityAudit.FactLedger(nodes: [node(other)])
         let judge = StubJudge()
         judge.responder = tagJudgeResponder
         var got: [ContinuityKnowledgeCheck.Violation]?
         ContinuityKnowledgeCheck.violations(
-            knowledgeClaims: [k], ledger: ledger, sceneOrder: order,
-            judge: judge, shouldCompare: { _, _ in true }
+            knowledgeClaims: [k], candidateClaims: [other],
+            embeddings: embeddingsFor([k, other]),
+            sceneOrder: order, judge: judge, topK: 5
         ) { got = $0 }
         driveJudge(judge)
         try expectEqual(try expectNotNil(got).count, 0)
     }
 
-    s.test("a knowledge claim in the same scene as the fact's first appearance → no violation") {
+    s.test("a same-scene candidate is not a violation (first appearance ≤ reference scene)") {
         let r = reveal("x", "the fact #X", scene: "s3")
         let k = knows("Mara", "Mara knows it #X", scene: "s3")
-        let ledger = ContinuityAudit.FactLedger(nodes: [node(r)])
         let judge = StubJudge()
         judge.responder = tagJudgeResponder
         var got: [ContinuityKnowledgeCheck.Violation]?
         ContinuityKnowledgeCheck.violations(
-            knowledgeClaims: [k], ledger: ledger, sceneOrder: order,
-            judge: judge, shouldCompare: { _, _ in true }
+            knowledgeClaims: [k], candidateClaims: [r],
+            embeddings: embeddingsFor([k, r]),
+            sceneOrder: order, judge: judge, topK: 5
         ) { got = $0 }
         driveJudge(judge)
-        try expectEqual(try expectNotNil(got).count, 0,
-                        "first appearance ≤ reference scene is not a violation")
+        try expectEqual(try expectNotNil(got).count, 0)
     }
 
     s.test("a negated knowledge reference is not auditable — judge never called") {
         let k = knows("Mara", "Mara does not know the fact #X", scene: "s2")
         let r = reveal("x", "the fact #X", scene: "s4")
-        let ledger = ContinuityAudit.FactLedger(nodes: [node(r)])
         let judge = StubJudge()
         judge.responder = tagJudgeResponder
         var got: [ContinuityKnowledgeCheck.Violation]?
         ContinuityKnowledgeCheck.violations(
-            knowledgeClaims: [k], ledger: ledger, sceneOrder: order,
-            judge: judge, shouldCompare: { _, _ in true }
+            knowledgeClaims: [k], candidateClaims: [r],
+            embeddings: embeddingsFor([k, r]),
+            sceneOrder: order, judge: judge, topK: 5
         ) { got = $0 }
         driveJudge(judge)
         try expectEqual(try expectNotNil(got).count, 0)
@@ -321,67 +347,112 @@ func continuityKnowledgeCheckTests() -> TestSuite {
                         "trivial references are filtered before the judge is asked")
     }
 
-    s.test("shouldCompare=false short-circuits — no judge calls, no violations") {
-        let k = knows("Mara", "Mara knows the fact #X", scene: "s2")
+    s.test("knowledge claim with no embedding is skipped — judge never called") {
+        let k = knows("Mara", "Mara knows X #X", scene: "s2")
         let r = reveal("x", "the fact #X", scene: "s4")
-        let ledger = ContinuityAudit.FactLedger(nodes: [node(r)])
         let judge = StubJudge()
         judge.responder = tagJudgeResponder
         var got: [ContinuityKnowledgeCheck.Violation]?
+        // Only embed `r`, not `k`. The check must gracefully skip k.
         ContinuityKnowledgeCheck.violations(
-            knowledgeClaims: [k], ledger: ledger, sceneOrder: order,
-            judge: judge, shouldCompare: { _, _ in false }
+            knowledgeClaims: [k], candidateClaims: [r],
+            embeddings: embeddingsFor([r]),
+            sceneOrder: order, judge: judge, topK: 5
         ) { got = $0 }
         driveJudge(judge)
         try expectEqual(try expectNotNil(got).count, 0)
         try expectEqual(judge.calls.count, 0)
     }
 
-    s.test("violations completes on a large ledger with sync prefilter-rejects without stack overflow") {
-        // Regression — the crash report at 2026-05-20 12:25 (k=1 eval
-        // on Goetia, lighthouse) showed `findMatch` recursing 399
-        // frames deep. Same root cause as FactLedger.build: the sync
-        // prefilter-reject path recurses across all ledger nodes.
+    s.test("top-K is respected — only the closest candidates are sent to the judge") {
+        // 8 candidates topically distinct from k by cosine. With
+        // topK=3 the judge sees at most 3 — the 3 closest by cosine.
+        // Because the synthetic embedder one-hots per tag, only the
+        // candidate sharing #X has nonzero similarity; the others all
+        // have cosine=0. The top-K cut means the judge sees at most
+        // top-K candidates regardless of how many score zero.
         let k = knows("Mara", "Mara knows X #X", scene: "s2")
-        // N=2000 — see the matching FactLedger regression comment.
-        let nodes = (0..<2000).map { i -> ContinuityAudit.FactNode in
-            // All nodes have firstAppearance after the reference (so
-            // they're candidates) and Jaccard-disjoint values (so the
-            // shouldCompare=false short-circuit fires for each).
-            let r = reveal("subj-\(i)", "irrelevant-\(i) #X", scene: "s4")
-            return node(r)
+        let r = reveal("x", "the fact #X", scene: "s4")
+        let distractors = (0..<7).map {
+            reveal("d\($0)", "distractor \($0) #D\($0)", scene: "s5")
         }
-        let ledger = ContinuityAudit.FactLedger(nodes: nodes)
-        let judge = StubJudge()
-        var got: [ContinuityKnowledgeCheck.Violation]?
-        ContinuityKnowledgeCheck.violations(
-            knowledgeClaims: [k], ledger: ledger, sceneOrder: order,
-            judge: judge, shouldCompare: { _, _ in false }
-        ) { got = $0 }
-        driveJudge(judge)
-        try expectEqual(try expectNotNil(got).count, 0,
-                        "no violations when every prefilter call rejects the pair")
-        try expectEqual(judge.calls.count, 0)
-    }
-
-    s.test("mixed knowledge claims — only the early-reference one violates") {
-        let early = knows("Mara", "Mara knows the money is missing #MONEY", scene: "s2")
-        let late = knows("Cole", "Cole knows the brother drowned #DROWN", scene: "s5")
-        let r1 = reveal("fund", "the money is missing #MONEY", scene: "s4")
-        let r2 = reveal("Cole", "Cole's brother drowned #DROWN", scene: "s3")
-        let ledger = ContinuityAudit.FactLedger(nodes: [node(r1), node(r2)])
         let judge = StubJudge()
         judge.responder = tagJudgeResponder
         var got: [ContinuityKnowledgeCheck.Violation]?
         ContinuityKnowledgeCheck.violations(
-            knowledgeClaims: [early, late], ledger: ledger, sceneOrder: order,
-            judge: judge, shouldCompare: { _, _ in true }
+            knowledgeClaims: [k], candidateClaims: [r] + distractors,
+            embeddings: embeddingsFor([k, r] + distractors),
+            sceneOrder: order, judge: judge, topK: 3
+        ) { got = $0 }
+        driveJudge(judge)
+        try expectEqual(try expectNotNil(got).count, 1)
+        try expectTrue(judge.calls.count <= 3,
+                       "the judge must see at most top_K candidates per knowledge claim")
+    }
+
+    s.test("walks candidates in scene order — first same-fact match wins") {
+        // Two same-fact candidates, one at scene s3 and one at s5.
+        // The scene-order walk should ask about s3 first; once a
+        // match lands, walking stops. Since both are at scene > k
+        // (s2), either match yields a violation, but the reveal is
+        // the EARLIEST scene's candidate.
+        let k = knows("Mara", "Mara knows X #X", scene: "s2")
+        let r1 = reveal("a", "X happened #X", scene: "s5")  // input order: s5 first
+        let r2 = reveal("b", "X is the case #X", scene: "s3")
+        let judge = StubJudge()
+        judge.responder = tagJudgeResponder
+        var got: [ContinuityKnowledgeCheck.Violation]?
+        ContinuityKnowledgeCheck.violations(
+            knowledgeClaims: [k], candidateClaims: [r1, r2],
+            embeddings: embeddingsFor([k, r1, r2]),
+            sceneOrder: order, judge: judge, topK: 5
         ) { got = $0 }
         driveJudge(judge)
         let v = try expectNotNil(got)
         try expectEqual(v.count, 1)
-        try expectEqual(v[0].knowledgeClaim, early)
+        try expectEqual(v[0].revealClaim, r2,
+                        "the earliest-scene same-fact candidate must be the reveal")
+    }
+
+    s.test("mixed knowledge claims — independent results per claim") {
+        let early = knows("Mara", "Mara knows the money is missing #MONEY", scene: "s2")
+        let late = knows("Cole", "Cole knows the brother drowned #DROWN", scene: "s5")
+        let r1 = reveal("fund", "the money is missing #MONEY", scene: "s4")
+        let r2 = reveal("Cole", "Cole's brother drowned #DROWN", scene: "s3")
+        let judge = StubJudge()
+        judge.responder = tagJudgeResponder
+        var got: [ContinuityKnowledgeCheck.Violation]?
+        ContinuityKnowledgeCheck.violations(
+            knowledgeClaims: [early, late], candidateClaims: [r1, r2],
+            embeddings: embeddingsFor([early, late, r1, r2]),
+            sceneOrder: order, judge: judge, topK: 5
+        ) { got = $0 }
+        driveJudge(judge)
+        let v = try expectNotNil(got)
+        try expectEqual(v.count, 1)
+        try expectEqual(v[0].knowledgeClaim, early,
+                        "only the early reference is a violation (its reveal is in a later scene)")
         try expectEqual(v[0].revealClaim, r1)
+    }
+
+    s.test("violations completes on N=2000 candidates without stack overflow") {
+        // Regression — async state-machine shape (post-2026-05-20).
+        // Stack depth is bounded by 1 per outstanding judge call,
+        // independent of the candidate count.
+        let k = knows("Mara", "Mara knows X #X", scene: "s2")
+        let candidates = (0..<2000).map { i in
+            reveal("subj-\(i)", "irrelevant-\(i) #D\(i)", scene: "s4")
+        }
+        let judge = StubJudge()
+        var got: [ContinuityKnowledgeCheck.Violation]?
+        ContinuityKnowledgeCheck.violations(
+            knowledgeClaims: [k], candidateClaims: candidates,
+            embeddings: embeddingsFor([k] + candidates),
+            sceneOrder: order, judge: judge, topK: 10
+        ) { got = $0 }
+        driveJudge(judge)
+        try expectEqual(try expectNotNil(got).count, 0,
+                        "no violations when no candidate shares a tag with k")
     }
 
     return s

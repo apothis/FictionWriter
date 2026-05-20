@@ -93,6 +93,10 @@ public final class ContinuityAuditEngine {
     /// clusters on cosine (a higher threshold) instead of the default
     /// content-word Jaccard.
     private var usingEmbeddingSimilarity = false
+    /// Embeddings of every surviving claim value, captured from the
+    /// `ContinuityClaimFilterPipeline` pass. Used by §25 Part B's
+    /// per-knowledge-claim cosine ranking. Empty when no embedder ran.
+    private var claimEmbeddings: [String: [Float]] = [:]
 
     public init(
         extractor: ContinuityClaimExtracting,
@@ -192,6 +196,7 @@ public final class ContinuityAuditEngine {
                         return base(a, b)
                     }
                     self.usingEmbeddingSimilarity = true
+                    self.claimEmbeddings = emb
                 }
                 DebugLog.shared.write(
                     "[continuity-audit] claim-filter: -\(result.dedupDropped) dedup, -\(result.evidenceDropped) evidence")
@@ -251,49 +256,37 @@ public final class ContinuityAuditEngine {
 
     // MARK: - Stage 5: knowledge check + adjudication
 
-    /// Cheap prefilter on same-fact judge calls — used by Part B's
-    /// ledger build and ledger-based knowledge lookup. The §27 probe
-    /// established this is load-bearing for cost: the judge is the
-    /// only expensive op, and most claim pairs share too little
-    /// surface to plausibly be the same proposition. A token-Jaccard
-    /// floor of 0.1 ("share at least one content word") is generous —
-    /// drops clearly unrelated pairs without ever filtering out a
-    /// plausible paraphrase.
-    private static let factLedgerPrefilterFloor = 0.1
+    /// §25 Part B (redesigned, 2026-05-20). For each knowledge_state
+    /// claim, the check cosine-ranks non-knowledge claims and asks
+    /// the same-fact judge on the top-K. Default K=10 — comfortably
+    /// covers the real reveal (§24 measured ref↔reveal cosines at
+    /// 0.73–0.94 — top-10 will contain it) while bounding cost to
+    /// `knowledge_claims × K` LLM calls per audit.
+    private static let partBTopK = 10
 
     private func adjudicationDone() {
         let sceneOrder = scenes.map(\.id)
         let ksCount = claims.filter { $0.type == .knowledgeState }.count
         if let judge = judge {
-            // §25 Part B path — build a world-state fact ledger, then
-            // look up knowledge violations by first-appearance.
             let nonKnowledge = claims.filter { $0.type != .knowledgeState }
             let knowledgeClaims = claims.filter { $0.type == .knowledgeState }
-            let prefilter: (ContinuityAudit.Claim, ContinuityAudit.Claim) -> Bool = { a, b in
-                Self.tokenJaccard(a.value, b.value) >= Self.factLedgerPrefilterFloor
-            }
-            DebugLog.shared.write("[continuity-audit] Part B: building fact ledger from \(nonKnowledge.count) non-knowledge claims …")
-            ContinuityAudit.FactLedger.build(
-                claims: nonKnowledge, flatSceneIds: sceneOrder,
-                judge: judge, shouldCompare: prefilter
-            ) { [weak self] ledger in
+            DebugLog.shared.write("[continuity-audit] Part B: per-k cosine top-\(Self.partBTopK) over \(nonKnowledge.count) candidate claims for \(ksCount) knowledge_state references …")
+            ContinuityKnowledgeCheck.violations(
+                knowledgeClaims: knowledgeClaims,
+                candidateClaims: nonKnowledge,
+                embeddings: claimEmbeddings,
+                sceneOrder: sceneOrder,
+                judge: judge,
+                topK: Self.partBTopK
+            ) { [weak self] violations in
                 guard let self = self else { return }
                 self.onMain {
-                    DebugLog.shared.write("[continuity-audit] Part B: ledger built — \(ledger.nodes.count) fact nodes")
-                    ContinuityKnowledgeCheck.violations(
-                        knowledgeClaims: knowledgeClaims, ledger: ledger,
-                        sceneOrder: sceneOrder, judge: judge, shouldCompare: prefilter
-                    ) { [weak self] violations in
-                        guard let self = self else { return }
-                        self.onMain {
-                            self.knowledgeCandidates = violations
-                            DebugLog.shared.write("[continuity-audit] Part B: \(ksCount) knowledge_state claims → \(violations.count) knowledge candidates")
-                            for c in violations {
-                                DebugLog.shared.write("[continuity-audit]   kcand ref@\(c.knowledgeClaim.sourceSceneId)=\"\(c.knowledgeClaim.value)\" reveal@\(c.revealClaim.sourceSceneId)=\"\(c.revealClaim.value)\"")
-                            }
-                            self.adjudicateKnowledge(0)
-                        }
+                    self.knowledgeCandidates = violations
+                    DebugLog.shared.write("[continuity-audit] Part B: \(ksCount) knowledge_state claims → \(violations.count) knowledge candidates")
+                    for c in violations {
+                        DebugLog.shared.write("[continuity-audit]   kcand ref@\(c.knowledgeClaim.sourceSceneId)=\"\(c.knowledgeClaim.value)\" reveal@\(c.revealClaim.sourceSceneId)=\"\(c.revealClaim.value)\"")
                     }
+                    self.adjudicateKnowledge(0)
                 }
             }
             return

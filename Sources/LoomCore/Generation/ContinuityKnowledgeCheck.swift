@@ -101,30 +101,45 @@ public enum ContinuityKnowledgeCheck {
         return out
     }
 
-    /// §25 Part B — find violations against a pre-built `FactLedger`.
+    /// §25 Part B (redesigned, 2026-05-20) — per-knowledge-claim
+    /// cosine top-K + same-fact LLM verification.
     ///
-    /// The deterministic core: for each knowledge claim at scene N,
-    /// ask the same-fact judge whether any fact node's representative
-    /// asserts the *same proposition*; a fact node whose
-    /// `firstAppearanceScene` falls *after* N is a violation (the
-    /// character knows a fact the story has not yet introduced). The
-    /// LLM adjudicator can run downstream as a confirmation backstop;
-    /// this function returns the candidate set.
+    /// For each `knowledge_state` claim k at scene N:
+    ///   1. Cosine-rank all `candidateClaims` against k using the
+    ///      provided `embeddings`. Take the top-K closest.
+    ///   2. Sort those K candidates by scene order.
+    ///   3. Walk in scene order; ask the LLM `judge` whether each
+    ///      candidate asserts the same proposition as k.
+    ///   4. The first `same_fact` match's scene is the fact's first
+    ///      appearance. If first_appearance > k.scene → violation.
+    ///      If first_appearance ≤ k.scene → fact was already
+    ///      established before the reference, no violation.
+    ///      If no `same_fact` match in the top-K → no violation
+    ///      flagged.
+    ///
+    /// Cost: O(knowledge_claims × top_K) LLM calls — independent of
+    /// total candidate count. Replaces the global-FactLedger approach
+    /// which was both O(N²) in non-knowledge claims AND allowed
+    /// spurious clustering to silently suppress real violations
+    /// (§28). The per-k lookup carries neither problem.
+    ///
+    /// §24's measurement makes this safe: real reference↔reveal
+    /// cosines sit at 0.73–0.94 and unrelated pairs below 0.7. Top-K
+    /// cosine ranking captures real reveals; the LLM same-fact judge
+    /// (§27 measured 100% precision on different_fact) drops
+    /// topical-but-different-proposition junk.
     ///
     /// Trivial references (negations, bare topic-awareness) are
-    /// dropped before the judge is consulted — same screen as the
-    /// legacy `violations(claims:sceneOrder:similarity:)` form.
-    ///
-    /// `shouldCompare(rep, k)` is the cheap LLM-call prefilter,
-    /// mirroring `FactLedger.build`. Pairs it rejects are treated as
-    /// `different_fact`. Completion fires once with the full
-    /// violation set; the function is fail-soft on judge errors.
+    /// dropped before any judge call. Claims missing an embedding
+    /// are silently skipped (fail-soft — a missing embed is treated
+    /// as "no candidates," not as a crash).
     public static func violations(
         knowledgeClaims: [ContinuityAudit.Claim],
-        ledger: ContinuityAudit.FactLedger,
+        candidateClaims: [ContinuityAudit.Claim],
+        embeddings: [String: [Float]],
         sceneOrder: [String],
         judge: SameFactJudging,
-        shouldCompare: @escaping (ContinuityAudit.Claim, ContinuityAudit.Claim) -> Bool,
+        topK: Int = 10,
         completion: @escaping ([Violation]) -> Void
     ) {
         var sceneIndex: [String: Int] = [:]
@@ -138,55 +153,70 @@ public enum ContinuityKnowledgeCheck {
 
         var out: [Violation] = []
 
-        // Async state machine — see FactLedger.build for the
-        // rationale. The original recursive `step → findMatch →
-        // judge.judge → step` form crashed in production with
-        // `EXC_BAD_ACCESS, Thread stack size exceeded` on the
-        // 2026-05-20 k=1 eval (depth ~400). Two nested `while` loops
-        // walk the work; the only async break is `judge.judge`,
-        // whose completion calls `advance()` to resume from the
-        // saved (kIdx, nodeIdx).
-        var kIdxInList = 0
-        var nodeIdx = 0
+        // Async state machine — between LLM calls everything is
+        // iteration. `kIdx` walks `auditable`; `rankedIdx` walks the
+        // top-K cosine ranking of `candidateClaims` against the
+        // current k. Stack depth is bounded by 1 per outstanding
+        // judge call (URLSession completions fire on a fresh stack).
+        var kIdx = 0
+        var ranked: [ContinuityAudit.Claim] = []
+        var rankedIdx = 0
+        var initializedForKIdx = -1
 
         func advance() {
-            while kIdxInList < auditable.count {
-                let k = auditable[kIdxInList]
-                let kSceneIdx = sceneIndex[k.sourceSceneId]!
-                while nodeIdx < ledger.nodes.count {
-                    let node = ledger.nodes[nodeIdx]
-                    // Only a fact whose *first appearance* is later
-                    // than the reference scene can be a violation.
-                    guard let nIdx = sceneIndex[node.firstAppearanceScene],
-                          nIdx > kSceneIdx
-                    else {
-                        nodeIdx += 1
+            while kIdx < auditable.count {
+                let k = auditable[kIdx]
+                if initializedForKIdx != kIdx {
+                    // Build the top-K cosine ranking for this k.
+                    guard let kEmb = embeddings[k.value] else {
+                        // No embedding → skip this k entirely (cannot
+                        // determine candidates without one).
+                        kIdx += 1
                         continue
                     }
-                    if !shouldCompare(node.representative, k) {
-                        nodeIdx += 1
-                        continue
+                    let scored = candidateClaims.compactMap { c -> (ContinuityAudit.Claim, Double)? in
+                        guard sceneIndex[c.sourceSceneId] != nil else { return nil }
+                        guard let cEmb = embeddings[c.value] else { return nil }
+                        return (c, LedgerExtraction.cosineSimilarity(kEmb, cEmb))
                     }
-                    let savedNode = node
-                    judge.judge(claimA: node.representative, claimB: k) { result in
+                    ranked = Array(scored
+                        .sorted { $0.1 > $1.1 }
+                        .prefix(topK)
+                        .map(\.0))
+                        .sorted { lhs, rhs in
+                            (sceneIndex[lhs.sourceSceneId] ?? Int.max)
+                                < (sceneIndex[rhs.sourceSceneId] ?? Int.max)
+                        }
+                    rankedIdx = 0
+                    initializedForKIdx = kIdx
+                }
+                while rankedIdx < ranked.count {
+                    let c = ranked[rankedIdx]
+                    let savedC = c
+                    judge.judge(claimA: c, claimB: k) { result in
                         let verdict = (try? result.get())?.verdict ?? .differentFact
                         if verdict == .sameFact {
-                            out.append(Violation(
-                                knowledgeClaim: k, revealClaim: savedNode.representative))
-                            // Stop walking this k — first match wins.
-                            kIdxInList += 1
-                            nodeIdx = 0
+                            // First match wins. Scene-order walk
+                            // means this is the earliest candidate
+                            // that asserts the same proposition.
+                            let cIdx = sceneIndex[savedC.sourceSceneId] ?? Int.max
+                            let kSceneIdx = sceneIndex[k.sourceSceneId] ?? Int.max
+                            if cIdx > kSceneIdx {
+                                out.append(Violation(
+                                    knowledgeClaim: k, revealClaim: savedC))
+                            }
+                            // Either way, stop this k's walk.
+                            kIdx += 1
+                            rankedIdx = 0
                         } else {
-                            nodeIdx += 1
+                            rankedIdx += 1
                         }
                         advance()
                     }
                     return
                 }
-                // Inner loop exhausted with no match — no violation
-                // for this knowledge claim.
-                kIdxInList += 1
-                nodeIdx = 0
+                // No same-fact match in top-K for this k.
+                kIdx += 1
             }
             completion(out)
         }
