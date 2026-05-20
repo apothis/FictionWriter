@@ -235,6 +235,96 @@ func continuityAuditEngineTests() -> TestSuite {
         try expectEqual(try result?.get().count, 1)
     }
 
+    // MARK: - §25 Part B — FactLedger-backed knowledge check
+
+    final class StubJudge: SameFactJudging {
+        var responder: (ContinuityAudit.Claim, ContinuityAudit.Claim)
+            -> ContinuityAudit.SameFactVerdict = { _, _ in .differentFact }
+        private var pending: [(ContinuityAudit.Claim, ContinuityAudit.Claim,
+                               (Result<ContinuityAudit.SameFactJudgment, Error>) -> Void)] = []
+        var calls: [(ContinuityAudit.Claim, ContinuityAudit.Claim)] = []
+        var hasPending: Bool { !pending.isEmpty }
+        func judge(
+            claimA: ContinuityAudit.Claim, claimB: ContinuityAudit.Claim,
+            completion: @escaping (Result<ContinuityAudit.SameFactJudgment, Error>) -> Void
+        ) {
+            calls.append((claimA, claimB))
+            pending.append((claimA, claimB, completion))
+        }
+        func drain() {
+            let p = pending; pending = []
+            for (a, b, c) in p {
+                c(.success(.init(verdict: responder(a, b), confidence: 1.0, explanation: "")))
+            }
+        }
+    }
+    func drivePartB(_ ext: StubExtractor, _ adj: StubAdjProvider, _ judge: StubJudge) {
+        while ext.hasPending || adj.hasPending || judge.hasPending {
+            ext.drain(); adj.drain(); judge.drain()
+        }
+    }
+
+    s.test("with a SameFactJudging, the knowledge check uses the FactLedger first-appearance lookup") {
+        let ext = StubExtractor()
+        ext.claimsByScene = knowledgeClaims()  // s1 knows SECRET, s2 reveals SECRET
+        let adj = StubAdjProvider()
+        // The downstream knowledge adjudicator confirms the candidate.
+        adj.responder = { _ in .success(violationJSON) }
+        let judge = StubJudge()
+        // Same-fact iff both values contain "SECRET" — the fact node
+        // built from the s2 reveal will be matched by the s1 knowledge
+        // claim, and the node's firstAppearanceScene (s2) lands AFTER
+        // the reference scene (s1), so it's a violation.
+        judge.responder = { a, b in
+            (a.value.contains("SECRET") && b.value.contains("SECRET")) ? .sameFact : .differentFact
+        }
+        let engine = ContinuityAuditEngine(
+            extractor: ext, adjudicationProvider: adj, entities: [],
+            judge: judge)
+        var result: Result<[ContinuityFinding], Error>?
+        engine.audit(scenes: scenes, projectURL: tempProject()) { result = $0 }
+        drivePartB(ext, adj, judge)
+        let findings = try expectNotNil(try result?.get())
+        try expectEqual(findings.count, 1)
+        try expectEqual(findings[0].kind, .knowledgeViolation)
+        try expectTrue(judge.calls.count > 0,
+                       "Part B path must consult the same-fact judge")
+    }
+
+    s.test("with a SameFactJudging, a fact whose first-appearance precedes the reference yields no violation") {
+        // Flip the order: SECRET is revealed in s1, referenced in s2.
+        // Part B's firstAppearanceScene lookup should treat this as
+        // clean (the fact entered the story before the reference).
+        let ext = StubExtractor()
+        ext.claimsByScene = [
+            "s1": [ContinuityAudit.Claim(
+                type: .event, subject: "x", attributeKey: "",
+                value: "the SECRET is revealed", sourceSceneId: "s1",
+                source: .narration, evidenceQuote: "q")],
+            "s2": [ContinuityAudit.Claim(
+                type: .knowledgeState, subject: "Mara", attributeKey: "",
+                value: "Mara knows the SECRET", sourceSceneId: "s2",
+                source: .dialogue, evidenceQuote: "q")],
+        ]
+        let adj = StubAdjProvider()
+        // If a candidate did slip through, the adjudicator's verdict
+        // would shape the finding; setting violation here would expose
+        // a wiring bug if Part B's first-appearance check was wrong.
+        adj.responder = { _ in .success(violationJSON) }
+        let judge = StubJudge()
+        judge.responder = { a, b in
+            (a.value.contains("SECRET") && b.value.contains("SECRET")) ? .sameFact : .differentFact
+        }
+        let engine = ContinuityAuditEngine(
+            extractor: ext, adjudicationProvider: adj, entities: [],
+            judge: judge)
+        var result: Result<[ContinuityFinding], Error>?
+        engine.audit(scenes: scenes, projectURL: tempProject()) { result = $0 }
+        drivePartB(ext, adj, judge)
+        try expectEqual(try result?.get().count, 0,
+                        "first appearance ≤ reference scene must not produce a violation")
+    }
+
     s.test("with an embedder, the knowledge check uses an embedding-backed similarity") {
         let ext = StubExtractor()
         ext.claimsByScene = [
