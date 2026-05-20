@@ -1044,3 +1044,64 @@ Sequencing: A0 → A1–A4 → re-eval → B1–B2 → re-eval → decide on B3.
 [EnigmaToM 2025](https://arxiv.org/pdf/2503.03340) ·
 [Calibrating LLM Judges — linear probes](https://arxiv.org/html/2512.22245v1) ·
 [Auto-Prompt Ensemble for LLM Judge](https://arxiv.org/abs/2510.06538).
+
+## 26. Part A built and ripped out — NLI gate is a negative result (2026-05-20)
+
+§25's Part A (the DeBERTa-v3 NLI cross-encoder proposition gate) was
+built end-to-end, integrated, TDD'd, and measured. It does **not** lift
+the audit's numbers. The infrastructure has been removed; this section
+records the chain of evidence so the lesson is preserved.
+
+**Build (committed then reverted).** A0 export tooling (`Tools/NLIProbe/`),
+A1 ONNX bundle (FP32 — INT8 quantization flipped DeBERTa-v3 verdicts,
+verified), A2 `NLIRuntime` (ONNX session, mirroring `GLiNERRuntime`),
+A3 `NLICrossEncoder` (pair tokenisation byte-for-byte matched to Python
+via fixture; softmax decode reading `id2label` from `config.json`),
+A4 `ContinuityAuditEngine.worldFactPairFilter` + spike wiring. All
+phases passed their unit tests cleanly.
+
+**A0 probe — green on gold strings.** The de-risk probe scored
+NLI(`value_a`, `value_b`) on the eval fixture's 36 non-knowledge gold
+contradictions: **34/36 flagged `contradiction`**, every clearly-unrelated
+pair flagged `neutral`. That looked like a clean go.
+
+**End-to-end measurement — not a win.**
+
+| metric | Gemma-4-31B no gate (k=1) | label-based gate (k=1) | prob-based gate (k=3) |
+|---|---|---|---|
+| recall | 46% | 44% | **40% ±12** |
+| precision | 43% | 40% | **38% ±7** |
+| F1 | 0.42 | 0.40 | 0.37 |
+| attribute_drift | 56% | 44% | 50% |
+| timeline_conflict | 20% | 10% | 17% |
+| spatial_conflict | 20% | 40% | 20% |
+
+Tightening the threshold (label → probability-based, `neutralMax = 0.7`)
+helped `attribute_drift` (44% → 50%) but the overall picture stayed
+flat or worse than no gate. k=3 narrows CIs enough (±7 precision)
+to trust the negative read.
+
+**Why the A0 green didn't translate.** A0 scored *gold canonical*
+strings — `"the vault is on the fourteenth floor"` vs `"the vault is on
+the ninth floor"`. The audit feeds NLI the *extracted* claims, which
+are paraphrases the LLM produced from prose. NLI's strict logical-
+entailment frame is narrower than "same proposition / contradicts": a
+genuine attribute contradiction phrased as paraphrase often comes back
+`neutral` because neither side strictly entails the other under
+classical NLI semantics. A0 measured the model's *capability* on clean
+inputs; it did not measure its *behaviour* on noisy extraction output —
+that distinction was not visible from the probe.
+
+**Disposition (user-confirmed 2026-05-20).** Ripped out the gate — the
+engine `worldFactPairFilter`, the `NLICrossEncoder` / `NLIRuntime`
+sources and tests, the tokenizer fixture, `Tools/NLIProbe/`, the
+`Resources/NLI` bundle entry, and the spike wiring. The methodology —
+probe-then-measure with the model's actual behaviour on actual inputs —
+stays. Part B (world-state fact ledger for `knowledge_violation`) is
+the remaining direction from §25.
+
+**Open lesson.** A *capability* probe is necessary but not sufficient.
+Whenever a research-driven component sits downstream of a noisy
+production stage, the de-risk has to use the noisy stage's actual
+output, not the clean reference data — otherwise the probe answers a
+question the production pipeline never asks.

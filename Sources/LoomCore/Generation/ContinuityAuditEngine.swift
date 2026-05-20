@@ -85,28 +85,18 @@ public final class ContinuityAuditEngine {
     /// content-word Jaccard.
     private var usingEmbeddingSimilarity = false
 
-    /// Optional precision gate applied to world-fact candidate pairs
-    /// before adjudication (§25 Part A). Returns true to keep the pair,
-    /// false to drop it. Wired in production to an NLI cross-encoder
-    /// that drops `neutral` pairs (topical look-alikes) — embedding
-    /// cosine cannot separate those from real contradictions (§24).
-    /// Knowledge candidates are not gated by this filter.
-    private let worldFactPairFilter: ((ContinuityAudit.Claim, ContinuityAudit.Claim) -> Bool)?
-
     public init(
         extractor: ContinuityClaimExtracting,
         adjudicationProvider: OllamaCallProvider,
         entities: [ContinuitySubjectResolver.KnownEntity],
         embedder: KoboldEmbedding? = nil,
-        similarity: @escaping (String, String) -> Double = ContinuityAuditEngine.tokenJaccard,
-        worldFactPairFilter: ((ContinuityAudit.Claim, ContinuityAudit.Claim) -> Bool)? = nil
+        similarity: @escaping (String, String) -> Double = ContinuityAuditEngine.tokenJaccard
     ) {
         self.extractor = extractor
         self.adjudicationProvider = adjudicationProvider
         self.entities = entities
         self.embedder = embedder
         self.baseSimilarity = similarity
-        self.worldFactPairFilter = worldFactPairFilter
     }
 
     /// Run a whole-manuscript audit. `scenes` must be in narrative
@@ -209,23 +199,12 @@ public final class ContinuityAuditEngine {
 
     private func retrieveAndAdjudicate() {
         let sceneOrder = scenes.map(\.id)
-        let retrieved = usingEmbeddingSimilarity
+        pairs = usingEmbeddingSimilarity
             ? ContinuityConflictRetrieval.candidatePairs(
                 claims: claims, sceneOrder: sceneOrder,
                 similarity: activeSimilarity, threshold: Self.retrievalCosineThreshold)
             : ContinuityConflictRetrieval.candidatePairs(claims: claims, sceneOrder: sceneOrder)
-        // §25 Part A — NLI gate drops topical look-alikes (`neutral`)
-        // before adjudication. Filter is the identity when no gate is
-        // wired (the bundle is gitignored / not loaded in tests).
-        if let filter = worldFactPairFilter {
-            pairs = retrieved.filter { filter($0.earlier, $0.later) }
-            DebugLog.shared.write(
-                "[continuity-audit] \(claims.count) claims → \(retrieved.count) retrieved → \(pairs.count) candidate pairs (NLI-gated)")
-        } else {
-            pairs = retrieved
-            DebugLog.shared.write(
-                "[continuity-audit] \(claims.count) claims → \(pairs.count) candidate pairs")
-        }
+        DebugLog.shared.write("[continuity-audit] \(claims.count) claims → \(pairs.count) candidate pairs")
         adjudicatePair(0)
     }
 

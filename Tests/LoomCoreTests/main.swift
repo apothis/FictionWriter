@@ -220,8 +220,6 @@ let suites: [TestSuite] = [
     glinerTokenizerTests(),
     glinerInputsTests(),
     glinerDecoderTests(),
-    nliRuntimeTests(),
-    nliCrossEncoderTests(),
     glinerDetectorTests(),
     glinerCandidateDetectorTests(),
     glinerEntityDiscoveryExtractorTests(),
