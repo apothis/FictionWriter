@@ -96,40 +96,61 @@ public extension ContinuityAudit {
 
             var ledger = FactLedger()
 
-            func step(_ i: Int) {
-                if i >= ordered.count { completion(ledger); return }
-                let candidate = ordered[i]
-                matchAgainst(candidate, nodeIndex: 0) { matchedIndex in
-                    if let m = matchedIndex {
-                        ledger.nodes[m].members.append(candidate)
-                    } else {
-                        ledger.nodes.append(FactNode(
-                            representative: candidate,
-                            firstAppearanceScene: candidate.sourceSceneId,
-                            members: [candidate]))
+            // Async state machine. Between LLM calls the work is
+            // pure iteration — walking ordered claims and walking the
+            // current ledger. Two nested `while` loops express that
+            // directly; the only async break is `judge.judge`, whose
+            // completion calls `advance()` to resume from the saved
+            // (claimIdx, nodeIdx). Stack depth is bounded by one
+            // frame per outstanding judge call (a fresh stack each
+            // time, fired from URLSession's completion).
+            //
+            // The original recursive shape — step(i) → matchAgainst →
+            // judge.judge → step(i+1) — crashed in production with
+            // `EXC_BAD_ACCESS, Thread stack size exceeded` at depth
+            // ~9300 on the 2026-05-20 k=1 eval. The first patched fix
+            // (trampoline-every-N + Thread.isMainThread branch) just
+            // pushed the failure to a larger N; it was the wrong
+            // structural choice. See feedback_loops_not_recursion.
+            var claimIdx = 0
+            var nodeIdx = 0
+
+            func advance() {
+                while claimIdx < ordered.count {
+                    let candidate = ordered[claimIdx]
+                    while nodeIdx < ledger.nodes.count {
+                        let rep = ledger.nodes[nodeIdx].representative
+                        if !shouldCompare(rep, candidate) {
+                            nodeIdx += 1
+                            continue
+                        }
+                        // Async — save state, dispatch, resume in completion.
+                        let savedNodeIdx = nodeIdx
+                        judge.judge(claimA: rep, claimB: candidate) { result in
+                            let verdict = (try? result.get())?.verdict ?? .differentFact
+                            if verdict == .sameFact {
+                                ledger.nodes[savedNodeIdx].members.append(candidate)
+                                claimIdx += 1
+                                nodeIdx = 0
+                            } else {
+                                nodeIdx = savedNodeIdx + 1
+                            }
+                            advance()
+                        }
+                        return
                     }
-                    step(i + 1)
+                    // Inner loop exhausted with no match — seed a new node.
+                    ledger.nodes.append(FactNode(
+                        representative: candidate,
+                        firstAppearanceScene: candidate.sourceSceneId,
+                        members: [candidate]))
+                    claimIdx += 1
+                    nodeIdx = 0
                 }
+                completion(ledger)
             }
 
-            func matchAgainst(
-                _ candidate: Claim, nodeIndex i: Int,
-                completion done: @escaping (Int?) -> Void
-            ) {
-                if i >= ledger.nodes.count { done(nil); return }
-                let rep = ledger.nodes[i].representative
-                if !shouldCompare(rep, candidate) {
-                    matchAgainst(candidate, nodeIndex: i + 1, completion: done)
-                    return
-                }
-                judge.judge(claimA: rep, claimB: candidate) { result in
-                    let verdict = (try? result.get())?.verdict ?? .differentFact
-                    if verdict == .sameFact { done(i); return }
-                    matchAgainst(candidate, nodeIndex: i + 1, completion: done)
-                }
-            }
-
-            step(0)
+            advance()
         }
     }
 }

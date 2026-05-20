@@ -138,44 +138,60 @@ public enum ContinuityKnowledgeCheck {
 
         var out: [Violation] = []
 
-        func step(_ i: Int) {
-            if i >= auditable.count { completion(out); return }
-            let k = auditable[i]
-            let kIdx = sceneIndex[k.sourceSceneId]!
-            findMatch(k, kIdx: kIdx, nodeIndex: 0) { matched in
-                if let node = matched {
-                    out.append(Violation(knowledgeClaim: k, revealClaim: node.representative))
+        // Async state machine — see FactLedger.build for the
+        // rationale. The original recursive `step → findMatch →
+        // judge.judge → step` form crashed in production with
+        // `EXC_BAD_ACCESS, Thread stack size exceeded` on the
+        // 2026-05-20 k=1 eval (depth ~400). Two nested `while` loops
+        // walk the work; the only async break is `judge.judge`,
+        // whose completion calls `advance()` to resume from the
+        // saved (kIdx, nodeIdx).
+        var kIdxInList = 0
+        var nodeIdx = 0
+
+        func advance() {
+            while kIdxInList < auditable.count {
+                let k = auditable[kIdxInList]
+                let kSceneIdx = sceneIndex[k.sourceSceneId]!
+                while nodeIdx < ledger.nodes.count {
+                    let node = ledger.nodes[nodeIdx]
+                    // Only a fact whose *first appearance* is later
+                    // than the reference scene can be a violation.
+                    guard let nIdx = sceneIndex[node.firstAppearanceScene],
+                          nIdx > kSceneIdx
+                    else {
+                        nodeIdx += 1
+                        continue
+                    }
+                    if !shouldCompare(node.representative, k) {
+                        nodeIdx += 1
+                        continue
+                    }
+                    let savedNode = node
+                    judge.judge(claimA: node.representative, claimB: k) { result in
+                        let verdict = (try? result.get())?.verdict ?? .differentFact
+                        if verdict == .sameFact {
+                            out.append(Violation(
+                                knowledgeClaim: k, revealClaim: savedNode.representative))
+                            // Stop walking this k — first match wins.
+                            kIdxInList += 1
+                            nodeIdx = 0
+                        } else {
+                            nodeIdx += 1
+                        }
+                        advance()
+                    }
+                    return
                 }
-                step(i + 1)
+                // Inner loop exhausted with no match — no violation
+                // for this knowledge claim.
+                kIdxInList += 1
+                nodeIdx = 0
             }
+            completion(out)
         }
 
-        func findMatch(
-            _ k: ContinuityAudit.Claim, kIdx: Int, nodeIndex i: Int,
-            completion done: @escaping (ContinuityAudit.FactNode?) -> Void
-        ) {
-            if i >= ledger.nodes.count { done(nil); return }
-            let node = ledger.nodes[i]
-            // Only a fact whose *first appearance* is later than the
-            // reference scene is a candidate violation. Earlier first
-            // appearance means the fact entered the story before the
-            // character referenced it — not auditable here.
-            guard let nIdx = sceneIndex[node.firstAppearanceScene], nIdx > kIdx else {
-                findMatch(k, kIdx: kIdx, nodeIndex: i + 1, completion: done)
-                return
-            }
-            if !shouldCompare(node.representative, k) {
-                findMatch(k, kIdx: kIdx, nodeIndex: i + 1, completion: done)
-                return
-            }
-            judge.judge(claimA: node.representative, claimB: k) { result in
-                let verdict = (try? result.get())?.verdict ?? .differentFact
-                if verdict == .sameFact { done(node); return }
-                findMatch(k, kIdx: kIdx, nodeIndex: i + 1, completion: done)
-            }
-        }
-
-        step(0)
+        advance()
     }
 
     /// A knowledge_state claim that cannot be a knowledge-before-reveal

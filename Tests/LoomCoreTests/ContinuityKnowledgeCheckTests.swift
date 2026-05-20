@@ -337,6 +337,33 @@ func continuityKnowledgeCheckTests() -> TestSuite {
         try expectEqual(judge.calls.count, 0)
     }
 
+    s.test("violations completes on a large ledger with sync prefilter-rejects without stack overflow") {
+        // Regression — the crash report at 2026-05-20 12:25 (k=1 eval
+        // on Goetia, lighthouse) showed `findMatch` recursing 399
+        // frames deep. Same root cause as FactLedger.build: the sync
+        // prefilter-reject path recurses across all ledger nodes.
+        let k = knows("Mara", "Mara knows X #X", scene: "s2")
+        // N=2000 — see the matching FactLedger regression comment.
+        let nodes = (0..<2000).map { i -> ContinuityAudit.FactNode in
+            // All nodes have firstAppearance after the reference (so
+            // they're candidates) and Jaccard-disjoint values (so the
+            // shouldCompare=false short-circuit fires for each).
+            let r = reveal("subj-\(i)", "irrelevant-\(i) #X", scene: "s4")
+            return node(r)
+        }
+        let ledger = ContinuityAudit.FactLedger(nodes: nodes)
+        let judge = StubJudge()
+        var got: [ContinuityKnowledgeCheck.Violation]?
+        ContinuityKnowledgeCheck.violations(
+            knowledgeClaims: [k], ledger: ledger, sceneOrder: order,
+            judge: judge, shouldCompare: { _, _ in false }
+        ) { got = $0 }
+        driveJudge(judge)
+        try expectEqual(try expectNotNil(got).count, 0,
+                        "no violations when every prefilter call rejects the pair")
+        try expectEqual(judge.calls.count, 0)
+    }
+
     s.test("mixed knowledge claims — only the early-reference one violates") {
         let early = knows("Mara", "Mara knows the money is missing #MONEY", scene: "s2")
         let late = knows("Cole", "Cole knows the brother drowned #DROWN", scene: "s5")

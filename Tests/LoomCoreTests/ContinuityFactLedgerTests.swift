@@ -332,6 +332,38 @@ func continuityFactLedgerTests() -> TestSuite {
         try expectNotNil(err)
     }
 
+    s.test("FactLedger.build completes on many sync prefilter-rejects without stack overflow") {
+        // Regression — the crash report at 2026-05-20 12:25 (k=1 eval
+        // on Goetia, lighthouse) showed `matchAgainst` recursing 399
+        // frames deep on a thread-6 stack guard. With most claims
+        // pre-filtering out, the synchronous recursion across ledger
+        // nodes accumulated frames until the 544K thread stack
+        // exhausted. The fix trampolines the sync path into a loop.
+        // N=2000 — well above any realistic manuscript ledger size
+        // (lighthouse averaged 107 per run in the §27 probe, large
+        // novels won't exceed a few thousand). The state-machine
+        // `advance()` form has bounded stack depth = 1 per
+        // outstanding judge call; this test fires zero judge calls
+        // and so should complete with constant stack regardless of N.
+        // The original recursive form crashed at depth ~9300 here.
+        let claims = (0..<2000).map { i in
+            claim(value: "fact-\(i)", scene: "s1")
+        }
+        let judge = StubJudge()
+        // Prefilter rejects every pair — forces the worst-case sync walk
+        // for every new claim against every existing node.
+        var ledger: ContinuityAudit.FactLedger?
+        ContinuityAudit.FactLedger.build(
+            claims: claims, flatSceneIds: ["s1"],
+            judge: judge, shouldCompare: { _, _ in false }
+        ) { ledger = $0 }
+        drive(judge)
+        try expectEqual(try expectNotNil(ledger).nodes.count, 2000,
+                        "every prefilter-rejected claim seeds its own node")
+        try expectEqual(judge.calls.count, 0,
+                        "no judge call should fire — every pair is prefiltered")
+    }
+
     s.test("claims whose scene is not in flatSceneIds are skipped") {
         let kept = claim(value: "v1", scene: "s1")
         let orphan = claim(value: "v2", scene: "scene-removed-from-manuscript")
