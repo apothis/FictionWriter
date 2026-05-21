@@ -90,6 +90,13 @@ public enum HelpContent {
             group: "Reference"
         ),
         HelpSection(
+            id: "authors-note-direction",
+            title: "Author's Note, instructions, writing direction",
+            book: .userHelp,
+            order: 105,
+            group: "Reference"
+        ),
+        HelpSection(
             id: "story-bible-entities",
             title: "Story Bible — Characters, Settings, Objects",
             book: .userHelp,
