@@ -52,9 +52,11 @@ Set it in Settings → Project. The dials:
 | **Kind** | literary / mainstream / romance / erotica / porn | The overall posture. `erotica` and `porn` foreground explicit content in the prompt; the others don't. |
 | **Register** | clinical / literary / earthy / crude / mixed | The vocabulary register for intimate/explicit content. Captured and stated in the prompt; not enforced word-by-word. |
 | **Explicitness** | fade-to-black / suggestive / on-screen / graphic / extreme | The master dial. How directly intimate content is depicted. `fade-to-black` suppresses all explicit-foreground behaviour regardless of the other dials. |
-| **Pacing** | fast-plot / balanced / slow-explicit / explicit-foreground | How much room explicit scenes get relative to plot. |
-| **Fade-to-black policy** | never / user-choice / model-decides | Whether the model is allowed to close the door on an intimate scene. |
+| **Pacing** | fast-plot / balanced / slow-explicit / explicit-foreground | How much room explicit scenes get relative to plot. *Not yet surfaced as a control — uses a default; affects the prompt when set in a future build.* |
+| **Fade-to-black policy** | never / user-choice / model-decides | Whether the model is allowed to close the door on an intimate scene. *Not yet surfaced as a control — uses a default.* |
 | **Themes** | free-form, per-project | Named themes you can mark always-on (injected as constants). |
+
+Today the **Settings → Project** window exposes the first three dials (Kind, Register, Explicitness). Pacing and fade-to-black policy exist in the data model and shape the prompt when set, but don't have UI controls yet — they sit at their defaults.
 
 ### What the dials actually do
 

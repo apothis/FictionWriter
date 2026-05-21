@@ -153,6 +153,13 @@ public enum HelpContent {
             group: "Reference"
         ),
         HelpSection(
+            id: "settings",
+            title: "Settings — app-level + per-project",
+            book: .userHelp,
+            order: 210,
+            group: "Reference"
+        ),
+        HelpSection(
             id: "troubleshooting",
             title: "Troubleshooting",
             book: .userHelp,
