@@ -89,6 +89,13 @@ public enum HelpContent {
             order: 100,
             group: "Reference"
         ),
+        HelpSection(
+            id: "story-bible-entities",
+            title: "Story Bible — Characters, Settings, Objects",
+            book: .userHelp,
+            order: 110,
+            group: "Reference"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-

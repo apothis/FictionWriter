@@ -33,7 +33,7 @@ A fresh project only has the first three (`project.json`, `scenes/`, plus empty 
 
 The big one. Inside it:
 
-- The **story bible** — every Character, Setting, Object, Faction, Lorebook entry, and Dynamic relationship sheet.
+- The **story bible** — every Character, Setting, Object, Lorebook entry, and Dynamic relationship sheet.
 - The **manuscript outline** — the Parts / Chapters / Scenes hierarchy. (The scene *prose* is in the `.md` files; this just holds structure.)
 - **Project settings** — the Project Memory text, the Author's Note, the anti-slop phrases list, the writing direction, max-reply-tokens, AN depth.
 - The **knowledge ledger** — accepted facts about each character grouped by source scene.

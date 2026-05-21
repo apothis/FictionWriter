@@ -84,6 +84,6 @@ Once you have your first few paragraphs:
 - Run **Continue** again to keep going.
 - Select a word or sentence and click **Expand** to grow it into a fuller paragraph.
 - Select a phrase, click **Rewrite**, pick a sub-mode (voice / tense / length / POV / show-don't-tell). See **Generation modes — full catalogue** in the Reference half for the full picture.
-- Make a Character or Setting entry in the Story Bible so the model knows who's in your story (see **Story Bible — Characters, Settings, Objects, Factions** in the Reference half).
+- Make a Character or Setting entry in the Story Bible so the model knows who's in your story (see **Story Bible — Characters, Settings, Objects** in the Reference half).
 
 If the model refuses to write something — apologises, summarises around it, breaks into a meta-commentary — that's the next page: **What to do when generation refuses or feels off**.
