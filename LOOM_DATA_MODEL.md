@@ -1,492 +1,741 @@
 # Loom Data Model
 
-> **Status: Phase 0 design lock (2026-05-10).** Specifies the Codable shapes and on-disk layout. Companion to [`LOOM_PLAN.md`](LOOM_PLAN.md), [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md). Every shape decision either points to a finding in [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) or stands as a flagged extension.
->
-> **Conventions.** Swift `Codable` Foundation types. UUIDs for all identifiers. ISO-8601 dates. Per-scene metadata schema is yWriter's[J7] starting point (research §J.5) extended with Loom-specific fields. Round-trip property: any markdown file in the project must survive opening in another editor and saving back without corruption.
+> **Last code cross-check:** 2026-05-21
+> **Posture:** reference doc reflecting the *current shipped* code. Where this doc and code disagree, **the code wins** — every type here cites its file path. Historical design intent lives in [`LOOM_PLAN.md`](LOOM_PLAN.md), [`HANDOFF.md`](HANDOFF.md), and the per-phase spike docs.
+> **Convention:** all Codable Foundation types. UUIDs for identifiers. ISO-8601 with millisecond precision for dates (rounded on `init`, so on-disk round-trip is identity). Field added after schema-version 1 must be `decodeIfPresent` — see [Lazy versioning](#19-lazy-versioning--migration).
 
----
+## 1. Top-level `Project`
 
-## 1. Top-level: Project
+`Sources/LoomCore/Models/Project.swift`
 
 ```swift
-struct Project: Codable {
-    let id: UUID
-    var title: String
-    var author: String?
-    var createdAt: Date
-    var schemaVersion: Int       // start at 1; bump on non-additive changes
-    var settings: ProjectSettings
-    var kind: ProjectKind        // .originalFiction default; .fanfic for fanfic-mode projects (Phase 5.c — see LOOM_FANFIC.md §3.1)
-    var writingDirection: WritingDirection?  // Phase 2 — see LOOM_NSFW.md §3.1 (literary / mainstream / romance / erotica / porn + register + explicitnessLevel + themes + pacing + FTBPolicy)
-    var fanficMetadata: FanficMetadata?      // Phase 5.c; only populated when kind == .fanfic
-
-    // Manuscript root — Phase 1 has flat scenes; Phase 3+ adds Parts/Chapters.
-    var manuscript: Manuscript
-
-    // Bible — populated Phase 2+. Empty arrays in Phase 1.
-    var bible: Bible
-
-    // Style sheet — populated Phase 5; nil in Phase 1.
-    var styleSheetId: UUID?
-
-    // Reference texts — populated Phase 5; empty in Phase 1.
-    var references: [ReferenceMeta]
+public struct Project: Codable, Equatable {
+    public let id: UUID
+    public var title: String
+    public var author: String?
+    public var createdAt: Date
+    public var schemaVersion: Int          // start at 1; bump on non-additive changes
+    public var kind: ProjectKind           // .originalFiction | .fanfic
+    public var settings: ProjectSettings
+    public var manuscript: Manuscript
+    public var bible: Bible
+    public var notes: String               // free-form per-project notepad (Notes inspector tab)
+    public var selectedInspectorTab: InspectorTab?  // .bible | .history | .notes
+    public var fanficMetadata: FanficMetadata?      // populated only when kind == .fanfic
+    public var plannedConfig: PlannedProjectConfig? // non-nil when created via Planned Project flow
 }
+```
 
-struct ProjectSettings: Codable {
-    var serverProfileId: UUID?              // overrides the global default
-    var contextBudgetTokens: Int            // 8192 default; set per project
-    var generationDefaults: GenerationDefaults
-    var authorsNote: String                 // depth-N injection per NovelAI[C3]
-    var authorsNoteDepthLines: Int          // 4 default; matches NovelAI A/N Strength
-    var memory: String                      // always-top injection per KoboldAI[D1]
-    var instructTemplate: InstructTemplate  // ChatML / Mistral V7 / Llama3 / Alpaca / Auto
+`ProjectKind` is `.originalFiction` (default) or `.fanfic`. `InspectorTab` is `.bible / .history / .notes`. Phase 1 ships only `.originalFiction`; fanfic kind has data-model support but no UI yet.
+
+## 2. `ProjectSettings`
+
+`Sources/LoomCore/Models/Project.swift`
+
+```swift
+public struct ProjectSettings: Codable, Equatable {
+    public var serverProfileId: UUID?              // overrides app-level default
+    public var contextBudgetTokens: Int            // default 8192
+    public var generationDefaults: GenerationDefaults
+    public var authorsNote: String                 // depth-N injection per NovelAI
+    public var authorsNoteDepthLines: Int          // default 4
+    public var memory: String                      // always-top injection per KoboldAI
+    public var instructTemplate: InstructTemplate
+    public var writingDirection: WritingDirection
+    public var pov: POVStyle                       // default narrative POV for new scenes
+    public var tense: NarrativeTense               // default narrative tense for new scenes
+    public var targetWordCount: Int?
+    public var antiSlopPhrases: [String]           // seeded from AntiSlopDefaults
+    public var workFraming: [FramedElement]        // see WorkFraming.swift
 }
+```
 
-enum InstructTemplate: String, Codable {
-    case auto       // probe server, infer from model name
-    case chatml     // Qwen, many merges
+### 2.1 `InstructTemplate`
+
+```swift
+public enum InstructTemplate: String, Codable {
+    case auto         // probe server, infer from model name (default)
+    case chatml       // Qwen3.x, many merges
     case mistralV3
-    case mistralV7
+    case mistralV7    // Mistral-Small-3.x, Goetia
     case llama3
     case alpaca
-    case raw        // no template; pure completion
+    case gemma4       // Gemma 2/3/4 family
+    case raw          // pure completion, no template
 }
 ```
 
-Per [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §I.4: the model's instruct template is *not* Loom's choice; it must respect the model card. `.auto` probes the server and tries to detect; user can override.
+`.auto` calls `InstructTemplates.detect(forModelName:)` against the live server. The detector recognises stock Mistral-Small-3.x (2501/2503/2506) → `.mistralV7` and Gemma-2/3/4 → `.gemma4`. See `Sources/LoomCore/Generation/InstructTemplates.swift`.
 
----
-
-## 2. Manuscript hierarchy
+### 2.2 `GenerationDefaults`
 
 ```swift
-struct Manuscript: Codable {
-    var partIds: [UUID]              // ordered; Phase 3+. Phase 1: implicitly one part.
-    var orphanedSceneIds: [UUID]     // Phase 1: every scene lives here.
-}
-
-// Phase 3+
-struct Part: Codable {
-    let id: UUID
-    var title: String
-    var chapterIds: [UUID]
-    var notes: String                 // free-form author notes for this part
-}
-
-struct Chapter: Codable {
-    let id: UUID
-    var title: String
-    var sceneIds: [UUID]
-    var summary: String?              // recursive-summary feed (research §L.1)
-    var summaryDirty: Bool            // marks regen needed when underlying scenes change
-    var targetWordCount: Int?         // Scrivener-style target[J1]
-    var notes: String
-}
-
-struct Scene: Codable {
-    let id: UUID
-    var title: String                 // human label; not displayed in prose
-    var pov: UUID?                    // POV character — references Bible.characters
-    var location: UUID?               // references Bible.settings
-    var time: SceneTime?              // chronological positioning (Phase 4+)
-    var conflict: String              // yWriter pattern[J7]: scene driver
-    var outcome: String               // yWriter: how it resolves
-    var summary: String               // 2-3 sentence recap; auto-extracted Phase 2+
-    var summaryDirty: Bool
-    var status: SceneStatus           // todo / draft / revised / final
-    var targetWordCount: Int?
-    var contentPath: String           // relative path to scenes/<id>.md
-    var notes: String
-    var generatedSpans: [GeneratedSpan]  // for History tab (§14.5.2 design language)
-    var snapshots: [Snapshot]         // Phase 2+ — Scrivener[J1] pattern
-}
-
-enum SceneStatus: String, Codable {
-    case todo, draft, revised, final
-}
-
-struct SceneTime: Codable {
-    var narrativeOrder: Int           // sequential position in manuscript
-    var chronologicalISODate: String? // optional in-fiction date
-    var relativeAfter: UUID?          // "after scene X" relative ordering
-}
-
-struct GeneratedSpan: Codable {
-    let id: UUID
-    var generatedAt: Date
-    var mode: GenerationMode
-    var promptLogPath: String         // relative path to generation-log/<ts>.json
-    var rangeInScene: NSRange?        // can be nil if user accepted then heavily edited
-    var accepted: Bool
-}
-
-struct Snapshot: Codable {
-    let id: UUID
-    var takenAt: Date
-    var label: String?                // user-supplied or "Before Rewrite"
-    var contentSnapshot: String       // full scene prose at time of snapshot
+public struct GenerationDefaults: Codable, Equatable {
+    public var continueWordTarget: Int
+    public var expandWordTarget: Int
+    public var temperature: Double
+    public var minP: Double
+    public var dryMultiplier: Double      // DRY sampler
+    public var dryBase: Double
+    public var dryAllowedLength: Int
+    public var xtcThreshold: Double       // XTC sampler
+    public var xtcProbability: Double
+    public var topK: Int
+    public var maxOutputTokens: Int
 }
 ```
 
-The `generatedSpans` array is the live store of "what came from AI in this scene." After acceptance the visual badge fades, but the record persists for the History tab.
+Per-model sampler families live in `Sources/LoomCore/Networking/SamplerParams.swift` (`familyOverride` maps model name → temp/minP/repPen).
 
----
+## 3. `WritingDirection`
 
-## 3. Bible — entity model
+`Sources/LoomCore/Models/WritingDirection.swift`
 
 ```swift
-struct Bible: Codable {
-    var characters: [Character]
-    var settings: [Setting]
-    var objects: [BibleObject]
-    var factions: [Faction]
-    var timeline: [TimelineEvent]
-    var lorebook: [LorebookEntry]
-    // Phase 5
-    var styleSheets: [StyleSheet]
+public struct WritingDirection: Codable, Equatable {
+    public var kind: DirectionKind                 // literary | mainstream | romance | erotica | porn
+    public var register: VocabularyRegister        // clinical | literary | colloquial | crude
+    public var explicitnessLevel: ExplicitnessLevel // chaste | suggestive | explicit | graphic
+    public var themes: [Theme]                     // free-form tags
+    public var pacing: PacingProfile               // slowBurn | steady | accelerating | breakneck
+    public var fadeToBlackPolicy: FTBPolicy        // never | sometimes | always
 }
 ```
 
-### 3.1 Character
+Translates into a system-prompt addendum + a near-cursor anti-fade directive via `Sources/LoomCore/Generation/WritingDirectionPrompt.swift`.
 
-Sudowrite Bible[A2] schema is the starting point; extended for Loom's knowledge-state-per-scene engineering (research §O.2).
+## 4. Manuscript hierarchy
+
+### 4.1 `Manuscript`
+
+`Sources/LoomCore/Models/Manuscript.swift`
 
 ```swift
-struct Character: Codable {
-    let id: UUID
-    var name: String
-    var aliases: [String]             // Novelcrafter[B3] alias-driven prompt-function injection
-    var role: CharacterRole           // protagonist / antagonist / supporting / minor / narrator
-    var oneLine: String               // one-sentence pitch
-    var description: String           // multi-paragraph prose
-    var personality: String           // multi-paragraph; "how they speak/decide"[A2]
-    var appearance: String
-    var voice: String                 // dialogue-style notes
-    var goals: String
-    var relationships: [Relationship]
-    var avatarPath: String?           // optional image, like RPClient
-    // Phase 4+ — knowledge ledger
-    var knownFactsBySceneId: [UUID: [KnownFact]]
-}
-
-enum CharacterRole: String, Codable {
-    case protagonist, antagonist, supporting, minor, narrator
-}
-
-struct Relationship: Codable {
-    var toCharacterId: UUID
-    var kind: String                  // free-form: "sister", "rival", "lover" — research §M.2 modular bible
-    var notes: String
-}
-
-struct KnownFact: Codable {
-    let id: UUID
-    var fact: String                  // natural-language assertion[L4]
-    var sourceSceneId: UUID?          // where they learned it (nil = pre-story knowledge)
-    var certainty: Certainty
-    var addedAt: Date
-}
-
-enum Certainty: String, Codable {
-    case asserted     // character treats this as true
-    case suspected    // character suspects but isn't sure
-    case unknown      // character does NOT know — explicitly tracked
-    case mistaken     // character believes a false thing
+public struct Manuscript: Codable, Equatable {
+    public var partIds: [UUID]          // ordered
+    public var parts: [Part]
+    public var orphanedSceneIds: [UUID] // scenes not yet in a Part/Chapter
+    public var trashedSceneIds: [UUID]  // soft-delete list; restore-from-trash supported
 }
 ```
 
-The `knownFactsBySceneId` map is **Loom's distinctive engineering**. At generation time for scene N, the prompt assembler queries each character's facts up to and including scene N-1 (chronologically, not narratively, for stories with non-linear order). Facts marked `unknown` are passed as anti-knowledge: "Mia does NOT know that Bob betrayed her."
+Phase 1 shipped a flat scene list (all `orphanedSceneIds`); Phase 3 introduced Parts/Chapters with reordering + corkboard view.
 
-This is the Re3 Edit module pattern[L4] extended to per-scene granularity. See [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) §3 for the extraction pipeline.
+### 4.2 `Part`, `Chapter`
 
-### 3.2 Setting
+`Sources/LoomCore/Models/PartChapter.swift`
 
 ```swift
-struct Setting: Codable {
-    let id: UUID
-    var name: String
-    var aliases: [String]
-    var description: String
-    var sensoryNotes: String          // smell, sound, light — for Describe mode
-    var significantObjectIds: [UUID]
-    var notes: String
+public struct Part: Codable, Equatable {
+    public let id: UUID
+    public var title: String
+    public var chapters: [Chapter]
+    public var notes: String
+}
+
+public struct Chapter: Codable, Equatable {
+    public let id: UUID
+    public var title: String
+    public var sceneIds: [UUID]
+    public var summary: String?
+    public var summaryDirty: Bool
+    public var targetWordCount: Int?
+    public var notes: String
 }
 ```
 
-### 3.3 Object
+### 4.3 `Scene`
+
+`Sources/LoomCore/Models/Scene.swift`
 
 ```swift
-struct BibleObject: Codable {
-    let id: UUID
-    var name: String
-    var aliases: [String]
-    var description: String
-    var significance: String          // why this object matters in the story
-    var notes: String
+public struct Scene: Codable, Equatable {
+    public let id: UUID
+    public var title: String
+    public var pov: UUID?                 // POV character → Bible.characters
+    public var location: UUID?            // → Bible.settings
+    public var status: SceneStatus        // todo | draft | revised | final
+    public var conflict: String           // scene driver
+    public var outcome: String            // how it resolves
+    public var summary: String            // 2–3 sentence recap; auto-extracted Phase 2+
+    public var summaryDirty: Bool
+    public var targetWordCount: Int?
+    public var contentPath: String        // `scenes/<id>.md`, derived from id
+    public var notes: String
+    public var framing: String            // scene-author scenario block (NSFW posture)
+    public var explicitnessLevel: ExplicitnessLevel?  // per-scene override
+    public var undressedCharacterIds: [UUID]
+    public var generatedSpans: [GeneratedSpan]
+    public var snapshots: [Snapshot]
+    public var extraFrontmatter: [String: String]    // forward-compat sink for unknown frontmatter
+    public var prose: String              // not persisted in project.json; lives in scenes/<id>.md
 }
 ```
 
-### 3.4 Faction (Phase 3+)
+`prose` is part of the in-memory `Scene` but persisted separately — it lives in `scenes/<id>.md` body, while the rest of the fields go in the YAML frontmatter of that same file. See `SceneFile.swift` for the round-trip codec.
 
-Borrowed from Campfire[K1] modular bible.
+### 4.4 `GeneratedSpan`, `SceneRange`, `Snapshot`
 
 ```swift
-struct Faction: Codable {
-    let id: UUID
-    var name: String
-    var aliases: [String]
-    var description: String
-    var goals: String
-    var memberCharacterIds: [UUID]
-    var notes: String
+public struct GeneratedSpan: Codable, Equatable {
+    public let id: UUID
+    public var generatedAt: Date
+    public var mode: GenerationMode
+    public var promptLogPath: String       // → generation-log/<ts>.json
+    public var rangeInScene: SceneRange?   // can be nil if user accepted then heavily edited
+    public var accepted: Bool
+}
+
+public struct SceneRange: Codable, Equatable {
+    public var location: Int
+    public var length: Int
+}
+
+public struct Snapshot: Codable, Equatable {
+    public let id: UUID
+    public var takenAt: Date
+    public var label: String?              // user-supplied or "Before Rewrite"
+    public var contentSnapshot: String     // full scene prose at time of snapshot
 }
 ```
 
-### 3.5 Timeline event (Phase 3+)
+Snapshots are taken automatically before AI rewrites and on demand. Stored inline in `Scene.snapshots`.
+
+### 4.5 `GenerationMode`
 
 ```swift
-struct TimelineEvent: Codable {
-    let id: UUID
-    var title: String
-    var description: String
-    var chronologicalISODate: String?  // in-fiction date
-    var sceneIds: [UUID]               // scenes that depict or reference this event
-    var characterIds: [UUID]           // characters present
-    var settingId: UUID?
+public enum GenerationMode: String, Codable, CaseIterable {
+    case continueProse, expand,
+         rewrite, rewriteVoice, rewriteTense, rewritePOV, rewriteLength,
+         showDontTell, brainstorm, critique, bridge, describe, nameSuggest,
+         rollOutcome, templateScene
 }
 ```
 
-Plottr[E1]-shaped 2D Timeline × Plotline grid is a Phase 4+ visualisation built on top of these events.
+Per-mode prompt assembly lives in [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md). Availability per mode/cursor/selection lives in `Sources/LoomCore/Generation/GenerationModeAvailability.swift`.
 
-### 3.6 Lorebook entry
+## 5. Bible
 
-The NovelAI / KoboldAI / SillyTavern trichotomy[C1][D1][H1] (research §M.4):
+### 5.1 `Bible` (collection)
+
+`Sources/LoomCore/Models/Bible.swift`
 
 ```swift
-struct LorebookEntry: Codable {
-    let id: UUID
-    var name: String
-    var content: String
-    var activationMode: ActivationMode
-    var keys: [String]                // primary triggers
-    var secondaryKeys: [String]       // AND-gating
-    var enabled: Bool
-    var priority: Int                 // ties broken by recency
-    var positionMode: PositionMode    // top / bottom / depth-N
-    var depth: Int?                   // applies to .depthN mode
-    var maxRecentScenesScanned: Int   // analogous to NovelAI Search Range[C2]
-}
-
-enum ActivationMode: String, Codable {
-    case constant     // always inject (highest cost)
-    case keyed        // matches in recent prose trigger injection
-    case vectorised   // Phase 5: semantic-similarity injection
-}
-
-enum PositionMode: String, Codable {
-    case top          // memory-style: top of prompt
-    case bottom       // author's note style: end of prompt
-    case depthN       // N scenes/lines from end
+public struct Bible: Codable, Equatable {
+    public var characters: [Character]
+    public var settings: [Setting]
+    public var objects: [BibleObject]
+    public var lorebook: [LorebookEntry]
+    public var dynamicSheets: [DynamicSheet]
 }
 ```
 
-This shape is intentionally close to SillyTavern's WorldInfoEntry — Loom users with prior SillyTavern experience can transfer intuition.
+`Faction` and `TimelineEvent` are listed in the Phase-0 design doc but **not currently shipped** — the Bible collection lives at five entity classes today.
 
-### 3.7 Style sheet (Phase 5)
+### 5.2 `Character`
+
+`Sources/LoomCore/Models/Character.swift`
 
 ```swift
-struct StyleSheet: Codable {
-    let id: UUID
-    var name: String
-    var toneDescriptors: [String]     // "noir", "wry", "lush", "spare"
-    var sentenceLengthProfile: SentenceLengthProfile
-    var lexicon: [LexiconEntry]
-    var sampleParagraphs: [String]    // few-shot exemplars; always-on
-    var derivedFromReferenceIds: [UUID]  // back-pointer to References used
-}
-
-struct SentenceLengthProfile: Codable {
-    var meanWords: Double
-    var stddev: Double
-    var burstiness: Double            // mix of long+short sentences
-}
-
-struct LexiconEntry: Codable {
-    var term: String
-    var preferred: Bool               // true: prefer; false: avoid
-    var notes: String
+public struct Character: Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var aliases: [String]
+    public var role: CharacterRole         // protagonist | antagonist | supporting | minor | narrator
+    public var oneLine: String
+    public var description: String
+    public var personality: String
+    public var appearance: String
+    public var voice: String               // dialogue-style notes
+    public var goals: String
+    public var relationships: [Relationship]
+    public var avatarPath: String?
+    public var knownFactsBySceneId: [UUID: [KnownFact]]   // per-scene knowledge ledger
+    public var canonBrief: String?         // Phase 5b — fandom canon snippet
+    public var customFields: [CharacterCustomField]       // fandom-template extensibility
+    public var injectionMode: InjectionMode               // alwaysOn | keyed
+    public var kinks: [CharacterKink]                     // NSFW per-character kink stance
+    public var apparentAnatomy: String                    // visible/clothed
+    public var intimateAnatomy: String                    // off-page / explicit
 }
 ```
 
-Most of these fields are auto-extracted from reference texts at Phase 5 ingestion time; user can edit afterward.
+`Relationship` carries `kind` (free-form), `status: RelationshipStatus`, `notes`, optional `sourceSceneId` (where the relationship first became canonical). `CharacterCustomField` is `label / value / kind ∈ {string,number,enum}`, designed so Phase-5 fandom templates can extend a Character without further schema migration.
 
----
-
-## 4. References (Phase 5)
+#### 5.2.1 `KnownFact` (per-scene knowledge ledger)
 
 ```swift
-struct ReferenceMeta: Codable {
-    let id: UUID
-    var label: String                 // user-supplied: "My past novel" / "Author X"
-    var sourcePath: String            // relative path to references/<id>.md
-    var indexPath: String             // relative path to references/<id>.index
-    var ingestedAt: Date
-    var wordCount: Int
-    var sceneTypeTags: [SceneTypeTag] // counts per type (research §O.4)
-}
-
-struct SceneTypeTag: Codable {
-    var type: SceneType
-    var count: Int
-}
-
-enum SceneType: String, Codable {
-    case action, dialogue, interiority, description, mixed, transition
+public struct KnownFact: Codable, Equatable {
+    public let id: UUID
+    public var fact: String                // natural-language assertion
+    public var sourceSceneId: UUID?        // where they learned it (nil = pre-story)
+    public var certainty: Certainty        // asserted | suspected | unknown | mistaken
+    public var addedAt: Date
 }
 ```
 
-The `sceneTypeTags` are populated by a side-call classifier during ingestion. Used at retrieval time to prefer same-type exemplars (research §O.4). The `<id>.index` sidecar is an embedding index format — implementation detail in Phase 5 design doc.
+The `knownFactsBySceneId` map is **Loom's distinctive engineering** — at generation time for scene N, the prompt assembler queries each character's accumulated facts up to and including N-1. Facts marked `unknown` are passed as anti-knowledge: *"Mia does NOT know that Bob betrayed her."*
 
----
+Knowledge derivation logic: `Sources/LoomCore/Generation/LedgerKnowledge.swift` (walks `flatSceneIds`, buckets KNOWS/UNKNOWNS). Extraction pipeline: `LedgerExtraction.swift` + `OllamaLedgerExtractor.swift` + `LedgerExtractionCoordinator.swift`.
 
-## 5. Generation modes (enum)
+### 5.3 `Setting`, `BibleObject`
+
+`Sources/LoomCore/Models/Setting.swift`
 
 ```swift
-enum GenerationMode: String, Codable {
-    case continueProse        // research [A6]
-    case expand
-    case rewrite
-    case rewriteVoice
-    case rewriteTense
-    case rewritePOV
-    case rewriteLength
-    case showDontTell
-    case brainstorm
-    case critique
-    case bridge
-    case describe
-    case nameSuggest
+public struct Setting: Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var aliases: [String]
+    public var description: String
+    public var sensoryNotes: String           // smell, sound, light — for Describe mode
+    public var significantObjectIds: [UUID]
+    public var notes: String
+    public var injectionMode: InjectionMode
+}
+
+public struct BibleObject: Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var aliases: [String]
+    public var description: String
+    public var significance: String           // why this object matters
+    public var notes: String
+    public var injectionMode: InjectionMode
 }
 ```
 
-Full prompt templates live in [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md).
+### 5.4 `LorebookEntry`
+
+`Sources/LoomCore/Models/LorebookEntry.swift`
 
 ```swift
-struct GenerationDefaults: Codable {
-    var continueWordTarget: Int       // ~500 default
-    var expandWordTarget: Int         // ~1500 default
-    var temperature: Double
-    var minP: Double
-    var dryMultiplier: Double         // research §I.3 sampler culture
-    var dryBase: Double
-    var dryAllowedLength: Int
-    var xtcThreshold: Double
-    var xtcProbability: Double
-    var topK: Int
-    var maxOutputTokens: Int
+public struct LorebookEntry: Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var content: String
+    public var activationMode: LorebookActivationMode    // .constant | .keyed | .vectorised
+    public var keys: [String]                            // primary triggers
+    public var secondaryKeys: [String]                   // AND-gating
+    public var enabled: Bool
+    public var priority: Int                             // ties broken by recency
+    public var positionMode: LorebookPositionMode        // .top | .bottom | .depthN
+    public var depth: Int?                               // applies to .depthN
+    public var maxRecentScenesScanned: Int               // analogous to NovelAI Search Range
+    public var group: String?
+    public var weight: Int?
+    public var sticky: Bool                              // remains active once triggered
+    public var activateFromSceneId: UUID?                // scene-bounded activation
+    public var activateUntilSceneId: UUID?
 }
 ```
 
-Defaults per research §I.3. Surfaced in Settings, editable per project, editable per generation in the inspector.
+Shape is intentionally close to SillyTavern's WorldInfoEntry so existing intuition transfers. `.vectorised` activation reuses the Phase-5 retrieval index.
 
----
+### 5.5 `DynamicSheet`
 
-## 6. Generation log
-
-Each generation event writes a JSON file to `generation-log/<iso-timestamp>.json`. Structure:
+`Sources/LoomCore/Models/DynamicSheet.swift`
 
 ```swift
-struct GenerationLogEntry: Codable {
-    let id: UUID
-    let sceneId: UUID
-    let timestamp: Date
-    let mode: GenerationMode
-    let model: String                 // model name as reported by server
-    let serverProfileId: UUID
-    let promptAssembly: PromptAssembly
-    let response: GenerationResponse
-}
-
-struct PromptAssembly: Codable {
-    var contextChiclets: [ContextChiclet]   // for the History UI[A5]
-    var fullPrompt: String                   // verbatim text sent to server
-    var promptTokens: Int
-}
-
-struct ContextChiclet: Codable {
-    var label: String                  // "20k recent prose", "Mia (character)", "Author's Note"
-    var sourceKind: ChicletKind
-    var sourceId: UUID?                // entity / lorebook / scene id
-    var contentExcerpt: String         // first 200 chars
-    var fullContent: String            // expandable in UI
-    var tokenCount: Int
-}
-
-enum ChicletKind: String, Codable {
-    case recentProse, sceneSummary, chapterSummary, projectSummary
-    case characterSheet, settingSheet, objectSheet, factionSheet
-    case lorebookEntry, authorsNote, memory, styleSheet
-    case sceneMetadata, knowledgeLedger, fewShotStyleExample
-}
-
-struct GenerationResponse: Codable {
-    var rawText: String
-    var completionTokens: Int
-    var stopReason: String?            // "stop_sequence" / "max_tokens" / "user_cancelled"
-    var samplerSnapshot: GenerationDefaults  // captures actual values used
-    var refusalDetected: Bool          // RPClient quirk detector inheritance
-    var elapsedMs: Int
+public struct DynamicSheet: Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var participantIds: [UUID]    // characters this dynamic applies to
+    public var roles: String             // free-form: "D/s", "ABO mates", "rivals-to-lovers", …
+    public var wants: String
+    public var softLimits: String
+    public var hardLimits: String
+    public var safeword: String
+    public var arc: String               // trajectory of the dynamic
+    public var alwaysOn: Bool
+    public var enabled: Bool
 }
 ```
 
-This log is the load-bearing artefact for transparency. The History inspector tab[§14.5.2] pages over these files.
+A *DynamicSheet* is a per-relationship kink/dynamic spec injected via `DynamicSheetInjector` + `DynamicSheetPrompt`. `alwaysOn = true` → injected on every generation; `false` → injected when a participant character is present in the current scene window.
 
----
+## 6. References (style ingestion — L5)
 
-## 7. On-disk layout
+### 6.1 `ReferenceText`, `ReferenceTextIndex`
 
-Per [`LOOM_PLAN.md`](LOOM_PLAN.md) §7:
+`Sources/LoomCore/Models/ReferenceText.swift`
+
+```swift
+public struct ReferenceText: Codable, Equatable {
+    public let id: UUID
+    public var name: String
+    public var nsfw: Bool                      // retrieval can filter on this
+    public var createdAt: Date
+    public var extraFrontmatter: [String: String]
+    public var body: String                    // Markdown reference prose
+
+    public var contentPath: String { "references/\(id.uuidString).md" }
+    public var indexPath: String { "references/\(id.uuidString).index" }
+}
+
+public struct ReferenceTextIndex: Codable, Equatable {
+    public var schemaVersion: Int
+    public var dModel: ModelFingerprint?       // Wegmann CoreML fingerprint
+    public var eModel: ModelFingerprint?       // function-word-z fingerprint
+    public var chunks: [Chunk]                 // ~200-word chunks; each with dVec, eVec, modality
+}
+```
+
+Ingest pipeline: `Sources/LoomCore/Retrieval/ReferenceIngestPipeline.swift`. Embeddings: `CoreMLEmbeddingClient` (Wegmann mlpackage, native CoreML — Phase 8.c displaced the Python subprocess). Modality classifier: `KoboldNarrativeModeClassifier`. Retrieval at generation time: `RetrievalService.retrieve(query:modalityFilter:topK:)` returning `[StyleExemplar]`.
+
+### 6.2 Template scenes (L7) and Scene exemplars (L8)
+
+Template scenes are reference-text-shaped Markdown files at `templates/<id>.md` with a Pass-A beats sidecar at `templates/<id>.beats.json` (the structural skeleton — `beats`, `modality`, `tension`, pacing). See `Sources/LoomCore/Storage/TemplateSceneStorage.swift` + `Sources/LoomCore/Templates/BeatExtraction.swift`.
+
+Scene exemplars are not a separate persisted type — they're the **L8 unified surface** where one user action creates *both* a `ReferenceText` *and* a Template under a shared UUID. Persisted to both `references/<id>.{md,index}` and `templates/<id>.{md,beats.json}`. The Bible Workspace surfaces them as a unified entity (`SnapshotSceneExemplar`); the storage layer just consults both directories.
+
+## 7. Continuity audit (L10)
+
+### 7.1 `ContinuityFinding`
+
+`Sources/LoomCore/Generation/ContinuityFinding.swift`
+
+```swift
+public struct ContinuityFinding: Codable, Equatable {
+    public let id: UUID
+    public var kind: Kind                      // .attributeDrift | .knowledgeViolation | .timelineConflict | .spatialConflict
+    public var severity: Severity              // .high | .medium | .low
+    public var claimA: ContinuityAudit.Claim
+    public var claimB: ContinuityAudit.Claim
+    public var sceneAId: UUID
+    public var sceneBId: UUID
+    public var sceneDistance: Int
+    public var confidence: Double
+    public var explanation: String
+    public var status: Status                  // .new | .accepted | .dismissed | .resolved
+    public var lastSeenAuditAt: Date
+}
+```
+
+Persisted via `ContinuityAuditStore` (one file per audit run; status carries forward across re-audits).
+
+### 7.2 `ContinuityAudit.Claim` + adjudication shapes
+
+`Sources/LoomCore/Generation/ContinuityAudit.swift`
+
+`ContinuityAudit` is a namespace `enum` carrying:
+
+- `Claim { type: ClaimType, subject: String, attributeKey: String, value: String, sourceSceneId: String, source: ClaimSource, evidenceQuote: String }` — the typed claim shape.
+- `ClaimType { event, attribute, temporal, spatial, knowledgeState }` — five-way taxonomy of extracted facts.
+- `ClaimSource { narration, dialogue }` — speaker-aware routing.
+- `Adjudication / Verdict {contradiction, consistent, evolution}` — the world-fact adjudicator shape.
+- `KnowledgeAdjudication / KnowledgeVerdict {violation, not_a_violation}` — the knowledge-class adjudicator's task-fit vocabulary (§24).
+
+## 8. Proposed entities (entity discovery — L9)
+
+`Sources/LoomCore/Storage/ProposedEntitiesStore.swift` + `Sources/LoomCore/Models/BibleWorkspaceSnapshot.swift`
+
+The L9 pipeline produces ProposedEntity records in `proposed-entities/` (one file per entity proposal). Snapshot-side projection is `SnapshotProposedEntity { id, canonicalName, aliases, oneLine, evidenceQuote, kind ∈ {character,setting,object}, attachedFacts: [SnapshotProposedFact], status, addedAt }`. Accepting a proposal promotes it to a real `Character` / `Setting` / `BibleObject` with facts attached to `knownFactsBySceneId`.
+
+Proposed relationships are similar (`ProposedRelationship` / `SnapshotProposedRelationship`) but currently dormant per HANDOFF §15.27.
+
+## 9. Patches (workspace mutation intents)
+
+Each Bible-Workspace-editable entity has a paired `*Patch` type — sparse partial-update record sent from the React webview to Swift via `BibleWorkspaceIntent`. Files:
+
+- `CharacterPatch.swift`
+- `LorebookEntryPatch.swift`
+- `DynamicSheetPatch.swift`
+- `ReferencePatch.swift`
+- `TemplateScenePatch.swift`
+- `SceneExemplarPatch.swift`
+
+Each follows the pattern of `Patch { id: UUID; fieldA: NewValue?; fieldB: NewValue?; ...}` where nil = no change. Swift applies the patch, then re-pushes the full snapshot.
+
+## 10. Bible Workspace snapshot
+
+`Sources/LoomCore/Models/BibleWorkspaceSnapshot.swift`
+
+```swift
+public struct BibleWorkspaceSnapshot: Codable, Equatable {
+    public var characters: [SnapshotCharacter]
+    public var lorebook: [LorebookEntry]
+    public var dynamics: [DynamicSheet]
+    public var references: [SnapshotReference]
+    public var templateScenes: [SnapshotTemplateScene]
+    public var sceneExemplars: [SnapshotSceneExemplar]
+    public var proposedEntities: [SnapshotProposedEntity]
+    public var proposedRelationships: [SnapshotProposedRelationship]
+    public var pendingSuggestions: [PendingSuggestion]
+    public var discoveringSceneIds: [String]      // L9 in-flight indicator
+    public var ingestingReferenceIds: [String]    // L5 in-flight indicator
+    public var extractingTemplateIds: [String]    // L7 in-flight indicator
+    public var scenes: [SceneSummary]             // id + title + word count for cross-refs
+}
+```
+
+`SnapshotCharacter` re-keys `knownFactsBySceneId` from `[UUID: [KnownFact]]` to `[String: [KnownFact]]` for JS-friendly JSON-object form. The snapshot is JSON-serialised and pushed to the React side via `BibleWorkspaceBridge` on every mutation.
+
+## 11. Project Tools snapshot
+
+`Sources/LoomCore/Models/ProjectToolsSnapshot.swift`
+
+A read-only projection for the (future) Project Tools webview surface. Currently a thin slice: `ToolsCharacter { id, name }` for the relationship-map view. Will grow with each tool added; kept separate from `BibleWorkspaceSnapshot` to avoid coupling tool surfaces to the Bible editor.
+
+## 12. Planned Project (outline mode)
+
+`Sources/LoomCore/Models/PlannedProjectConfig.swift` + `PlannedProjectSnapshot.swift`
+
+```swift
+public struct PlannedProjectConfig: Codable, Equatable {
+    // The guided-planning record: framework choice, premise, beats, sketch, …
+}
+```
+
+`PlannedProjectSnapshot` projects the config + the framework's beats for the Planned Project webview. `Sources/LoomCore/Models/StoryFramework.swift` defines `StoryFramework` (protocol) + `SaveTheCatFramework` + `StoryFrameworks` registry (currently Save-the-Cat only). `BeatSlot` is a single named beat with summary + target word count.
+
+The whole subsystem is L9.x/Planned-Project-mode (see [`LOOM_PLANNED_PROJECT.md`](LOOM_PLANNED_PROJECT.md)).
+
+## 13. Fanfic metadata
+
+`Sources/LoomCore/Models/FanficMetadata.swift`
+
+Schema landed for forward-compat migration; UI deferred to Phase 5.b/5.c.
+
+```swift
+public struct FanficMetadata: Codable, Equatable {
+    public var fandoms: [Fandom]
+    public var attg: ATTG                  // Author / Title / Tagline / Genre, NovelAI Erato pattern
+    public var rating: AO3Rating           // .general | .teen | .mature | .explicit | .notRated
+    public var warnings: [AO3Warning]      // chooseNotToWarn, majorCharDeath, etc.
+    public var category: AO3Category       // .gen | .het | .slash | …
+    public var ships: [Ship]               // first-class relationship records
+    public var primaryCharacters: [UUID]   // → Bible.characters
+    public var tropes: [Trope]
+    public var aus: [AU]
+}
+```
+
+Subtypes (`Fandom`, `ATTG`, `Ship` + `ShipKind`/`ShipDynamic`, `Trope` + `TropeCategory` + `TropeLength` + `TropeHints`, `AU`, three AO3 enums) all live in the same file.
+
+## 14. App-level settings + server profiles
+
+### 14.1 `AppSettings`
+
+`Sources/LoomCore/Models/AppSettings.swift`
+
+```swift
+public struct AppSettings: Codable, Equatable {
+    public var schemaVersion: Int
+    public var servers: [ServerProfile]
+    public var defaultServerId: UUID?        // default writer server
+    public var extractorServerId: UUID?      // default structured-task server
+    public var recentProjectURLs: [URL]
+}
+```
+
+Persisted by `AppSettingsStore` to `~/.../<app-support>/settings.json`.
+
+### 14.2 `ServerProfile`
+
+`Sources/LoomCore/Models/ServerProfile.swift`
+
+```swift
+public struct ServerProfile: Codable, Equatable, Identifiable {
+    public let id: UUID
+    public var name: String
+    public var baseURL: URL
+    public var kind: ServerKind              // .koboldcpp | .ollama
+    public var capabilities: ServerCapabilities?  // model name, trueMaxContext, version
+    public var lastProbed: Date?
+}
+```
+
+Probing happens via `ServerProbe`, `OllamaProbe`, `AutoProbe`; results cache into `capabilities`.
+
+## 15. Style library (writer-prompt voice presets)
+
+`Sources/LoomCore/Models/Style.swift` + `StyleLibrary.swift`
+
+```swift
+public enum StyleType: String, Codable {
+    case voice, genre, narrativeStyle, period
+}
+
+public struct Style: Codable, Equatable {
+    public let id: UUID
+    public var type: StyleType
+    public var name: String
+    public var prompt: String       // injected as system-prompt addendum
+    public var isBuiltIn: Bool
+    public var descriptor: String?  // short description shown in pickers
+}
+```
+
+`StyleLibrary` is the built-in registry (LitRPG genre + others). User-defined styles persist via `StyleLibraryStore` to `<app-support>/styles.json`. Distinct from the `Phase-5 Reference` retrieval pipeline — Styles are *system-prompt presets*, References are *RAG corpora*.
+
+## 16. NSFW posture + memory presets
+
+### 16.1 `ProjectMemoryPresets`
+
+`Sources/LoomCore/Models/ProjectMemoryPresets.swift`
+
+```swift
+public struct ProjectMemoryPreset: Equatable {
+    public let title: String
+    public let text: String
+}
+```
+
+`ProjectMemoryPresets` is a namespace enum with built-in `loomDefault`, `heavyNSFW`, `minimal` presets. `ProjectStorage` seeds new projects with the user-chosen preset's text into `ProjectSettings.memory`.
+
+### 16.2 `AntiSlopDefaults`
+
+`Sources/LoomCore/Models/AntiSlopDefaults.swift`
+
+A namespace enum containing the curated anti-slop phrase list seeded into `ProjectSettings.antiSlopPhrases` for new projects. Fed to KoboldCpp as `banned_strings` (phrase-level backtracking sampler) via `GenerateRequest.bannedStrings`.
+
+### 16.3 `SphiratriothStarterPack`
+
+`Sources/LoomCore/Models/SphiratriothStarterPack.swift`
+
+A namespace enum carrying the bundled Sphiratrioth power-user pack — pre-built characters, lorebook entries, dynamics, anti-slop phrases. Imported on demand from Settings → Resources.
+
+### 16.4 `WorkFraming`
+
+`Sources/LoomCore/Models/WorkFraming.swift`
+
+```swift
+public struct FramedElement: Codable, Equatable {
+    public var role: String              // "literary intent", "trigger warning", etc.
+    public var text: String
+    public var stance: ContentStance     // .embrace | .neutral | .resist
+}
+```
+
+Per-project list under `ProjectSettings.workFraming`. Each `FramedElement` becomes a system-prompt clause framing the work's stance on its own content.
+
+## 17. Generation log
+
+`Sources/LoomCore/Models/GenerationLog.swift`
+
+```swift
+public struct GenerationLogEntry: Codable, Equatable {
+    public let id: UUID
+    public let sceneId: UUID
+    public let timestamp: Date
+    public let mode: GenerationMode
+    public let model: String
+    public let serverProfileId: UUID
+    public let promptAssembly: PromptAssembly
+    public let response: GenerationResponse
+    public var templateGenerationInfo: TemplateGenerationInfo?  // L7 only
+}
+
+public struct PromptAssembly: Codable, Equatable {
+    public var contextChiclets: [ContextChiclet]   // for the History UI
+    public var fullPrompt: String                   // verbatim text sent to server
+    public var promptTokens: Int
+}
+
+public struct GenerationResponse: Codable, Equatable {
+    public var rawText: String
+    public var completionTokens: Int
+    public var stopReason: String?
+    public var samplerSnapshot: GenerationDefaults
+    public var refusalDetected: Bool
+    public var elapsedMs: Int
+}
+```
+
+One file per generation event at `generation-log/<iso-timestamp>.json`. `ContextChiclet` carries `label / sourceKind: ChicletKind / sourceId / contentExcerpt / fullContent / tokenCount`; `ChicletKind` covers `recentProse, sceneSummary, chapterSummary, projectSummary, characterSheet, settingSheet, objectSheet, factionSheet, lorebookEntry, authorsNote, memory, styleSheet, sceneMetadata, knowledgeLedger, fewShotStyleExample, dynamicSheet, writingDirection`.
+
+`TemplateGenerationInfo` carries L7's per-template generation metadata (template id, beat being generated, etc.) — set only when `mode == .templateScene`.
+
+## 18. Narrative classification
+
+`Sources/LoomCore/Models/NarrativeMode.swift` + `NarrativeStyle.swift`
+
+```swift
+public enum NarrativeMode: String, CaseIterable, Codable {
+    case dialogue, interiority, description, action, summary
+}
+
+public enum POVStyle: String, Codable {
+    case firstPerson, thirdLimited, thirdOmniscient, secondPerson
+}
+
+public enum NarrativeTense: String, Codable {
+    case past, present
+}
+```
+
+`NarrativeMode` is the modality taxonomy used by retrieval (chunk-level tag), Scene-Template Generation (per-beat modality match), and the heuristic classifier (`NarrativeModeHeuristic` / `NarrativeModeClassifier` / `KoboldNarrativeModeClassifier`).
+
+`InjectionMode`, `LengthScenario`, `OutlineSizing` are smaller enums used by per-mode prompt assembly and outline generation; trivial.
+
+## 19. Lazy versioning + migration
+
+- **Schema version** field on `Project` and `AppSettings`. Start at 1; bump only on *non-additive* changes.
+- **Additive fields** use `decodeIfPresent` with a sensible default. No explicit migration needed.
+- **Field rename or type swap** → versioned migration step in the decoder's `init(from:)`. Don't add a migration step until first encountered (RPClient's lazy-versioning pattern).
+- **On-disk format is the contract.** A future Loom version that can't read a current `.loom/` directory is a regression. `Phase1SchemaVersion` tests pin the round-trip property for every additive change.
+
+The `extraFrontmatter: [String: String]` field on `Scene` and `ReferenceText` is a *forward-compat sink* — any unknown YAML frontmatter key lands there on decode and round-trips back on encode, so older versions don't lose newer-version state.
+
+## 20. On-disk layout
 
 ```
 MyNovel.loom/
-├── project.json                      # Project shape minus per-scene prose
+├── project.json                  # everything in `Project` except scene prose + per-tool sidecars
+├── project.json.bak              # last-good copy, written before each save
 ├── scenes/
-│   ├── <scene-id>.md                 # YAML frontmatter + prose
-│   └── ...
-├── bible/
-│   ├── characters/<id>.json          # Character
-│   ├── settings/<id>.json
-│   ├── objects/<id>.json
-│   ├── factions/<id>.json
-│   ├── timeline.json                 # [TimelineEvent]
-│   ├── lorebook.json                 # [LorebookEntry]
-│   └── style/<id>.json               # StyleSheet (Phase 5)
-├── references/                       # Phase 5
-│   ├── <ref-id>.md
-│   └── <ref-id>.index                # embedding sidecar (binary)
-├── knowledge/                        # Phase 4+
-│   └── <scene-id>.json               # extracted [KnownFact] tuples
-└── generation-log/
-    └── <iso-timestamp>.json          # GenerationLogEntry
+│   └── <scene-id>.md             # YAML frontmatter (Scene minus prose) + Markdown body (prose)
+├── generation-log/
+│   └── <iso-ts>.json             # GenerationLogEntry, one per event
+├── references/                   # L5 — references + scene-exemplar reference halves
+│   ├── <id>.md                   # ReferenceText body
+│   └── <id>.index                # ReferenceTextIndex (chunks + Wegmann + funcwordZ + modality)
+├── templates/                    # L7 — template scenes + scene-exemplar template halves
+│   ├── <id>.md                   # template prose
+│   └── <id>.beats.json           # Pass-A skeleton (beats, modality, tension, pacing)
+├── snapshots/                    # Manual + pre-rewrite snapshots
+│   └── <iso-ts>-<sceneid>.json   # Snapshot record (full prose at time of snapshot)
+├── proposed-entities/            # L9 — entity discovery proposals awaiting accept/reject
+│   └── proposed-entities.json    # single store; one file holds all pending proposals
+├── proposed-relationships/       # L9 — dormant per HANDOFF §15.27
+│   └── proposed-relationships.json
+├── continuity-audit/             # L10 — audit findings (status carries across re-audits)
+│   └── audit.json                # single file; replaced on each audit, status flags preserved
+├── relationship-map/             # Future relationship-graph layout state
+│   └── layout.json
+└── template-gen-state/           # L8 per-template generation UI state (cast mapping etc.)
+    └── <template-id>.json
 ```
 
-### 7.1 Scene markdown frontmatter
+Plus app-level state at `~/Library/Application Support/Loom/`:
 
-Each `scenes/<id>.md` opens with YAML frontmatter:
+```
+settings.json                     # AppSettings (server profiles, recent projects, defaults)
+styles.json                       # User-defined entries on top of StyleLibrary built-ins
+```
+
+### 20.1 Scene markdown frontmatter
+
+`Sources/LoomCore/Storage/SceneFile.swift`
 
 ```markdown
 ---
-id: 9b2c4a-...
+id: 9b2c4a-…
 title: "The Opening"
-pov: 5e7d8f-...                # character id
-location: 4a3b1c-...
+pov: 5e7d8f-…
+location: 4a3b1c-…
 status: draft
 targetWordCount: 1500
 conflict: "Mia confronts the stranger at the door."
 outcome: "Stranger leaves; Mia bolts the door."
 summary: "Mia, alone in her flat, opens the door to a stranger…"
 summaryDirty: false
+framing: ""
+explicitnessLevel: explicit
+undressedCharacterIds: []
+extraFrontmatter:
+  customKey: "value-from-a-future-version"
 ---
 
 The wind had been picking up for an hour…
@@ -494,44 +743,23 @@ The wind had been picking up for an hour…
 [scene prose]
 ```
 
-**Round-trip property** is enforced by always reading the YAML block first, then treating everything after the closing `---` as prose. Any markdown editor (Obsidian, iA Writer, VSCode) opens these files cleanly. The Longform plugin precedent[J5] is exactly this shape.
+Round-trip property: any markdown editor (Obsidian, iA Writer, VSCode) opens these cleanly. Unknown frontmatter keys land in `extraFrontmatter` so a future Loom can add fields without older Loom losing them.
 
-### 7.2 Why bible entries are JSON, not markdown
+### 20.2 Why bible entries live inline in `project.json`
 
-Entity sheets are denser metadata — relationships, knowledge ledgers, lorebook activation modes — and don't benefit from in-editor authoring of their wire format. JSON is more honest about what they are. The Bible inspector pane is the editing UI; users don't open `bible/characters/<id>.json` in vim to edit a character.
+Phase 0's design proposed `bible/characters/<id>.json` per-entity files. The shipped reality is *all bible state lives inline in `Project.bible`* (a single struct in `project.json`). Reason: bible entries are denser metadata with cross-references (relationships, lorebook secondary keys, dynamic sheet participants) — single-file storage avoids the multi-file consistency problem at the cost of larger project.json. Trade-off accepted; revisit if `project.json` grows past a few MB in practice.
 
-### 7.3 Why generation-log is one file per event
+### 20.3 Why `generation-log` is one file per event
 
-Append-only log, easy to back up, easy to delete selectively, easy to audit. A single JSON-lines file would be simpler but harder to explore. Phase 6 polish may add a "compact older logs" function.
+Append-only, easy to back up, easy to delete selectively, easy to audit. A JSON-lines file would be simpler but harder to explore in Finder / VS Code. A future "compact older logs" function could batch them.
 
----
+## 21. Cross-references
 
-## 8. Migration posture
-
-- **Schema version** starts at 1. Bump only on non-additive changes.
-- **Additive fields** use `decodeIfPresent` per RPClient's pattern; no migration needed.
-- **Field renames or type swaps** require a versioned migration path. Don't add one until first encountered (RPClient §6.1 lazy-versioning).
-- **On-disk format is the contract.** A future Loom version that can't read a current `.loom/` directory is a regression. Tests pin the round-trip property.
-
----
-
-## 9. Open data-model questions for Phase 1+
-
-- **NSAttributedString state inside scenes.** Italics, bold are handled by markdown in the prose. But what about user-added comments (`<!-- TODO: rewrite this -->` style)? Decision deferred to Phase 1 implementation: lean toward HTML comments in prose for portability.
-- **Multi-draft scene representation.** Phase 2+. Lean toward `Snapshot` covering the use case (full prose stored as a snapshot before AI rewrite).
-- **References to unsynchronised state.** What if a Character is referenced (`@mia`) but the entity is later deleted? Decision: dangling references render as plain text with a warning in the History chiclet ("entity 'mia' was deleted; reference will not resolve").
-
----
-
-## 10. References
-
-**Internal:**
-- [`LOOM_PLAN.md`](LOOM_PLAN.md) — phasing.
-- [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) — every claim traces here.
-- [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) — knowledge ledger extraction pipeline.
-- [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) — per-mode prompt templates that read these shapes.
-- [`LOOM_PHASE1_EDITOR_MVP.md`](LOOM_PHASE1_EDITOR_MVP.md) — Phase 1 sub-step contracts.
-
-**External (RPClient):**
-- `/Volumes/SSD1/Code/RPClient/Sources/RPClientCore/Storage.swift` — JSON-per-entity storage pattern (direct reuse).
-- `/Volumes/SSD1/Code/RPClient/Sources/RPClientCore/Models/` — Codable shape conventions to follow.
+- [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) — Character / knowledge-ledger extraction pipeline.
+- [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) — per-mode prompt assembly that consumes these shapes.
+- [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) — webview snapshot/patch pattern.
+- [`LOOM_CONTINUITY_AUDIT.md`](LOOM_CONTINUITY_AUDIT.md) §3 — extracted-claim shape + adjudication.
+- [`LOOM_FANFIC.md`](LOOM_FANFIC.md) — fanfic-metadata schema rationale.
+- [`LOOM_NSFW.md`](LOOM_NSFW.md) — writing-direction / memory-preset / anti-slop posture.
+- [`LOOM_PLANNED_PROJECT.md`](LOOM_PLANNED_PROJECT.md) — guided outline mode.
+- [`LOOM_TECH_STACK.md`](LOOM_TECH_STACK.md) — solved-problem registry indexed by problem.
