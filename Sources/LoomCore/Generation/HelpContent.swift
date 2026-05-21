@@ -167,6 +167,13 @@ public enum HelpContent {
             group: "Reference"
         ),
         HelpSection(
+            id: "sphiratrioth-power-user",
+            title: "Sphiratrioth pack + power-user resources",
+            book: .userHelp,
+            order: 230,
+            group: "Reference"
+        ),
+        HelpSection(
             id: "troubleshooting",
             title: "Troubleshooting",
             book: .userHelp,
