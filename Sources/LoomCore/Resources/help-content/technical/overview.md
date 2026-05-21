@@ -57,7 +57,7 @@ Two model servers, both user-supplied, both kept loose-coupled behind a `ServerP
 
 Two further inference paths run **in-process** (no server):
 
-- **Style embedding** — Wegmann style-embedding model loaded as a native CoreML bundle (`Resources/StyleEmbedding/StyleEmbedding.mlpackage`) and driven by `Retrieval/CoreMLEmbeddingClient.swift` via `huggingface/swift-transformers` for the RoBERTa BPE tokenizer. Output: 1024-dim style vectors per chunk. The Phase 8.c migration removed a previous Python subprocess.
+- **Style embedding** — Wegmann style-embedding model loaded as a native CoreML bundle (`Resources/StyleEmbedding/StyleEmbedding.mlpackage`) and driven by `Retrieval/CoreMLEmbeddingClient.swift` via `huggingface/swift-transformers` for the RoBERTa BPE tokenizer. Output: 768-dim style vectors per chunk. The Phase 8.c migration removed a previous Python subprocess.
 - **NER** — GLiNER (DeBERTa-v3 backbone) via `microsoft/onnxruntime-swift-package-manager`. The model is exported offline as ONNX by `Tools/GLiNERProbe/export_gliner_onnx.py`; the runtime tokenizer + decoder live in `Generation/GLiNER*.swift`. Used by entity discovery's candidate detector — deterministic, never refuses on explicit prose, and stays in-process.
 
 Plus a complementary CPU-only signal:

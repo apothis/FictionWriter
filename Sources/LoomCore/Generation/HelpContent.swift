@@ -179,6 +179,13 @@ public enum HelpContent {
             order: 40,
             group: nil
         ),
+        HelpSection(
+            id: "style-retrieval",
+            title: "Style retrieval + [STYLE EXEMPLARS] layer",
+            book: .technical,
+            order: 50,
+            group: nil
+        ),
     ]
 
     public static func toc(for book: HelpBook) -> [HelpSection] {

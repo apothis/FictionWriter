@@ -30,7 +30,7 @@ Click **Ingest** on a reference and the pipeline runs:
 
 1. **Chunk** the body into ~100-word overlapping passages.
 2. **Classify each chunk's modality** — is this passage primarily dialogue, action, description, interiority, or summary? Used to make retrieval modality-aware: when you're writing a dialogue beat, dialogue chunks score higher.
-3. **Embed each chunk** with the Wegmann style-embedding model (runs locally via CoreML — no extra server). One ~1024-dim vector per chunk capturing voice-and-register signatures.
+3. **Embed each chunk** with the Wegmann style-embedding model (runs locally via CoreML — no extra server). One 768-dim vector per chunk capturing voice-and-register signatures.
 4. **Refit the project-wide function-word index** — a complementary z-score-based signature that captures rhythm and word-frequency fingerprint across all references.
 5. **Write the `.index` sidecar** to disk next to the reference's `.md`.
 
