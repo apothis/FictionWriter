@@ -153,9 +153,9 @@ public enum HelpContent {
     public static let technicalTOC: [HelpSection] = [
         HelpSection(
             id: "overview",
-            title: "Architecture overview",
+            title: "Architecture overview + runtime services",
             book: .technical,
-            order: 0,
+            order: 10,
             group: nil
         ),
     ]
