@@ -1,0 +1,100 @@
+import Foundation
+
+/// In-app help system — table-of-contents registry + markdown loader
+/// for the help WKWebView panel.
+///
+/// **Design:** TOCs live inline in Swift (this file). Markdown bodies
+/// live as bundled resources under
+/// `Sources/LoomCore/Resources/help-content/{user,technical}/<id>.md`.
+/// Adding a new section is a two-step change — register it here AND
+/// drop a `.md` next to its peers. The author of the section owns
+/// both steps; this lets the TOC carry per-section metadata (title,
+/// order, group) the markdown body can't express.
+///
+/// **Why not frontmatter.** YAML-in-markdown lets non-engineers
+/// reorder a TOC without touching Swift, but the only authors of
+/// these docs are engineers, and inline-Swift gives us type-checked
+/// registration + zero parse cost at load time.
+public enum HelpContent {
+
+    // MARK: - TOCs
+
+    /// User Help — Getting Started + Reference halves per
+    /// `docs/REFERENCE_PLAN.md` §"Book 1 — User Help".
+    ///
+    /// Phase B ships a single placeholder section. Real content lands
+    /// in Phase C, where each section gets its own `.md` file and a
+    /// new entry here.
+    public static let userHelpTOC: [HelpSection] = [
+        HelpSection(
+            id: "welcome",
+            title: "Welcome to Loom",
+            book: .userHelp,
+            order: 0,
+            group: nil
+        ),
+    ]
+
+    /// Technical Reference — engineer-facing architectural + per-
+    /// subsystem documentation per `docs/REFERENCE_PLAN.md`
+    /// §"Book 2 — Technical Reference".
+    public static let technicalTOC: [HelpSection] = [
+        HelpSection(
+            id: "overview",
+            title: "Architecture overview",
+            book: .technical,
+            order: 0,
+            group: nil
+        ),
+    ]
+
+    public static func toc(for book: HelpBook) -> [HelpSection] {
+        switch book {
+        case .userHelp: return userHelpTOC
+        case .technical: return technicalTOC
+        }
+    }
+
+    // MARK: - Snapshot construction
+
+    /// Build a snapshot for a given book + optional selection. The
+    /// `markdownLookup` parameter is injectable so tests can supply a
+    /// deterministic body without touching the bundle; production
+    /// code passes `defaultMarkdownLookup`, which reads from the
+    /// bundled `help-content/<book>/<id>.md` resource.
+    public static func snapshot(
+        book: HelpBook,
+        selectedSectionId: String?,
+        markdownLookup: (String, HelpBook) -> String? = HelpContent.defaultMarkdownLookup
+    ) -> HelpSnapshot {
+        let toc = HelpContent.toc(for: book)
+        let id = selectedSectionId
+        let markdown = id.flatMap { markdownLookup($0, book) }
+        return HelpSnapshot(
+            book: book,
+            toc: toc,
+            selectedSectionId: id,
+            selectedSectionMarkdown: markdown
+        )
+    }
+
+    // MARK: - Bundle-backed default loader
+
+    /// Production markdown lookup. Reads
+    /// `help-content/<book.rawValue>/<id>.md` from the LoomCore
+    /// resource bundle. Returns `nil` for any missing / unreadable
+    /// file — the caller (typically `snapshot`) carries the nil
+    /// forward so the React side renders an "(no content yet)"
+    /// placeholder rather than crashing.
+    public static func defaultMarkdownLookup(_ id: String, _ book: HelpBook) -> String? {
+        let subdir = "help-content/\(book.rawValue)"
+        guard let url = Bundle.module.url(
+                forResource: id,
+                withExtension: "md",
+                subdirectory: subdir),
+              let data = try? Data(contentsOf: url),
+              let str = String(data: data, encoding: .utf8)
+        else { return nil }
+        return str
+    }
+}

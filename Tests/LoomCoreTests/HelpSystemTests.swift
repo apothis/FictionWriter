@@ -168,5 +168,104 @@ func helpSystemTests() -> TestSuite {
         } catch {}
     }
 
+    // MARK: - HelpContent — TOC + snapshot construction
+
+    s.test("HelpContent.toc(for: .userHelp) returns the user-help TOC") {
+        let toc = HelpContent.toc(for: .userHelp)
+        try expectTrue(!toc.isEmpty, "user-help TOC must have at least one section")
+        try expectTrue(toc.allSatisfy { $0.book == .userHelp },
+                       "every entry must declare book == .userHelp")
+    }
+
+    s.test("HelpContent.toc(for: .technical) returns the technical TOC") {
+        let toc = HelpContent.toc(for: .technical)
+        try expectTrue(!toc.isEmpty, "technical TOC must have at least one section")
+        try expectTrue(toc.allSatisfy { $0.book == .technical },
+                       "every entry must declare book == .technical")
+    }
+
+    s.test("HelpContent.toc(for:) entries are sorted by ascending order") {
+        for book in HelpBook.allCases {
+            let toc = HelpContent.toc(for: book)
+            let orders = toc.map(\.order)
+            try expectEqual(orders, orders.sorted(),
+                            "TOC for \(book.rawValue) must be in ascending order")
+        }
+    }
+
+    s.test("HelpContent.snapshot with no selection has nil markdown") {
+        let snap = HelpContent.snapshot(
+            book: .userHelp,
+            selectedSectionId: nil,
+            markdownLookup: { _, _ in "should-not-be-called" }
+        )
+        try expectEqual(snap.book, .userHelp)
+        try expectEqual(snap.selectedSectionId, nil)
+        try expectEqual(snap.selectedSectionMarkdown, nil)
+    }
+
+    s.test("HelpContent.snapshot with a selection routes markdown through the injected lookup") {
+        var calls: [(String, HelpBook)] = []
+        let snap = HelpContent.snapshot(
+            book: .userHelp,
+            selectedSectionId: "welcome",
+            markdownLookup: { id, book in
+                calls.append((id, book))
+                return "# Welcome\n\nHi."
+            }
+        )
+        try expectEqual(snap.selectedSectionId, "welcome")
+        try expectEqual(snap.selectedSectionMarkdown, "# Welcome\n\nHi.")
+        try expectEqual(calls.count, 1)
+        try expectEqual(calls[0].0, "welcome")
+        try expectEqual(calls[0].1, .userHelp)
+    }
+
+    s.test("HelpContent.snapshot with a selection that returns nil leaves markdown nil") {
+        let snap = HelpContent.snapshot(
+            book: .technical,
+            selectedSectionId: "missing-section",
+            markdownLookup: { _, _ in nil }
+        )
+        try expectEqual(snap.selectedSectionId, "missing-section")
+        try expectEqual(snap.selectedSectionMarkdown, nil)
+    }
+
+    s.test("HelpContent.snapshot carries the right TOC for the requested book") {
+        let userSnap = HelpContent.snapshot(
+            book: .userHelp, selectedSectionId: nil,
+            markdownLookup: { _, _ in nil })
+        try expectEqual(userSnap.toc, HelpContent.toc(for: .userHelp))
+        let techSnap = HelpContent.snapshot(
+            book: .technical, selectedSectionId: nil,
+            markdownLookup: { _, _ in nil })
+        try expectEqual(techSnap.toc, HelpContent.toc(for: .technical))
+    }
+
+    s.test("the default markdownLookup loads the user-help welcome section from the bundle") {
+        // Production lookup goes through Bundle.module → the bundled
+        // help-content/<book>/<id>.md resource. This test verifies the
+        // bundling actually shipped a welcome.md for the user-help
+        // placeholder section so the default snapshot has real
+        // content to render in Phase B's smoke.
+        let markdown = HelpContent.defaultMarkdownLookup("welcome", .userHelp)
+        try expectNotNil(markdown)
+        try expectTrue((markdown ?? "").contains("Welcome"),
+                       "welcome.md must include the word 'Welcome'")
+    }
+
+    s.test("the default markdownLookup loads the technical overview section from the bundle") {
+        let markdown = HelpContent.defaultMarkdownLookup("overview", .technical)
+        try expectNotNil(markdown)
+        try expectTrue((markdown ?? "").lowercased().contains("architecture") ||
+                       (markdown ?? "").lowercased().contains("overview"),
+                       "technical overview.md must include 'architecture' or 'overview'")
+    }
+
+    s.test("the default markdownLookup returns nil for a missing section") {
+        let markdown = HelpContent.defaultMarkdownLookup("definitely-does-not-exist", .userHelp)
+        try expectNil(markdown)
+    }
+
     return s
 }
