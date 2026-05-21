@@ -146,6 +146,13 @@ public enum HelpContent {
             group: "Reference"
         ),
         HelpSection(
+            id: "nsfw-posture",
+            title: "NSFW / dark-fiction posture",
+            book: .userHelp,
+            order: 200,
+            group: "Reference"
+        ),
+        HelpSection(
             id: "troubleshooting",
             title: "Troubleshooting",
             book: .userHelp,
