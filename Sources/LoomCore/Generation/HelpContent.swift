@@ -82,6 +82,13 @@ public enum HelpContent {
             order: 7,
             group: "Getting Started"
         ),
+        HelpSection(
+            id: "generation-modes",
+            title: "Generation modes",
+            book: .userHelp,
+            order: 100,
+            group: "Reference"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
