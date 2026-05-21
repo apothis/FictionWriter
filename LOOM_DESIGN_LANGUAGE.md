@@ -1,6 +1,10 @@
 # Loom Design Language
 
-**Status: living document, forked from RPClient V2 Design Language 2026-05-10.** §1–§13 below are inherited verbatim from `/Volumes/SSD1/Code/RPClient/V2_DESIGN_LANGUAGE.md` — that doc is the platform-truth source for system-level decisions (typography scale, spacing tokens, color, materials, motion, density posture, application contract). §14 onward is **Loom-specific**: long-form editor surface, Bible inspector, project tree, History chiclets, generation-mode buttons, empty-state.
+> **Last code cross-check:** 2026-05-21
+> **Status:** living document. §1–§13 inherited verbatim from RPClient V2 Design Language 2026-05-10 (platform principles — typography, spacing, colour, materials, motion, density posture — these don't drift). §14+ is **Loom-specific** and has evolved with each phase. **Major drift** since the original 2026-05-10 spec: §14.5 imagined the Bible as a tabbed AppKit inspector pane. Phase 4.5 pivoted Bible editing into a dedicated WKWebView window (see [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md)) — the AppKit inspector retains only the History and Notes tabs today. See §14.5.0 below for the current state.
+> **Posture:** where this doc and code disagree, **the code wins**. The visual / interaction / density principles in §1–§13 + §14.1–§14.4 remain authoritative; the Bible-related sub-sections describe the *original* design but the *implemented* Bible surface lives in the webview now.
+
+**Status (original 2026-05-10 framing, preserved for context):** living document, forked from RPClient V2 Design Language 2026-05-10. §1–§13 below are inherited verbatim from `/Volumes/SSD1/Code/RPClient/V2_DESIGN_LANGUAGE.md` — that doc is the platform-truth source for system-level decisions (typography scale, spacing tokens, color, materials, motion, density posture, application contract). §14 onward is **Loom-specific**: long-form editor surface, Bible inspector, project tree, History chiclets, generation-mode buttons, empty-state.
 
 References in §1–§13 to "RPClient" should be read as "the inherited application contract." References to specific RPClient surfaces (chat header, TurnView, Card Creator) are kept in place because they are the proving grounds where the contract was first applied — Loom's surfaces apply the same contract to a different domain. Where §1–§13 says "this app," substitute "Loom."
 
@@ -416,7 +420,15 @@ Reveal: 120ms fade-in on selection-non-empty; 100ms fade-out on selection-empty.
 
 Tabbed (RPClient inspector pattern, §6 anti-pattern note). Tabs across the top: **Bible · History · Notes**.
 
-#### 14.5.1 Bible tab — list-detail two-pane (UPDATED 2026-05-10 from live Novelcrafter capture)
+#### 14.5.0 What's shipped vs what's described below (2026-05-21)
+
+**What actually ships:** the AppKit inspector pane today carries only **History** and **Notes** tabs. The Bible tab content moved entirely to a dedicated **Bible Workspace** WKWebView window (⌘⇧B) during the Phase 4.5 pivot. See [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) §1.1 for the current Bible surface map (Characters / Lorebook / Dynamics / References / Templates / Scene Exemplars / Entity Proposals / Suggestions Queue).
+
+**Why the pivot:** the list-detail two-pane layout below (§14.5.1) hit AppKit complexity walls when the Bible grew to 8+ entity classes with per-entity multi-field forms (relationships, knowledge ledger, kinks, custom fields, etc.). The cramped-side-pane UX that surfaced in 2026-05-13 live testing made the move to a webview the right call. [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) §2 has the rationale.
+
+**The section below (§14.5.1) is preserved as design intent** — it remains the authoritative *visual / interaction* spec the webview implementation aims for (filter tab strip, two-pane list-detail, sparkline mentions, per-entity tabs, hover preview, etc.). The current webview implements most of this design; cross-references in §14.5.1 to specific RPClient UI files should be read as design-principle references, not as live code paths.
+
+#### 14.5.1 Bible tab — list-detail two-pane (design intent; current implementation in the webview)
 
 **Original spec was a flat collapsible-disclosure stack. Updated spec adopts Novelcrafter's list-detail two-pane** — materially better for browsing entities at scale ([`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §B.2.1, §D.1).
 
@@ -477,6 +489,8 @@ This is the most generous transparency surface in any AI-fiction tool. Sudowrite
 A free-form notepad scoped to the project. Plain text, persists with project. For thoughts that don't belong in the manuscript or the Bible.
 
 ### 14.6 Generation modes — visual identity
+
+**Catalogue note (2026-05-21):** the original 2026-05-10 spec assumed Continue + Expand. The current shipped catalogue is **13 generation modes** (Continue, Expand, Rewrite + 4 sub-modes, Show-don't-tell, Brainstorm, Critique, Bridge, Describe, NameSuggest) plus two adjacent paths that don't fit the mode model (Roll-Outcome, Scene-Template Generation). The mode picker UI groups them — Rewrite sub-modes nested under a Rewrite submenu, the off-prose modes (Brainstorm / Critique / NameSuggest) opening a sheet rather than inserting at cursor. See [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) §1 + §5.
 
 When a generation finishes, the inserted prose is displayed with a **temporary acceptance state** (refined 2026-05-10 from live Sudowrite capture, [`LOOM_UI_RESEARCH.md`](LOOM_UI_RESEARCH.md) §B.1.2, §D.4):
 
