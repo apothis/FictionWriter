@@ -75,6 +75,13 @@ public enum HelpContent {
             order: 6,
             group: "Getting Started"
         ),
+        HelpSection(
+            id: "getting-started-where-files-live",
+            title: "Where your work lives on disk",
+            book: .userHelp,
+            order: 7,
+            group: "Getting Started"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
