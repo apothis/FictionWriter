@@ -68,6 +68,13 @@ public enum HelpContent {
             order: 5,
             group: "Getting Started"
         ),
+        HelpSection(
+            id: "getting-started-when-generation-feels-off",
+            title: "When generation refuses or feels off",
+            book: .userHelp,
+            order: 6,
+            group: "Getting Started"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
