@@ -1,355 +1,301 @@
 # Loom Story Bible — the consistency engine
 
-> **Status: Phase 0 design lock (2026-05-10).** Specifies how Bible content is authored, stamped, queried, and injected into prompts. Builds on RPClient's Memory + Entity ideas; extends to fiction with the Re3 Edit pattern[L4]. The novel piece — knowledge-state-per-character-per-scene — is Loom's distinctive engineering.
->
-> **Memory-architecture supersession note (2026-05-10 PM).** Sections in this doc that describe injection mechanics ([`#4`](#4-lorebook--selective-injection), §5, §6) are refined and extended in [`LOOM_MEMORY.md`](LOOM_MEMORY.md). Notable refinements after Round-2 research: (a) Subcontext-packing of multiple firing entries (NovelAI pattern), (b) Auto-summary embedding-retrieval per scene (AI Dungeon Memory Bank pattern), (c) Pinned spans alongside pinned facts (character.ai pattern), (d) Eviction-order surfacing (AI Dungeon publishes its order). Where this doc and `LOOM_MEMORY.md` disagree on injection mechanics, **`LOOM_MEMORY.md` wins**. The authoring-model and knowledge-ledger sections of this doc remain authoritative for those specific topics.
->
-> Companion to [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md), [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md). Citations to [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md).
-
----
+> **Last code cross-check:** 2026-05-21
+> **Posture:** reference doc reflecting *current shipped* code. The knowledge-ledger conceptual design (§3) is the only part that remained authoritative from the Phase 0 design lock; everything else is rewritten against the current implementation. Where this doc and code disagree, **the code wins**.
+> **Companion to** [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) (Bible shapes), [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) (injection mechanics), [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) (the editing surface), [`LOOM_MEMORY.md`](LOOM_MEMORY.md) (long-form context architecture).
 
 ## 1. What the Bible is, what it isn't
 
 ### 1.1 Is
 
-- The **structured database** of everything that needs to be consistent across a long work: characters, settings, objects, factions, timeline events, lore.
-- The **injection source** for selective context at generation time.
-- A **living artefact** — both authored (user-edited) and machine-extracted (Phase 4+ knowledge ledger).
-- **Skippable but rewarding**: Phase 1 ships with hand-authored character paragraphs only; the user is never required to populate the Bible to use Loom.
+- The **structured database** of everything that needs to be consistent across a long work: characters, settings, objects, lorebook entries, and per-relationship dynamic sheets.
+- The **injection source** for selective context at generation time — Memory always, Bible constants always-on, keyed lorebook on recent-prose match, knowledge ledger per POV character.
+- A **living artefact** — both authored (user-edited) and machine-extracted (the L4 knowledge-ledger pipeline, the L9 entity-discovery pipeline).
+- **Skippable but rewarding** — projects can be used with an empty Bible. Auto-discovery surfaces characters/places/objects as proposals; the user accepts on their own pace.
 
 ### 1.2 Isn't
 
-- A document the model writes from scratch. The Bible can *seed* from a Braindump (Sudowrite[A2] auto-fill pattern, research §A.2), but only with explicit user invocation per field.
+- A document the model writes from scratch. Sudowrite-style "Braindump → auto-fill" was in the Phase 0 design (LOOM_RESEARCH §A.2) but **never shipped** — Loom's authoring affordances are direct editing + accept/reject of machine proposals.
 - A creative-writing workspace. The Bible is *metadata about* the work, not the work itself. Prose lives in scenes.
-- Auto-injected wholesale. Constant entries are always-on; keyed entries trigger on recent prose; vectorised entries (Phase 5) retrieve on similarity. Default posture is selective, not all-on.
+- Auto-injected wholesale. Constant entries are always-on; keyed entries trigger on recent-prose match; the knowledge ledger is queried per POV character per scene. Default posture is selective.
 
----
+## 2. What's actually in the Bible today
 
-## 2. Authoring model
-
-### 2.1 Three entry paths
-
-1. **From scratch** — user creates an entity in the Bible inspector pane and fills fields. Like Novelcrafter's Codex[B1] — flexible, manual.
-2. **Sudowrite-style auto-fill from Braindump (Phase 2+)** — user types a one-paragraph "what's the story?" Braindump; per-field "Generate" button drafts a candidate the user can edit. Mirrors RPClient's Phase 9 §5.4 AI-assist pattern (research §M.2).
-3. **Auto-extracted from prose (Phase 4+)** — when a scene is written, a side-call extractor proposes new entities (a name appears, a place is mentioned). Surfaces as a "Suggestions" chip in the Bible inspector — never silently added; user accepts.
-
-### 2.2 In-place editing
-
-Per [`LOOM_DESIGN_LANGUAGE.md`](LOOM_DESIGN_LANGUAGE.md) §14.5.1 + §11 (Notion-pattern inline editing): every Bible field edits in place, no modal sheet. Click → cursor lands → type → click outside or `Esc` to commit. Multi-line fields use the same `body` font as the editor.
-
-### 2.3 Aliases (load-bearing)
-
-Every entity has a `name` and `aliases: [String]` (research §3.1). Aliases drive:
-
-- **Keyword matching** for keyed-mode injection. "Mia," "Miss Vance," "the librarian" all match the same Character entity.
-- **Inline references** when the user types `@<alias>` in the editor.
-- **Reference resolution** when extracting facts from prose (Phase 4+) — the extractor disambiguates pronouns to the canonical entity by alias matching plus context.
-
-Aliases are populated:
-
-- **Manually** by the user.
-- **Suggested** automatically post-scene-extraction (Phase 4+) when the extractor sees a name pattern that consistently co-occurs with an existing entity.
-
----
-
-## 3. Knowledge ledger — the distinctive engineering
-
-The user's stated novel-territory feature: **what does Bob know at scene 12 vs scene 18**. Loom's approach extends Re3's Edit module[L4] (research §L.2) — character-fact-attribute pairs — to **per-scene granularity with explicit unknowns and mistaken beliefs**.
-
-### 3.1 Schema
-
-Per [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §3.1:
+`Sources/LoomCore/Models/Bible.swift`
 
 ```swift
-struct KnownFact {
-    var fact: String          // natural-language assertion
-    var sourceSceneId: UUID?  // where they learned it (nil = pre-story knowledge)
-    var certainty: Certainty  // asserted / suspected / unknown / mistaken
-    var addedAt: Date
+public struct Bible: Codable, Equatable {
+    public var characters: [Character]
+    public var settings: [Setting]
+    public var objects: [BibleObject]
+    public var lorebook: [LorebookEntry]
+    public var dynamicSheets: [DynamicSheet]
 }
 ```
 
-Stored on each `Character` as `knownFactsBySceneId: [UUID: [KnownFact]]`. The map is keyed by *scene where this set was extracted*, not by the scene the facts apply to. To query "what does Mia know at scene N," Loom unions all `KnownFact`s from scenes that chronologically precede N for Mia, then resolves contradictions (later certainty overrides earlier — character "learned" something).
+That's the shape on disk. **Faction** and **TimelineEvent** were listed in the Phase 0 design as Phase 3 features — neither has shipped. Not on the active roadmap; revisit if/when a project comes to need them.
 
-### 3.2 Extraction pipeline (Phase 4+)
+The shapes themselves (with field lists) are in [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §5. This doc covers *what they're for* and *how they're used*; the data-model doc covers *what they contain*.
 
-After a scene is written or substantially edited, an asynchronous side-call runs:
+## 3. Knowledge ledger — the distinctive engineering
 
-```
-[1] Trigger
-    Scene save / edit + prose-changed-by-N-words threshold (~200 words default).
-    User can also force "Re-extract" from the Bible inspector.
+Loom's novel-territory feature: **what does Bob know at scene 12 vs scene 18**. Extends Re3's Edit module (LOOM_RESEARCH §L.2) to per-scene granularity with an explicit unknowns model.
 
-[2] Extraction prompt (to summarizer-role server)
-    Input: scene prose + bible character list (names + aliases) + bible setting list.
-    Output: structured JSON with { character_id, fact, certainty, evidence_quote }.
+### 3.1 Schema
 
-[3] Diff + propose
-    Compare extracted facts to existing character ledgers.
-    New facts surface as Suggestions in the Bible inspector.
-    User accepts/rejects/edits per fact (per-field accept pattern from RPClient §5.4.b).
+`KnownFact` lives on `Character.knownFactsBySceneId: [UUID: [KnownFact]]`. The map is keyed by *the scene where each fact was first extracted*, not by which scene the fact applies to.
 
-[4] Persist
-    Accepted facts merge into bible/characters/<id>.json knownFactsBySceneId.
-    Knowledge index marked dirty for affected character.
+```swift
+public struct KnownFact: Codable, Equatable {
+    public let id: UUID
+    public var fact: String          // natural-language assertion (third person)
+    public var sourceSceneId: UUID?  // where the character learned it; nil = pre-story
+    public var certainty: Certainty  // asserted | suspected | unknown | mistaken
+    public var addedAt: Date
+}
 ```
 
-The extractor is a **side-call**, separate from the main generation server. Mirrors RPClient's role-routed servers pattern (research §V2_PLAN §2.4): a small fast model (e.g., Mistral Nemo 12B) is fine for extraction; doesn't have to be the user's heavyweight prose model.
+### 3.2 Extraction pipeline (shipped, Phase 4)
 
-### 3.3 Extraction prompt skeleton
+`Sources/LoomCore/Generation/Ledger*.swift` + `OllamaLedgerExtractor.swift`
 
 ```
-Read the scene below. Extract factual claims about characters present in or referenced by the scene. For each fact, output a JSON object with:
-- character_id: which character this fact is about (use {NAME or ALIAS}).
-- fact: natural-language assertion (one sentence, third-person).
-- certainty: "asserted" if shown clearly, "suspected" if hinted, "unknown" if explicitly NOT known by this character, "mistaken" if the character holds a wrong belief.
-- evidence_quote: short quote from the scene supporting the assertion.
+[1] Trigger — LedgerExtractionTrigger
+    Per-scene word-count baseline (default 200 words on top of last extraction).
+    Auto-fires from LedgerExtractionCoordinator on prose change events.
+    User can also force "Extract" from the editor's debug menu.
 
-Distinguish what the character DID or LEARNED in this scene from what was already true.
-Do not infer beyond the text. Do not invent.
-Output a JSON array. Empty array if no claims extractable.
+[2] Extraction call — OllamaLedgerExtractor
+    Schema-constrained JSON: { character_id, fact, certainty, evidence_quote }.
+    Runs on the structured-task model (default gemma4_2b on Ollama).
+    Unconstrained generation + tolerant parse + retry-on-degenerate
+    (gemma's `format` schema flakes ~50% on small models; HANDOFF §15.19).
 
-Bible characters (names + aliases):
-{CHARACTER_LIST_JSON}
+[3] Filter — LedgerFilters / LedgerFilterPipeline
+    Embedding-cosine dedup (paraphrases collapse).
+    Evidence-quote validation — the quote must appear verbatim in the scene
+    prose (drops hallucinated quotes).
+    Prompt-leakage check (drops outputs that echo the prompt schema).
+    Fail-soft: an embedder failure passes claims through unchanged.
 
-Scene:
-{SCENE_PROSE}
+[4] Diff — LedgerDiff
+    Compare surviving facts against the character's existing ledger; only
+    *new* facts (not already known under any certainty) become suggestions.
+
+[5] Suggestions queue — LedgerSuggestionsQueue / LedgerSuggestionAcceptor
+    Per-character pending list, surfaced in the Bible Workspace.
+    User accepts/rejects per fact. Accepted facts merge into
+    knownFactsBySceneId on the canonical character.
 ```
 
-Output is parsed and matched to the closest entity by alias; unmatched facts surface as **"this scene seems to be about a character not in your Bible — add them?"** suggestions.
+The extractor is a **side-call**, routed to the extractor server profile (separate from the writer server). Small fast models (gemma4_2b) are fine for extraction; the writer model stays available for prose generation.
 
-### 3.4 Querying the ledger at generation time
+### 3.3 Negative knowledge — derived, not extracted
 
-When Loom generates a scene with a known POV character, the [KNOWLEDGE-LEDGER] context layer (per [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) §11) is built:
+LOOM_LEDGER_SPIKE §3.e measured local-model recall on *explicit* "unknown" facts at 0/2 even at 27B. So Loom doesn't try. The extractor's grammar emits **only `asserted` facts** (positive observations). Each fact is stamped with `sourceSceneId`. At query time, "does Mia know fact F as of scene N?" is computed *structurally*:
 
-1. Resolve the chronological position of the current scene.
-2. Walk all preceding scenes (chronologically, not narratively) for this POV character.
-3. Union their `KnownFact` arrays; resolve contradictions (later wins; explicit `mistaken` overrides asserted).
-4. Format as natural-language `KNOWS / DOES NOT KNOW / MISTAKENLY BELIEVES` blocks.
-5. Token-budget-clip if necessary (most-recent-scenes wins).
+`Sources/LoomCore/Generation/LedgerKnowledge.swift`
 
-The `DOES NOT KNOW` block is the most distinctive — most prior systems only track positive knowledge. Re3's Edit[L4] tracks attributes; Loom tracks the negative space *as the engineering point*.
+```
+LedgerKnowledge.compute(characterId, asOfSceneId, in: project, scenes:)
+  → walks the project's `flatSceneIds` chronologically up to asOfSceneId
+  → for each prior scene, checks ScenePresence.isPresent(characterId, in: scene)
+  → KNOWS: facts whose sourceSceneId is a scene the character was present for
+  → UNKNOWNS: facts whose sourceSceneId is a scene the character was NOT present for
+  → returns (knows: [KnownFact], unknowns: [KnownFact])
+```
+
+ScenePresence: `Sources/LoomCore/Generation/ScenePresence.swift` — combines POV + `@`-mentions + name/alias hits in the prose.
+
+`mistaken` and `suspected` are manual-authoring paths in the Bible Workspace — rare, user-surfaced when the prose explicitly contradicts a character's belief or when the user wants to track a hunch.
+
+### 3.4 Querying at generation time
+
+The `[KNOWLEDGE-LEDGER]` prompt layer is built per POV scene by `PromptBuilder.renderKnowledgeLedgerLayer` (in `Sources/LoomCore/Generation/PromptBuilder.swift`), feeding off `LedgerKnowledge.compute(...)`:
+
+1. Resolve the scene's chronological position via `flatSceneIds`.
+2. Call `LedgerKnowledge.compute(...)` for the POV character as-of-scene-N.
+3. Format as natural-language `KNOWS / DOES NOT KNOW / SUSPECTS / MISTAKENLY BELIEVES` blocks.
+4. Token-budget-clip (most-recent-scene wins; full eviction allowed under tight budget).
+5. Inserted between `[BIBLE-KEYED]` and `[AUTHORS-NOTE]` in the prompt assembly (see [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md)).
 
 ### 3.5 Limitations and honesty
 
-- **Extraction quality depends on the side-call model.** Phase 4 implementation should A/B test 8B / 12B / larger models on a small fixture corpus.
-- **Pronoun resolution failures are real.** A scene with three female characters and many "she" pronouns will produce attribution errors. The extractor's `evidence_quote` field exists to make these auditable.
-- **Negative knowledge is derived from scene-exposure, not extracted from prose.** This is the load-bearing design call (added 2026-05-11 after [`LOOM_LEDGER_SPIKE.md`](LOOM_LEDGER_SPIKE.md) §8.3 and research into SymbolicToM-style belief-graphs). The extractor's grammar emits ONLY `asserted` facts (positive observations from the prose it sees). Each fact is stamped with the `sourceSceneId` it was extracted from. At query time, "does Mia know fact F as of scene N?" is computed structurally: walk scenes chronologically ≤ N, check whether Mia was POV / present-for any scene from which F was extracted; if not, F is `unknown` to Mia by construction. This sidesteps the empirically-unsolved problem of asking a local model "what does X not know?" (LOOM_LEDGER_SPIKE §3.e: recall 0/2 on `unknown` extraction at 27B). `mistaken` stays as a manual-authoring path in the Bible inspector — rare, user-surfaced when prose explicitly contradicts a character's belief.
-- **Contradiction resolution is naive in v1.** Later-scene wins is heuristic; a character may "forget" something legitimately. Phase 4+ open question for refinement.
+- **Extraction precision is the dominant lever.** Phase 4 hand-graded the extractor at ~85% precision on common cases; degrades on NSFW/heavy-explicit prose (gemma4_2b sometimes refuses → `RefusalDetector` flags; user re-rolls).
+- **Pronoun resolution failures are real.** A scene with three female characters and many "she" pronouns will produce attribution errors. The `evidence_quote` field exists to make these auditable in the Bible Workspace facts-examiner.
+- **Contradiction resolution is naive.** Later-scene-wins is heuristic; a character may legitimately "forget" something. No structural fix in shipped code — open question on the L10 continuity-audit roadmap.
+- **No live "consistency lints" surface.** Phase 0 imagined a lint surface (contradiction detection, dangling-reference warnings, mistaken-never-resolved nudges). The L10 Continuity Audit replaces that vision but is still maturing (see [`LOOM_CONTINUITY_AUDIT.md`](LOOM_CONTINUITY_AUDIT.md) §22–§28; current state is 1/4 knowledge_violation on Goetia at k=1).
 
----
+## 4. Entity discovery (auto-found Bible entries — L9)
 
-## 4. Lorebook — selective injection
+`Sources/LoomCore/Generation/Entity*.swift` + `Sources/LoomCore/Storage/ProposedEntitiesStore.swift`
 
-Per research §M.4 (NovelAI[C1] + KoboldAI[D1] + SillyTavern[H1] convergent pattern):
+Beyond the knowledge ledger (which fills in *facts* about *existing* characters), Phase 9 added a sibling pipeline that *proposes new entities* discovered in scene prose — characters / settings / significant objects the user hasn't yet added to the Bible.
 
-### 4.1 Three activation modes
+Six-stage pipeline:
+
+```
+Stage A — Candidate generation (OllamaEntityDiscoveryExtractor)
+  Schema-constrained JSON; gemma4_2b reads the scene, proposes
+  { canonical_name, aliases, one_line, evidence_quote, kind, attached_facts }.
+
+Stage B — Promotion gate (EntityPromotionGate)
+  Proper-noun-only; anatomy block-list (drops "Anus"/"Cock"/etc. that
+  Stage A occasionally proposes); place-recurrence (a place mentioned
+  in only one scene with no detail is rejected as ambient setting,
+  not a Bible entity).
+
+Stage C — Cosine dedup (EntityDedupEngine)
+  Wegmann-CoreML embedding of canonical_name + first description
+  sentence; if cosine ≥ 0.85 with an existing bible entity, drop as
+  duplicate. Filters out re-proposals of already-known entities.
+
+Stage D — Normalisation
+  Case / whitespace / Title Case normalisation on canonical_name.
+  Alias merging.
+
+Stage E — Post-D dedup
+  Cross-scene dedup of proposals (two scenes can independently propose
+  the same character; collapse to one).
+
+Stage F — Persist (ProposedEntitiesStore)
+  Single file at proposed-entities/proposed-entities.json. Each entry
+  is a SnapshotProposedEntity awaiting user accept/reject in the Bible
+  Workspace.
+```
+
+Triggers: auto via piggyback on `LedgerExtractionCoordinator.onExtractionComplete` (gated by `EntityDiscoveryTrigger` 500-word per-scene baseline), manual via Bible Workspace, demo via `swift run EntityDiscoverySpike --into <project>`.
+
+**Accepting a proposal** promotes it to a real `Character` / `Setting` / `BibleObject`. Attached facts land on `knownFactsBySceneId` for promoted characters.
+
+**Cross-character relationship discovery** is dormant — `ProposedRelationship` shape exists, no production pipeline. See HANDOFF §15.25–§15.27 for the GLiREL dead end and the precision-lever exhaustion that paused this direction.
+
+## 5. Lorebook — selective injection
+
+Per-entry shape in [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §5.4. Injection mechanics:
+
+### 5.1 Activation modes
 
 | Mode | When injected | Token cost | Use |
 |---|---|---|---|
-| **Constant** | Always | High | Global setting, narrator persona, story-spanning lore |
-| **Keyed** | Recent prose contains key | Low (only when relevant) | Character backgrounds, location lore, faction details |
-| **Vectorised** (Phase 5) | Embedding-similarity to recent prose / generation prompt exceeds threshold | Medium | Style exemplars, scene-type-matched references |
+| **`.constant`** | Always | High | Global setting, narrator persona, story-spanning lore |
+| **`.keyed`** | Recent prose contains a primary key (and any secondary keys if listed) | Low | Character backgrounds, location lore, faction details |
+| **`.vectorised`** | (declared in the enum; not yet wired) | — | Reserved for future RAG-against-lorebook |
 
-### 4.2 Keyed-mode mechanics
-
-Per `LorebookEntry` schema in [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §3.6:
+### 5.2 Keyed-mode mechanics
 
 - **Primary keys**: any one match in the recent-prose window triggers.
-- **Secondary keys**: AND-gated — primary AND secondary keys both must appear (NovelAI's `&` operator[C1]).
-- **Recent-prose window**: configurable per entry; default 4000 chars (~1000 words). Mirrors NovelAI Search Range[C2].
+- **Secondary keys**: AND-gated — primary AND secondary keys both must appear (NovelAI's `&` operator pattern).
+- **Recent-prose window**: configurable per entry via `maxRecentScenesScanned`.
 - **Match semantics**: case-insensitive, word-boundary (no substring matches; "rat" doesn't trigger on "rate").
 
-### 4.3 Position control
+### 5.3 Position control
 
-- `top` — injected after Memory (always-top region).
-- `bottom` — injected at depth-N before the cursor (Author's Note region).
-- `depthN` — explicit positioning; user picks depth in lines/scenes.
+`positionMode` is `.top` (after Memory — always-top region), `.bottom` (depth-N before the cursor — Author's Note region), or `.depthN` (explicit depth controlled by `depth: Int`).
 
-Per NovelAI's empirical finding[C2]: lower in the prompt = stronger influence. "Always-on" character voice notes go top; "remember this scene-specific tone" goes bottom.
+Per NovelAI's empirical finding: lower in the prompt = stronger influence. "Always-on" character voice notes go top; "remember this scene-specific tone" goes bottom.
 
-### 4.4 Priority and budget
+### 5.4 Priority, budget, sticky, scene-bounded
 
-When multiple keyed entries match and budget overflows, sort by priority (descending), break ties by recency of last-edit, take until budget exhausted. Never silently truncate an entry's content — drop entries entire rather than partial.
+- **Priority** + recency tie-break + budget-bounded eviction. Never silently truncate an entry's content; drop entries whole.
+- **`sticky: true`** — once triggered, stays active for the rest of the audit/session (NovelAI sticky pattern).
+- **`activateFromSceneId` / `activateUntilSceneId`** — scene-bounded activation. Useful for revealing-act-only lore.
 
----
+The full `LorebookEntry` shape (`group`, `weight`, etc.) is editable via the Bible Workspace Lorebook section.
 
-## 5. Memory + Author's Note (project-level)
+## 6. DynamicSheet — per-relationship spec
 
-Carried through verbatim from the NovelAI / KoboldAI shape (research §C.2, §D.1):
+`Sources/LoomCore/Models/DynamicSheet.swift` + `Sources/LoomCore/Generation/DynamicSheetInjector.swift` + `DynamicSheetPrompt.swift`
 
-### 5.1 Memory
+A *DynamicSheet* describes a specific relationship's dynamic — the kink/role spec for one or more participating characters. Used for tagged relationships (D/s, ABO mates, rivals-to-lovers, etc.) that need structured prompt steering beyond a freeform Character.voice or LorebookEntry.
 
-A free-text field per project (research-borne convention). Always injected at the top of every prompt. Typical content:
+Injection mechanics:
 
-- Genre and tone declaration.
-- Premise / story setup.
-- High-level rules of the world ("magic exists but is rare," "this is a present-tense first-person novel").
-- Always-true facts the model needs to remember.
+- **`alwaysOn = true`** — injected on every generation regardless of cast.
+- **`alwaysOn = false`** — injected when at least one `participantIds` character is present in the current scene window.
+- **`enabled = false`** — never injected. Lets a user keep a dynamic recorded but disabled for chapters where it isn't active.
 
-Not the same as the per-character Bible — Memory is *project-scoped narrator-instruction*. The Bible is *queryable structured entities*.
+Field shape: `roles, wants, softLimits, hardLimits, safeword, arc`. The injector renders this as a `[DYNAMIC]` block in the prompt; the prompt-builder layer slots it next to the keyed-lorebook layer.
 
-### 5.2 Author's Note
+## 7. Memory + Author's Note (project-level)
 
-A free-text field per project, also editable per-scene (Phase 3+ override). Always injected near the *bottom* of the prompt (depth-N), where its influence is strongest[C3].
+NovelAI / KoboldAI / SillyTavern convention carries through unchanged from the Phase 0 spec; full mechanics in [`LOOM_MEMORY.md`](LOOM_MEMORY.md).
 
-Typical content:
+- **Memory** (`ProjectSettings.memory`) — free-text per project. Always injected at the top. *What is true.* Genre, premise, world rules, always-true facts.
+- **Author's Note** (`ProjectSettings.authorsNote`) — free-text per project. Always injected at depth-N from the end (default `authorsNoteDepthLines = 4`). *How to write it.* Tone steering, pacing instructions, stylistic hints.
 
-- Tone steering ("write with a wry, distant narrator").
-- Scene-pacing instructions ("slow this down; sensory detail").
-- Stylistic hints ("avoid metaphor; favour direct prose").
-- POV/tense reminders.
+Memory presets (`Sources/LoomCore/Models/ProjectMemoryPresets.swift`) seed new projects with `.loomDefault`, `.heavyNSFW`, or `.minimal` text. Sphiratrioth pack import (Settings → Resources) drops a ready-made power-user Memory + Lorebook + Dynamics set into the project.
 
-`authorsNoteDepthLines` controls how many lines from end the Note is injected. Default 4. Closer to end (smaller depth) = stronger.
+## 8. The assembled injection order
 
-### 5.3 Why both, not one
-
-NovelAI / KoboldAI / SillyTavern all have both because they serve different roles. Memory is *what is true*; Author's Note is *how to write it*. Combining them into one field reliably degrades output. Loom keeps the trichotomy.
-
----
-
-## 6. Bible injection at generation — the assembled order
-
-Per [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) §1.1, the Bible interacts with the prompt at four layers:
+Per [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) — at generation time the Bible-related layers appear in this order, top → bottom:
 
 ```
-[MEMORY]               → Project Memory field (top)
-[BIBLE-CONST]          → Constant lorebook + always-on character/setting summaries
-[BIBLE-KEYED]          → Keyed lorebook entries that match recent-prose window
-[KNOWLEDGE-LEDGER]     → POV character's known/unknown/mistaken facts (Phase 4+)
-[AUTHORS-NOTE]         → Project Author's Note (depth-N from end)
+[MEMORY]               ProjectSettings.memory                                — top
+[BIBLE-CONST]          Always-on Characters/Settings/Objects + .constant lorebook
+[BIBLE-KEYED]          Keyed lorebook entries that match recent-prose window
+[DYNAMIC]              DynamicSheets active for the present cast
+[KNOWLEDGE-LEDGER]     POV character's KNOWS / DOES NOT KNOW / SUSPECTS / MISTAKEN
+[WRITING-DIRECTION]    WritingDirection system-prompt addendum                — bottom-of-system
+[AUTHORS-NOTE]         ProjectSettings.authorsNote (depth-N from end)        — near cursor
 ```
 
-Always-on character/setting summaries (in BIBLE-CONST) are an opinionated default: every character with `role: protagonist` or `role: antagonist` is always included. Supporting characters are keyed-only by default. Minor characters require explicit `enabled: true` to even be considered for keyed-injection.
+Always-on default: every Character/Setting/BibleObject with `injectionMode: .alwaysOn` is in `[BIBLE-CONST]`. `.keyed` entities are matched against recent-prose via `MentionIndex` + alias hits. User flips per-entity injectionMode in the Bible Workspace.
 
-User can override per entity via a "Always include" toggle on the entity sheet.
+## 9. The editing surface — Bible Workspace
 
----
+The Phase 0 design imagined an AppKit Bible *inspector pane*. Phase 4.5 pivoted that to a **dedicated webview window** (closed the cramped-side-pane UX problem from live testing). See [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) for the architecture; this section is a brief surface map.
 
-## 7. Bible inspector pane — the surface
+**Workspace sections:**
 
-Per [`LOOM_DESIGN_LANGUAGE.md`](LOOM_DESIGN_LANGUAGE.md) §14.5.1.
+- **Characters** — full editor (every Character field, Kinks tab, knowledge-ledger examiner with per-scene facts grouped + delete affordance).
+- **Lorebook** — all 13 power-user fields, conditional `depth` when positionMode = depthN.
+- **Dynamics** — DynamicSheet editor with participant picker.
+- **References** — L5 style references with chunk count badge + ingest button.
+- **Template Scenes** — L7 template-scene editor + beat-extract trigger.
+- **Scene Exemplars** — L8 unified surface (creates a Reference + Template under one shared id).
+- **Suggestions queue** — pending knowledge-ledger fact suggestions from §3.2 step 5, cross-character.
+- **Entity proposals** — pending L9 entity-discovery proposals (§4) awaiting accept/reject.
 
-Tabs across the top: **Bible · History · Notes**. Bible tab sections (each collapsible disclosure):
+Side-pane AppKit inspector still exists for the History tab + Notes tab. Bible editing is webview-only.
 
-- **Characters** — list of cards, expand inline to edit.
-- **Settings** — locations.
-- **Objects** — significant objects.
-- **Factions** (Phase 3+).
-- **Timeline** (Phase 3+) — chronological event list, sortable.
-- **Lorebook** — entries with activation-mode chip, key list, content preview.
-- **Style** (Phase 5) — style sheet.
+## 10. Phasing — what's shipped vs deferred
 
-Each section has a `+` button at the header to add. Each entity has a `⋯` overflow menu (rename / duplicate / delete / "Always include" toggle).
-
-### 7.1 Character card layout (collapsed)
-
-```
-┌─ Mia Vance ─────────────────────── ⋯ ┐
-│ Protagonist · POV in 8 scenes        │
-│ "A late-thirties librarian who…"     │
-│ ▾ Knowledge ledger (12 facts)        │
-└──────────────────────────────────────┘
-```
-
-Click the title row to expand to full edit form (name, aliases, role, oneLine, description, personality, appearance, voice, goals, relationships, knowledge ledger).
-
-### 7.2 Knowledge ledger (expanded)
-
-```
-┌─ Knowledge ledger — Mia Vance ──────────────────┐
-│                                                  │
-│ KNOWS                                            │
-│   • The stranger at the door is named Anders.   │
-│     [scene 4 · asserted]   Edit · Remove         │
-│   • Anders is from the city.                     │
-│     [scene 4 · suspected]  Edit · Remove         │
-│                                                  │
-│ DOES NOT KNOW                                    │
-│   • That Anders is Bob's brother.                │
-│     [scene 7 · explicit]   Edit · Remove         │
-│                                                  │
-│ MISTAKENLY BELIEVES                              │
-│   • That her sister is in Paris.                 │
-│     (Actually: in the basement)                  │
-│     [scene 2 · authored]   Edit · Remove         │
-│                                                  │
-│  + Add fact   Re-extract from scene…             │
-└──────────────────────────────────────────────────┘
-```
-
-Each fact is editable in place. "Re-extract from scene…" runs the Phase 4 extraction pipeline (§3.2) against a chosen scene and proposes diffs.
-
----
-
-## 8. Validation — the consistency lints (Phase 4+)
-
-Background side-call work: the Bible inspector surfaces *contradictions* and *gaps* it detects. These are signals to the user, never auto-fixes.
-
-Examples of lints:
-
-- **Contradiction**: scene 7 has Mia say "I never met Anders" but her ledger lists "knows Anders" from scene 4. Surfaced as a yellow chip on the relevant scene + the ledger entry.
-- **Mistaken-belief never resolved**: Mia mistakenly believes X as of scene 2; ledger never has the belief corrected; story ends. Surfaced as a "Did Mia ever learn the truth?" suggestion.
-- **Pronoun ambiguity**: "she said" could refer to two characters in the scene; extractor flagged uncertain attribution.
-- **Dangling reference**: prose mentions `@karim` but the Karim entity was deleted. Surfaced as a soft warning.
-
-Lints surface in the Bible inspector + in the History tab next to the relevant generation event. Implementation: post-extraction pass against accumulated ledger.
-
----
-
-## 9. Bible authoring + AI-assist (Phase 2+ Sudowrite-style fill)
-
-Adapted from RPClient Phase 9 §5.4's per-field AI-assist (research §M.2). Each Bible entity field gets a `Generate` button next to it that:
-
-1. Reads earlier-in-dependency-order fields (Braindump → Synopsis → Genre → Style → Characters → ...).
-2. Sends a context-aware prompt to the generation server.
-3. Displays 2–3 candidates in a triad strip, like RPClient §5.4.a (research §A.7).
-4. User clicks one to use, "Edit" to refine, or dismisses.
-
-The dependency order matches Sudowrite's[A2] but is non-strict: user can fill out-of-order; AI-assist just won't have upstream context to draw on.
-
-**Differences from Sudowrite:**
-
-- Loom doesn't auto-cascade — clicking Generate on Synopsis fills Synopsis only, not subsequent fields.
-- Loom never generates without explicit invocation. No "auto-fill the missing fields" autopilot in Phase 2; reconsider Phase 4+.
-- Loom shows the prompt that will be sent (one-click reveal) before generating.
-
----
-
-## 10. Implementation phasing
-
-| Feature | Phase | Notes |
+| Feature | Status | Notes |
 |---|---|---|
-| Manual entity authoring (Character, Setting, Object) | 2 | The MVP for the Bible. |
-| Constant + keyed lorebook | 2 | Reuses RPClient's `WorldInfoInjector` shape. |
-| Always-inject character paragraph in prompts | 1 | Minimal subset — even before full Bible inspector. |
-| Memory + Author's Note fields | 1 | Inherits NovelAI/KoboldAI semantics. |
-| Per-field AI-assist (Generate button) | 2.5 | After core Bible UI lands. |
-| Knowledge ledger (manual authoring) | 4 | Schema lands earlier; UI in Phase 4. |
-| Knowledge ledger (auto-extraction) | 4 | Side-call extractor. |
-| Vectorised lorebook + style sheet | 5 | RAG infrastructure. |
-| Consistency lints | 4+ | After ledger lands. |
-| Faction, Timeline events | 3 | Co-arrives with hierarchy phase. |
-
----
+| Manual entity authoring (Characters, Settings, Objects, Lorebook, Dynamics) | ✅ Phase 2 → 4 | Bible Workspace, every field surfaced |
+| Constant + keyed lorebook | ✅ Phase 2 | All 13 fields editable |
+| Always-inject character paragraph in prompts | ✅ Phase 1 | `[BIBLE-CONST]` layer |
+| Memory + Author's Note fields | ✅ Phase 1 | NovelAI semantics |
+| Knowledge ledger (manual + extraction + ScenePresence-derived unknowns) | ✅ Phase 4 | Full pipeline |
+| Entity discovery (auto-found characters / settings / objects) | ✅ Phase 9 | 100% precision / 85.7% recall / F1 92.3% on fixture set |
+| DynamicSheet per-relationship spec | ✅ Phase 4 | |
+| Per-character canonBrief (fandom canon snippet) | ✅ schema landed | Phase 5b ingest pipeline reuses L5 RAG |
+| Custom fields (fandom-template extensibility) | ✅ schema landed | Fandom UI deferred to Phase 5.c |
+| `.vectorised` lorebook activation | ✅ enum case landed | Production wiring not yet built |
+| Per-field AI-assist ("Generate" buttons next to each Bible field) | ❌ not shipped | Phase 0 design intent; deferred indefinitely |
+| Sudowrite-style Braindump auto-fill | ❌ not shipped | Phase 0 design intent; deferred indefinitely |
+| Live consistency lints | ❌ partially replaced by L10 | The Continuity Audit (whole-manuscript) supersedes the per-edit lint idea |
+| Faction | ❌ not shipped | Not on roadmap |
+| TimelineEvent | ❌ not shipped | Not on roadmap |
+| Relationship discovery (auto cross-character) | ❌ dormant | HANDOFF §15.25–15.27 — GLiREL dead end; precision levers exhausted |
 
 ## 11. Open questions
 
-- **Cross-character contradiction detection.** Two characters' ledgers disagree about a shared fact. Lint surface? Auto-resolve? **Decision: lint only; never auto-resolve.** Phase 4+.
-- **Time travel / non-linear narrative**. Chronological-vs-narrative order is already in `SceneTime` schema; the ledger query uses chronological. But what about flashbacks? **Decision (provisional): the flashback's chronological position is the actual past time it depicts; the narrative position is the scene order. Ledger queries use chronological.** Verify in Phase 4 against a real flashback-heavy manuscript.
-- **Ensemble protagonists**. Multiple POVs sharing a knowledge state. **Decision: each character has their own ledger; "shared knowledge" is implicit overlap.** No data-shape change required.
-- **Bible is missing entities for an existing manuscript.** Phase 4 retrofit pass: extractor runs over every existing scene, proposes entities. Surfaced as a "Bible is empty; want to import from your manuscript?" one-time prompt.
+- **Cross-character contradiction detection.** Two characters' ledgers disagree about a shared fact. The L10 Continuity Audit is taking on this question at the whole-manuscript level, not the per-scene level. Per-scene lint surface deferred indefinitely.
+- **Time travel / non-linear narrative.** `flatSceneIds` walked in *narrative* order today; chronological vs narrative is unresolved. Probably untested against a flashback-heavy manuscript. Revisit when one comes along.
+- **Ensemble protagonists / shared POV.** Each character has their own ledger; "shared knowledge" is implicit overlap. Works in practice for two- and three-POV stories; not stress-tested at 5+.
+- **NSFW extraction degradation.** gemma4_2b's refusal rate climbs sharply on heavy-explicit scenes; the production pipeline retries on `noJSONObjectFound` / `noJSONArrayFound` to cover the ~30% transient parse-fail rate. Open question whether a larger / less-aligned structured-task model would help. Tracked in `LOOM_TECH_STACK` "Model server flexibility" deferred item.
 
----
+## 12. Cross-references
 
-## 12. References
-
-**Internal:**
-- [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §3 — Bible schemas.
-- [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) §1.1, §11 — context-assembly + knowledge-ledger layer.
-- [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §A, §B, §C, §H, §L — citations.
-
-**External (RPClient):**
-- `Sources/RPClientCore/Memory/WorldInfo*.swift` — keyed-injection precedent.
-- `Sources/RPClientCore/Memory/Entity*.swift` — entity-stamping precedent.
-- `V2_PHASE9_AI_ASSIST_RESEARCH.md` — per-field AI-assist precedent.
+- [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §5 — Bible entity shapes.
+- [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §10 — Bible Workspace snapshot shape.
+- [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) — per-mode prompt assembly that consumes these layers.
+- [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) — webview architecture + per-section editor design.
+- [`LOOM_MEMORY.md`](LOOM_MEMORY.md) — long-form context architecture; supersedes injection mechanics where the two docs disagree.
+- [`LOOM_NSFW.md`](LOOM_NSFW.md) — Kink / Anatomy / DynamicSheet authoring posture.
+- [`LOOM_LEDGER_SPIKE.md`](LOOM_LEDGER_SPIKE.md) — knowledge-ledger pipeline empirical results (5-round spike).
+- [`LOOM_ENTITY_DISCOVERY_SPIKE.md`](LOOM_ENTITY_DISCOVERY_SPIKE.md) — L9 pipeline design + measurements.
+- [`LOOM_CONTINUITY_AUDIT.md`](LOOM_CONTINUITY_AUDIT.md) §22–§28 — current state of the whole-manuscript consistency engine.
+- [`LOOM_TECH_STACK.md`](LOOM_TECH_STACK.md) "Knowledge & continuity tracking" — solved-problem registry.
