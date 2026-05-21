@@ -165,6 +165,13 @@ public enum HelpContent {
             order: 20,
             group: nil
         ),
+        HelpSection(
+            id: "data-model",
+            title: "Data model",
+            book: .technical,
+            order: 30,
+            group: nil
+        ),
     ]
 
     public static func toc(for book: HelpBook) -> [HelpSection] {
