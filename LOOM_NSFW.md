@@ -1,6 +1,8 @@
 # Loom — Heavy NSFW & Extreme-Topics Posture
 
-> **Status: design lock (2026-05-10).** The user's stated north-star: "heavy NSFW with zero limits." This document specifies Loom's posture, toolkit, and design choices for that requirement. Citations into [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §S.
+> **Last code cross-check:** 2026-05-21
+> **Status:** posture doc; design lock 2026-05-10, with the 2026-05-18 implementation pass wiring `WritingDirectionPrompt` + `ProjectMemoryPresets` + `Scene.framing` + `Bible.dynamicSheets` + `ProjectSettings.antiSlopPhrases`. §3.10 has the dated implementation note. Subsequent additions (per-character `kinks` / `apparentAnatomy` / `intimateAnatomy`; project-level `WorkFraming`; `intimateAnatomy` prompt layer) covered in §3.11 (new) below.
+> **Posture:** where this doc and code disagree, **the code wins**. The framing principles (§1) and anti-pattern catalogue (§6) are evergreen design intent and remain authoritative.
 >
 > **One-line summary.** Loom is a tool. The user's local model handles content. Loom never moderates, never editorialises, never inserts safety theatre. The model's refusal posture is determined by the model card and the user's configuration; Loom surfaces refusals as signals, not blocks.
 
@@ -296,6 +298,46 @@ Two reasons:
 
 1. **The user said so.** This was stated as a Loom direction explicitly. Building it as a first-class primitive — schema, configuration, generation behaviour, library extensions — rather than as a tagged-on toggle communicates that Loom takes the use case seriously.
 2. **Existing tools either can't or won't.** Cloud-bound services have ToS that constrain `.extreme`; local-but-chat-shaped tools (SillyTavern et al.) require expert config to do this well; nobody treats "this is a porn project, configure accordingly" as a structured project property. Loom does. This is a meaningful market gap that Loom's local-first + uncensored-by-design posture is uniquely able to fill.
+
+### 3.11 Per-character and per-project NSFW posture (post-2026-05-18 extensions)
+
+Several Character + Project schema extensions landed after the 2026-05-18 pass:
+
+#### Per-character
+
+- **`Character.kinks: [CharacterKink]`** — per-character kink/preference list with `KinkStance ∈ {embrace, neutral, refuse}`. Renders into the prompt only when the character is present in the active scene window. Editable in the Bible Workspace Characters → Kinks tab.
+- **`Character.apparentAnatomy: String`** — visible / clothed-state body description.
+- **`Character.intimateAnatomy: String`** — off-page / explicit-context body description. Rendered via the **`intimateAnatomy`** prompt layer (one of the 20 `ChicletKind` cases per [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) §2), injected only when the scene's `undressedCharacterIds` includes this character. Keeps explicit anatomy out of every prompt and surfaces it only when narratively warranted.
+
+The per-scene `Scene.undressedCharacterIds: [UUID]` is the gate that flips `intimateAnatomy` on/off per character per scene. User-controlled in the editor; not auto-derived.
+
+#### Per-project
+
+- **`ProjectSettings.workFraming: [FramedElement]`** — a list of stance clauses framing how the project relates to its own content. Each `FramedElement` is `{ role: String, text: String, stance: ContentStance ∈ {embrace, neutral, resist} }`. Rendered via `WorkFramingPrompt` into the system block.
+  - Example use: a literary author writing about violence sets `role: "violence depiction"`, `stance: .neutral`, `text: "Violence in this work is rendered for its narrative function, not endorsement nor moralised condemnation."` The model receives this and stops over-foregrounding moral framing the work doesn't want.
+
+- **`ProjectMemoryPresets`** — three built-in starter texts for `ProjectSettings.memory`:
+  - `.loomDefault` — Loom's standard literary-craft framing
+  - `.heavyNSFW` — explicit-permissive framing with anti-fade-to-black + anti-moralising clauses
+  - `.minimal` — empty / user-fill
+  
+  Picked at project-create time. Reseedable from Settings.
+
+- **`ProjectSettings.antiSlopPhrases: [String]`** — seeded from `AntiSlopDefaults` (curated common AI-tells: *"eyes glinted with mischief,"* *"a shiver ran down her spine,"* etc.). Fed to KoboldCpp as `banned_strings` (phrase-level backtracking sampler). The model never emits these phrases; the sampler backtracks if it tries. User editable in Settings.
+
+- **`SphiratriothStarterPack`** — bundled namespace enum carrying pre-built Characters / Lorebook entries / Dynamics / anti-slop additions. Imported on demand from Settings → Resources. A power-user shortcut to a Sphiratrioth-style configuration without manual setup.
+
+#### Code paths
+
+| Feature | Production code |
+|---|---|
+| `WritingDirection` system-prompt addendum | `Sources/LoomCore/Generation/WritingDirectionPrompt.swift` |
+| `WorkFraming` stance clauses | `Sources/LoomCore/Generation/WorkFramingPrompt.swift` |
+| Per-character kinks render | `PromptBuilder.swift` (`formatKinks` + inline layer in `buildLayers`) |
+| `intimateAnatomy` layer | `PromptBuilder.swift` — `ChicletKind.intimateAnatomy` layer, gated on `Scene.undressedCharacterIds` |
+| Anti-slop banned_strings | `Sources/LoomCore/Networking/KoboldClient.swift` → `GenerateRequest.bannedStrings` |
+| Memory preset seeding | `Sources/LoomCore/Storage/ProjectStorage.swift` (new-project flow) |
+| Sphiratrioth import | `Sources/LoomCore/Models/SphiratriothStarterPack.swift` + Settings → Resources action |
 
 ## 4. UI affordances — what's NOT there
 
