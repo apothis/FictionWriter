@@ -34,6 +34,11 @@ const BUNDLES: Record<string, { html: string; name: string; out: string }> = {
     name: "projectTools",
     out: "dist-tools",
   },
+  help: {
+    html: "help.html",
+    name: "help",
+    out: "dist-help",
+  },
 };
 const bundle = BUNDLES[process.env.LOOM_BUNDLE ?? "index"] ?? BUNDLES.index;
 const entryHTML = bundle.html;

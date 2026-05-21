@@ -90,4 +90,10 @@ LOOM_BUNDLE=projectTools bun run build
 postprocess_html "$BUNDLE_DIR/dist-tools/projectTools.html" "projectTools"
 sync_resources "dist-tools" "ProjectTools"
 
+# --- In-app Help bundle (User Help + Technical Reference books) ---
+echo "[bible-workspace] building Help bundle..."
+LOOM_BUNDLE=help bun run build
+postprocess_html "$BUNDLE_DIR/dist-help/help.html" "help"
+sync_resources "dist-help" "Help"
+
 echo "[bible-workspace] ready"

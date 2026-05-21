@@ -62,6 +62,12 @@ let package = Package(
                 // In-app reference help — markdown bundled per book.
                 // Loaded by `HelpContent.defaultMarkdownLookup`.
                 .copy("Resources/help-content"),
+                // In-app help webview bundle — built by
+                // scripts/build-bible-workspace.sh (LOOM_BUNDLE=help);
+                // gitignored, populated alongside the other webview
+                // bundles. HelpWindowController loads
+                // Resources/Help/help.html via webView.loadFileURL.
+                .copy("Resources/Help"),
             ],
             swiftSettings: [
                 // Enables `@testable import LoomCore` from the test runner

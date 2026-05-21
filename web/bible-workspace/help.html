@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Loom Help</title>
+    <!-- Separate webview bundle for the in-app reference help panel.
+         Two books (User Help + Technical Reference) render through
+         the same shell with a top-level book switcher. -->
+  </head>
+  <body class="bg-loom-bg text-loom-fg font-sans antialiased">
+    <div id="root"></div>
+    <script>
+      // Minimal error-surface shim — WKWebView has no visible console
+      // for the user, so unhandled errors are routed to a pinned <pre>.
+      (function () {
+        function showError(label, detail) {
+          var pre = document.createElement("pre");
+          pre.style.cssText =
+            "position:fixed;top:8px;left:8px;right:8px;z-index:9999;color:#ff5e5e;background:#2c2c2e;padding:16px;border-radius:8px;font:11px ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-word;max-height:60vh;overflow:auto;box-shadow:0 4px 16px rgba(0,0,0,0.4);";
+          pre.textContent = "[" + label + "]\n" + detail;
+          document.body.appendChild(pre);
+        }
+        window.addEventListener("error", function (e) {
+          showError(
+            "uncaught error",
+            (e.message || "?") + " @ " + (e.filename || "?") + ":" +
+              (e.lineno || "?") + ":" + (e.colno || "?")
+          );
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          showError(
+            "unhandled rejection",
+            String((e.reason && (e.reason.stack || e.reason.message)) || e.reason)
+          );
+        });
+      })();
+    </script>
+    <script type="module" src="/src/help/main.tsx"></script>
+  </body>
+</html>

@@ -5,7 +5,13 @@
 // DesignTokens.swift), so changes to the AppKit palette propagate
 // to the web bundle without rebuilding.
 export default {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: [
+    "./index.html",
+    "./plannedProject.html",
+    "./projectTools.html",
+    "./help.html",
+    "./src/**/*.{ts,tsx}",
+  ],
   theme: {
     extend: {
       colors: {
@@ -32,5 +38,9 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // `prose` utilities for rendering bundled markdown in the Help
+    // panel. Loaded only by the help bundle (see HelpApp.tsx).
+    require("@tailwindcss/typography"),
+  ],
 };
