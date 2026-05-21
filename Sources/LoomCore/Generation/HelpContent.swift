@@ -131,6 +131,13 @@ public enum HelpContent {
             order: 160,
             group: "Reference"
         ),
+        HelpSection(
+            id: "scene-exemplars",
+            title: "Scene exemplars + templates",
+            book: .userHelp,
+            order: 170,
+            group: "Reference"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
