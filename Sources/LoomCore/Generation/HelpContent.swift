@@ -158,6 +158,13 @@ public enum HelpContent {
             order: 10,
             group: nil
         ),
+        HelpSection(
+            id: "repo-layout",
+            title: "Repo layout + module breakdown",
+            book: .technical,
+            order: 20,
+            group: nil
+        ),
     ]
 
     public static func toc(for book: HelpBook) -> [HelpSection] {
