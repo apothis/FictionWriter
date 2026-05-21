@@ -1,8 +1,11 @@
 # Loom Phase 1 — Editor MVP
 
-> **Status: Phase 0 design lock (2026-05-10).** Sub-step contracts mirror `/Volumes/SSD1/Code/RPClient/V2_UI_OVERHAUL.md` §4.11 format. Companion to [`LOOM_PLAN.md`](LOOM_PLAN.md), [`LOOM_DESIGN_LANGUAGE.md`](LOOM_DESIGN_LANGUAGE.md), [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md), [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md).
+> **Last code cross-check:** 2026-05-21
+> **Status:** ✅ **Phase 1 sealed 2026-05-10** + Phase 1.5 polish (Rewrite, per-call instruction box, A/N depth-N, Cmd-, Settings). This doc is the *historical contract record* for the Phase 1 sub-step landings; the body remains accurate to what *Phase 1 shipped*, but the editor has continued to evolve in Phase 2 / 2.5 / 3 / 4 / 4.5 / 5 / 7 / 8 / 9 / 10. **Do not use this doc as a reference for the *current* editor** — use [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §1–§4, [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md), and [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md) §1.1 instead.
+> **What's evolved since Phase 1.** Generation mode catalogue grew from 2 (Continue + Expand) to 13 (see [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) §1). The Bible inspector pane evolved into a dedicated webview window in Phase 4.5 — see [`LOOM_BIBLE_WORKSPACE.md`](LOOM_BIBLE_WORKSPACE.md). Sidebar gained Parts / Chapters / drag-reorder / Corkboard (Phase 3). Settings gained many panels (Phase 2 + later). Snapshots, full Generation log, History tab, RefusalDetector + RefusalContinuation, anti-slop banned_strings, DynamicSheets — all landed Phase 2+.
+> **Posture:** where this doc and code disagree, **the code wins**. This doc's authority is limited to "the contract Phase 1 promised to deliver."
 >
-> **Goal:** ship a minimal but coherent editor where a user types a sketch, clicks Expand, and gets prose. Or types a paragraph, clicks Continue, and gets prose. Saves as Markdown.
+> **Goal (Phase 1):** ship a minimal but coherent editor where a user types a sketch, clicks Expand, and gets prose. Or types a paragraph, clicks Continue, and gets prose. Saves as Markdown.
 
 ---
 
