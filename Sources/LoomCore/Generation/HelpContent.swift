@@ -40,6 +40,13 @@ public enum HelpContent {
             order: 1,
             group: "Getting Started"
         ),
+        HelpSection(
+            id: "getting-started-install",
+            title: "Install + first launch",
+            book: .userHelp,
+            order: 2,
+            group: "Getting Started"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
