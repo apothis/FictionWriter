@@ -110,6 +110,13 @@ public enum HelpContent {
             order: 130,
             group: "Reference"
         ),
+        HelpSection(
+            id: "knowledge-ledger",
+            title: "Knowledge ledger",
+            book: .userHelp,
+            order: 140,
+            group: "Reference"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
