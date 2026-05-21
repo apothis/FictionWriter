@@ -103,6 +103,13 @@ public enum HelpContent {
             order: 120,
             group: "Reference"
         ),
+        HelpSection(
+            id: "story-bible-dynamics",
+            title: "Story Bible — Dynamics",
+            book: .userHelp,
+            order: 130,
+            group: "Reference"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
