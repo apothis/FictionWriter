@@ -1,391 +1,251 @@
 # Loom Generation Modes
 
-> **Status: Phase 0 design lock (2026-05-10).** The load-bearing engineering doc for prompt templates and context assembly. Companion to [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md), [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md). Citations into [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md).
->
-> **Memory-architecture supersession note (2026-05-10 PM).** [`LOOM_MEMORY.md`](LOOM_MEMORY.md) is the authoritative memory-architecture spec; it inherits RPClient's six-layer model + precedence contract and extends with Round-2 research findings (AI Dungeon Memory Bank, NovelAI Subcontext, character.ai Pinned Messages, RAPTOR/LightRAG/SCORE academic patterns). Where this doc's §1 (common context-assembly) and the layer set in [`LOOM_MEMORY.md`](LOOM_MEMORY.md) §4 disagree, **`LOOM_MEMORY.md` wins**. The token-budget allocations in §1.2 below are still load-bearing; the layer order is refined in `LOOM_MEMORY.md` §4.1 + §A3.
->
-> **Scope.** Each mode's prompt skeleton + context-assembly strategy + output handling. Token-budget allocation at 8k / 16k / 32k context. Phase mapping noted per mode.
+> **Last code cross-check:** 2026-05-21
+> **Posture:** reference doc reflecting *current shipped* code. Phase 0 design lock (2026-05-10) covered Continue + Expand only; the catalogue has since grown to 13 modes, the prompt has 20 layers, and several Phase-0 assumptions about budget / eviction were superseded by actual implementation. Where this doc and code disagree, **the code wins**.
+> **Memory-architecture supersession.** [`LOOM_MEMORY.md`](LOOM_MEMORY.md) carries the conceptual long-form-context architecture; this doc is the **implementation reference** for what actually ships. They should agree; if they don't, this doc reflects shipped behaviour.
+> **Companion to** [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §4.5 (`GenerationMode` enum) + §17 (`GenerationLogEntry` shape), [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) §8 (assembled injection order), [`LOOM_NSFW.md`](LOOM_NSFW.md) (writing-direction posture layer).
 
----
+## 1. Generation modes — the 13-mode catalogue
 
-## 1. Common context-assembly contract
+`Sources/LoomCore/Models/Scene.swift` (the `GenerationMode` enum):
 
-Every generation, regardless of mode, follows the same overall assembly. The mode-specific delta is what *kind* of context dominates and what the system instruction asks for.
-
-### 1.1 Standard prompt layers (top-to-bottom)
-
-Per [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §M.4 (NovelAI[C2] / KoboldAI[D1] / SillyTavern[H1] hierarchy):
-
-```
-[SYSTEM] System prompt (instruct-template-aware; per-mode preface)
-[MEMORY] Project Memory field (always-top, NovelAI/KoboldAI Memory[C3][D1])
-[BIBLE-CONST] Bible: constant-mode lorebook + always-on character/setting/object summaries
-[STYLE] Style sheet sample paragraphs (Phase 5; absent earlier)
-[STRUCTURE] Project / Part / Chapter summaries (Phase 3+ recursive-summary chain[L1])
-[BIBLE-KEYED] Bible: keyed-mode entries that match the recent prose window
-[KNOWLEDGE-LEDGER] What this scene's POV character knows-and-doesn't-know (Phase 4+)
-[RECENT-PROSE] Up to N words of preceding prose (per mode budget)
-[FEW-SHOT-STYLE] Phase 5: scene-type-matched style exemplars (action / dialogue / etc.)
-[AUTHORS-NOTE] Author's Note at depth-N from end (NovelAI A/N Strength[C3])
-[MODE-INSTRUCTION] The actual request: continue / expand / rewrite / ...
-[CURSOR/SELECTION] The text immediately before the cursor or the selected passage
-```
-
-The order is deliberate: most-static (System, Memory) at top; most-dynamic + most-influential (Author's Note, mode instruction, cursor) at bottom. This matches NovelAI's "lower in prompt = stronger influence" empirical finding[C2].
-
-### 1.2 Token-budget allocation (default)
-
-Per `Settings.contextBudgetTokens`. Three sample budgets:
-
-| Layer | 8k context | 16k context | 32k context |
+| Case | Phase | Trigger | What it does |
 |---|---|---|---|
-| System prompt | 200 | 200 | 200 |
-| Memory | 250 | 500 | 750 |
-| Bible (constant) | 800 | 1500 | 2500 |
-| Style (Phase 5) | 0 / 400 | 0 / 800 | 0 / 1500 |
-| Structure (Phase 3+) | 0 / 400 | 0 / 800 | 0 / 1500 |
-| Bible (keyed) | 600 | 1200 | 2000 |
-| Knowledge ledger (Phase 4+) | 0 / 300 | 0 / 600 | 0 / 1000 |
-| Recent prose | **3000** | **6000** | **15000** |
-| Few-shot style (Phase 5) | 0 / 600 | 0 / 1500 | 0 / 3000 |
-| Author's Note | 200 | 300 | 500 |
-| Mode instruction | 150 | 200 | 250 |
-| Selection / cursor | 200 | 300 | 500 |
-| **Reply budget** | ~2000 | ~3000 | ~4500 |
+| `.continueProse` | 1 | cursor, no selection | Extends from the cursor for `continueWordTarget` words, in voice |
+| `.expand` | 1 | cursor, no selection | Drafts a longer beat (~`expandWordTarget` words) from a 1-line direction |
+| `.rewrite` | 4 | selection | Generic rewrite of the selected passage |
+| `.rewriteVoice` | 4 | selection | Rewrite preserving content; shift voice / register |
+| `.rewriteTense` | 4 | selection | Switch tense (past ↔ present) |
+| `.rewritePOV` | 4 | selection | Switch POV across characters (uses the per-character knowledge ledger) |
+| `.rewriteLength` | 4 | selection | Compress / expand the passage to a target word count |
+| `.showDontTell` | 4 | selection | Dramatise a telling sentence into showing prose |
+| `.brainstorm` | 4 | cursor, optional selection | Idea generation; off-prose output |
+| `.critique` | 4 | selection (or scene) | Editorial critique of the prose, not a rewrite |
+| `.bridge` | 4 | cursor between two written beats | Drafts a connecting passage |
+| `.describe` | 4 | cursor, optional Bible-entity context | Describe a Setting / Object / Character entity in prose |
+| `.nameSuggest` | 4 | cursor | Suggest names (character / place / object) given a brief description |
 
-Note: 32k recent-prose budget (15,000 tokens ≈ 11,000 words) is still well below Sudowrite's claimed 20k words[A4] — Loom is local-model-shaped, where 32k is realistic ceiling and 16k is common floor. The 20k-word recent-prose target is **aspirational; achievable on 32k+ context models**, not a default.
+**Per-mode availability** — `Sources/LoomCore/Generation/GenerationModeAvailability.swift` decides which modes are enabled based on cursor + selection state. The UI greys disabled modes; menu items reflect availability.
 
-When the assembled context exceeds budget, layers are evicted in this priority order (lowest first): few-shot style, structure, keyed bible (lowest-priority entries), recent prose (oldest first), constant bible (lowest-priority), knowledge ledger.
+**Not in the enum** — two adjacent generation paths use their own coordinators:
 
-The actual eviction strategy is implementation work for Phase 1; this is the contract.
+- **Roll-Outcome** (Bible menu) — rolls a weighted lorebook group entry into the per-call instruction tray for the *next* Continue. Lives at `AppDelegate.rollOutcomeClicked` + `LorebookRoller.swift`. Not a generation mode; it primes the next one.
+- **Scene-Template Generation** (L7) — per-template per-beat draft via `TemplateGenerationCoordinator.swift`. Its own pipeline (Pass-A skeleton extracted at ingest time, Pass-B per-beat writing at generation time). Uses the same writer model + style retriever but a different prompt builder (`BeatGeneration.buildBeatPrompt`).
 
-### 1.3 Instruct-template handling
+## 2. The assembled prompt — 20 layers
 
-Per research §I.4: the model card dictates the template. Loom does **not** unilaterally pick. `InstructTemplate.auto` (the default) probes the server (`/api/v1/model` returns the model name; pattern-match against known families) and falls back to `.raw` (no template) if uncertain.
+`Sources/LoomCore/Generation/PromptBuilder.swift` builds a list of `Layer { kind: ChicletKind, content, tokens, aboveCache, priority }` then orders, fits, and renders. The `ChicletKind` enum is the load-bearing list:
 
-For story-mode use specifically, **the system prompt is collapsed differently per template:**
-
-- ChatML / Llama3: `<|system|>...<|user|>[mode instruction + selection]<|assistant|>[expected continuation]`
-- Mistral V3: no system tokens; system prompt prepended into first `[INST]` block
-- Mistral V7: native system support via `[SYSTEM_PROMPT]`
-- Alpaca: `### Instruction:` and `### Response:` framing
-- raw: pure completion; system prompt is just prose-mode instruction text at top
-
-Story-mode generations pass the **expected continuation prefix empty** so the model continues naturally rather than emitting an "assistant turn." This is the dominant story-mode-on-chat-models technique (research §H.2 SillyTavern preset culture).
-
----
-
-## 2. Mode: Continue (Phase 1)
-
-**What it does.** Continues writing from the cursor position. The model's job: extend the prose naturally, in voice, for ~500 words (configurable).
-
-**Trigger.** Cursor in editor, no selection. Click `Continue` button or `⌘⇧E`.
-
-**Context strategy.** Standard assembly. Recent-prose layer is the "last N tokens immediately before cursor." Mode instruction is minimal — the work is in the recent-prose continuity.
-
-**System prompt skeleton:**
-
-```
-You are a fiction writer continuing an existing manuscript. Maintain voice, tense, POV, and tone exactly as established in the preceding text. Continue the scene naturally — do not summarize, do not break narrative voice, do not introduce meta-commentary. Continue for approximately {N_WORDS} words, ending at a natural pause (paragraph break, scene beat, or sentence boundary).
-```
-
-**Mode instruction (last layer before cursor):** *empty*. The cursor itself is the instruction.
-
-**Output handling.** Insert at cursor. Acceptance UI per [`LOOM_DESIGN_LANGUAGE.md`](LOOM_DESIGN_LANGUAGE.md) §14.6: 6pt accent rule + Accept/Reject/Redo buttons. Auto-accept on edit.
-
-**Phase 1 minimal version.** Recent-prose + Memory + simple character bible (always-injected). No keyed bible, no knowledge ledger. Sufficient for the MVP demo.
-
----
-
-## 3. Mode: Expand (Phase 1)
-
-**What it does.** Takes a sketch (sparse paragraph or list of beats) in the user's selection and expands it into full prose.
-
-**Trigger.** Selection in editor. Click `Expand` or `⌘E`.
-
-**Context strategy.** Standard assembly. Selection is the *target sketch* — passed at the bottom with explicit framing. Recent-prose still included to maintain voice.
-
-**System prompt skeleton:**
-
-```
-You are a fiction writer expanding a sketch into prose. The selection below is a draft outline — beats, fragments, or a sparse paragraph that the author wants fleshed out. Expand it into approximately {N_WORDS} words of prose that:
-- Preserves every beat in the sketch (do not skip, do not invent missing plot)
-- Matches the voice/tense/POV of the surrounding manuscript
-- Adds sensory detail, dialogue, and interiority appropriate to the scene
-- Does not include meta-commentary or markdown headers
-
-Sketch to expand:
-{SELECTION}
+```swift
+public enum ChicletKind: String, Codable {
+    case system               // instruct-template-aware system block
+    case projectMemory        // ProjectSettings.memory
+    case styleSheet           // Style preset (writer-prompt voice/genre/period preset)
+    case projectSummary       // (reserved; not yet built)
+    case chapterSummary       // (reserved; not yet built)
+    case sceneSummary         // Scene.summary on adjacent scenes
+    case bibleConstant        // Always-on Character/Setting/Object summaries
+    case bibleKeyed           // Keyed lorebook entries triggered by recent-prose
+    case lorebookEntry        // explicit-pinned lorebook entries
+    case knowledgeLedger      // KNOWS / DOES NOT KNOW / SUSPECTS / MISTAKEN
+    case recentProse          // last N tokens before cursor
+    case sceneAnchor          // scene framing (POV / location / conflict / outcome banner)
+    case authorsNote          // ProjectSettings.authorsNote at depth-N from end
+    case perCallInstruction   // per-generation instruction tray (one-shot steering)
+    case modeInstruction      // the mode's system instruction
+    case fewShotStyleExample  // L5 style-retrieval exemplars from References (top-3)
+    case directionDirective   // WritingDirection system-prompt addendum
+    case sceneFraming         // Scene.framing field (per-scene scenario block)
+    case dynamicSheet         // DynamicSheet block for the active cast
+    case intimateAnatomy      // per-character intimateAnatomy (NSFW; injected when scene undressed)
+}
 ```
 
-**Mode instruction layer:** the system prompt's "Sketch to expand:" framing.
+### 2.1 Layer ordering — above-cache vs below-cache
 
-**Output handling.** Replaces selection. Same acceptance UI as Continue. The original sketch is recoverable from the GeneratedSpan record (and a Snapshot is taken automatically per Phase 2+).
-
-**Phase 1 minimal version.** Same as Continue — recent prose + memory + minimal bible.
-
----
-
-## 4. Mode: Rewrite (Phase 4)
-
-**What it does.** Takes a selection of finished prose and rewrites it. The user picks a *flavour*: voice change, tense change, POV change, length change, formality, show-don't-tell.
-
-**Sub-modes** (each its own prompt skeleton):
-
-### 4.1 Rewrite — voice
+Each layer is flagged `aboveCache: Bool`. The instruct-template adapter glues the above-cache layers into the *system block* and the below-cache layers into the *user block*:
 
 ```
-Rewrite the selection in a different voice. Target voice: {USER_DESCRIPTOR or STYLE_REF}. Preserve all plot and dialogue beats; do not add or remove events. Match the manuscript's tense and POV. Approximately the same length as the original.
+System block (above-cache, joined by \n\n)
+├── system                 # per-mode system preamble
+├── projectMemory          # always-true facts
+├── directionDirective     # WritingDirection addendum
+├── bibleConstant          # always-on entities
+├── dynamicSheet           # active dynamics
+├── styleSheet             # writer-prompt voice preset
+└── (additional preset layers)
+
+User block (below-cache, joined by \n\n)
+├── chapterSummary / projectSummary  # (reserved)
+├── sceneSummary           # adjacent-scene recaps
+├── bibleKeyed             # keyed lorebook entries
+├── lorebookEntry          # explicit-pinned entries
+├── knowledgeLedger        # POV character's facts
+├── fewShotStyleExample    # L5 style retrieval
+├── sceneFraming           # per-scene scenario
+├── intimateAnatomy        # NSFW context for present cast
+├── sceneAnchor            # POV / location / conflict / outcome banner
+├── recentProse            # the prose tail
+├── authorsNote            # near-end depth-N
+├── perCallInstruction     # one-shot steering
+└── modeInstruction        # the actual ask: continue / expand / rewrite / …
 ```
 
-### 4.2 Rewrite — tense
+Empirical NovelAI finding: **lower in the prompt = stronger steering**. That's why `modeInstruction` and the cursor's `recentProse` tail are at the bottom, with `authorsNote` near the very end (depth-N controls how far).
 
-```
-Rewrite the selection in {past|present} tense. Preserve voice, POV, plot beats, dialogue verbatim where natural. Keep approximate length.
-```
+### 2.2 Prefill-aware Continue (mid-sentence)
 
-### 4.3 Rewrite — POV
+When `.continueProse` fires and the manuscript ends mid-sentence, `PromptBuilder.build` extracts the trailing unfinished fragment out of `recentProse` and into the **assistant-turn prefill** via `PrefillSeed.extract`. The model then completes the sentence from inside its own turn — no fresh-turn seam where a refusal can open. Only active for Continue, only when real context survives ahead of the fragment. See `PromptBuilder.swift` step 3a + `PrefillSeed.swift`.
 
-```
-Rewrite the selection from a different POV. Source POV: {CURRENT}. Target POV: {NEW_POV_CHARACTER}, {first|third|second}-person, {limited|omniscient}. Preserve plot and dialogue; the new POV character may not have access to all internal thoughts of the original — adjust interiority accordingly. {KNOWLEDGE_LEDGER_HINT}
-```
+### 2.3 Why prose lives in the user block, not the prefill
 
-The `KNOWLEDGE_LEDGER_HINT` is filled with what the new POV character does and doesn't know at this scene's chronological position (Phase 4+ knowledge ledger). Without it, POV swaps invent things the character couldn't know.
+Phase 0 imagined the NovelAI/SillyTavern story-mode pattern: prose in the assistant prefill, model continues. Live testing 2026-05-10 confirmed this **does not work** for instruct-tuned chat models like Qwen and Gemma — they treat the prefill as "my completed response" and emit `<|im_end|>` immediately, producing 0 tokens. Loom keeps a chat-shaped structure: prose in the user message, sharpened system prompt steers the model to continue. The "anti-echo guarantee" comes from system-prompt sharpening + an explicit `modeInstruction` layer landing AFTER the prose (lower = stronger steering).
 
-### 4.4 Rewrite — length (longer / shorter)
+The prefill pattern still works for base / story-tuned models (Erato, Goliath), but Loom's default writer model (Goetia, Mistral-Small-3 24B) is instruct-tuned. The prefill mechanic is reserved for `<think>` suppression on ChatML (Qwen) — see `PromptBuilder.prefillFor`.
 
-```
-Rewrite the selection at {120%|80%|50%|150%} of its current length. Preserve all plot/dialogue beats. Adjust through {expanded sensory detail and interiority | tightened phrasing and trimmed prose}.
-```
+## 3. Token budget + eviction
 
-### 4.5 Show-don't-tell
+`Sources/LoomCore/Generation/ContextBudgetRecommendation.swift` + `Sources/LoomCore/Generation/TokenEstimator.swift` + `PromptBuilder.enforceBudget`.
 
-```
-Rewrite the selection so that emotional, internal, or summary statements are dramatised through action, dialogue, gesture, sensory detail, and concrete observation rather than told to the reader. Do not add new plot. Approximately {120%|140%} length.
-```
+### 3.1 Budget shape (actual, not Phase 0 aspiration)
 
-**Output handling.** Replaces selection; acceptance UI; auto-Snapshot of the original (Phase 2+).
+- `ProjectSettings.contextBudgetTokens` — user-set context budget for the project. Defaults vary by model's `trueMaxContext` capability.
+- `replyBudgetTokens` — reserved for model output; subtracted from `contextBudgetTokens` to give the *usable* prompt budget.
+- `ContextBudgetRecommendation.defaultSafetyMargin = 256` tokens — wiggle room for the model's BOS / instruct-template overhead the estimator may under-count.
+- `ContextBudgetRecommendation.minimumBudget = 1024` tokens — refuse to recommend a budget lower than this.
 
----
+Recommendations land in the inspector "Recommended Context Budget" pill — a per-model suggestion based on the server-probed `trueMaxContext`.
 
-## 5. Mode: Brainstorm (Phase 4)
+### 3.2 Eviction order
 
-**What it does.** Generates ideas — plot points, character names, settings, scene seeds, "what could happen next?" Output is *not prose to insert* — it's a list to consider.
+When assembled layers exceed `usableContextBudget`, `enforceBudget` drops below-cache non-mandatory layers first (lowest priority first), then shrinks `recentProse` by re-extracting with a smaller budget rather than fully evicting it. Above-cache layers stay (they're cacheable across turns and dropping them would break instruct-template structure).
 
-**Trigger.** No selection required (uses cursor context). Click `Brainstorm` (⌘B). Opens a **popover**, not inline insertion. Output rendered as numbered options the user can click to copy/insert.
+Evicted layer kinds land on `AssembledPrompt.evictedLayers` so the History inspector can show "this generation evicted: dynamicSheet, fewShotStyleExample, sceneSummary." Useful for budget tuning.
 
-**System prompt skeleton:**
+## 4. Instruct-template handling
 
-```
-You are a fiction-writing brainstorm partner. Generate {N=8} distinct, concrete options for {USER_QUESTION}. Each option should be:
-- Specific (not generic; named characters, named places, concrete actions)
-- Different in shape from the others (don't list variations of one idea)
-- Compatible with the established manuscript context
+`Sources/LoomCore/Generation/InstructTemplates.swift`
 
-Format: numbered list, one option per line, no preamble.
-```
+Loom does not unilaterally pick the template — it probes the server (`/api/v1/model`) and matches the model name against known families:
 
-`USER_QUESTION` is solicited inline in the popover ("What should happen next?", "Names for the antagonist?", "How should this scene end?", or free-form).
+| Template | Models | Detection |
+|---|---|---|
+| `.mistralV7` | Goetia, Mistral-Small-3.x (2501/2503/2506), Mistral-Large-3 | `mistral-small-3`, `Goetia` |
+| `.mistralV3` | older Mistral / Mixtral | `mistral-7b`, `mixtral` |
+| `.gemma4` | Gemma-2/3/4 family + abliterated variants | `gemma`, `gemma-3`, `gemma-4` |
+| `.chatml` | Qwen3.x family, many merges | `qwen`, `chatml` |
+| `.llama3` | Llama 3.x family | `llama-3`, `llama3` |
+| `.alpaca` | older finetune family | `alpaca` |
+| `.raw` | uncertain / base models | fallback |
+| `.auto` | the default | runs the detection chain |
 
-**Output handling.** Popover-only. User clicks an option to insert at cursor (or copies). No acceptance state — Brainstorm output isn't draft prose.
+`InstructTemplates.detect(forModelName:)` returns the matched template. `InstructTemplates.adapter(for:)` returns the rendering adapter (system / user / assistant tag emitter + stop-sequence set).
 
----
+For story-mode use specifically, **the assistant-turn prefill is empty by default** so the model continues naturally rather than emitting an "assistant turn" framing. ChatML / Qwen models get a `<think>\n\n</think>\n\n` suppression prefill (Qwen tunes have a default chain-of-thought scratchpad we don't want for prose).
 
-## 6. Mode: Critique (Phase 4)
+## 5. Per-mode prompt shapes
 
-**What it does.** Reads the current scene (or selection) and produces critique notes. Modelled on AutoCrit's fiction-aware critique posture[J9] (research §J.6).
+Each mode's full prompt builder lives in code. This section is an index — system-prompt skeleton and which file owns the per-mode logic.
 
-**Trigger.** Selection or scene-level (no selection = whole scene). Click `Critique` or `⌘⇧K`. Opens the critique in the **History inspector tab** (not as inserted prose).
+### 5.1 `.continueProse` (Phase 1)
 
-**System prompt skeleton:**
+- **Code:** `PromptBuilder.swift` → `modeInstructionFor(.continueProse)`.
+- **Trigger:** cursor, no selection. `⌘⇧E`.
+- **System prompt:** *"You are a fiction writer continuing an existing manuscript. Maintain voice, tense, POV, and tone exactly as established. Continue the scene naturally — do not summarize, do not break narrative voice, do not introduce meta-commentary. Continue for approximately {N_WORDS} words…"*
+- **Context strategy:** standard assembly. Recent-prose tail is the load-bearing input; `modeInstruction` is minimal — the cursor itself is the ask.
+- **Output:** insert at cursor; Accept/Reject/Redo UI per [`LOOM_DESIGN_LANGUAGE.md`](LOOM_DESIGN_LANGUAGE.md) §14.6.
 
-```
-You are a fiction editor reviewing the passage below. Provide critique notes in this structure:
+### 5.2 `.expand` (Phase 1)
 
-1. **Pacing** — does it move? Drag points? Rushed beats?
-2. **POV consistency** — head-hopping? Tense slips?
-3. **Dialogue** — natural? Voice-distinct per character? Tag overuse?
-4. **Show vs tell** — emotional summary that should be dramatised?
-5. **Continuity** — does anything contradict established Bible/prior scenes?
-6. **Two specific suggestions** — concrete, actionable.
+- **Code:** `PromptBuilder.swift` → `modeInstructionFor(.expand)`.
+- **Trigger:** cursor; user provides a 1-line direction in the per-call instruction tray.
+- **System prompt:** *"…draft approximately {N_WORDS} words from this direction…"*
+- **Output:** insert at cursor.
 
-Be specific: cite lines or beats, not generalities. Do not rewrite; describe.
+### 5.3 `.rewrite` and the four sub-modes (Phase 4)
 
-Passage:
-{SELECTION}
-```
+`Sources/LoomCore/Generation/PromptBuilder.swift` carries the mode-instruction strings; the per-sub-mode steering is layered:
 
-**Output handling.** Critique appears as a History entry (research §M.1: not inserted into prose, kept as a separate artefact). User can re-roll, copy individual notes into the Notes tab, or apply suggested rewrites manually.
+- **`.rewriteVoice`** — system prompt: *"Rewrite the selection preserving content; shift voice to {VOICE_DESCRIPTOR}."* Voice descriptor either freeform from the user or selected from `StyleLibrary` presets.
+- **`.rewriteTense`** — currently shipped: past ↔ present. Selection-tense heuristic (`Phase4SelectionTenseHeuristic`) detects current tense to pick the right shift direction.
+- **`.rewritePOV`** — *"Rewrite from {NEW_POV_CHARACTER}'s perspective."* Threads `LedgerKnowledge.compute(...)` through `RewritePOVDescriptor.build` to fill a `[KNOWLEDGE-LEDGER]` block specific to the new POV (so the rewrite respects what the new POV character knows / doesn't know — the load-bearing reason POV rewrites need the ledger).
+- **`.rewriteLength`** — `LengthScenario` enum drives target word count: shorter / similar / longer / specific N. System prompt is *"Rewrite the selection to {TARGET_LENGTH}."*
+- **`.rewrite`** (generic) — open-ended rewrite from a freeform per-call instruction.
 
----
+Each sub-mode adds a scope-discipline clause to the system prompt closing the Gemma over-contextualisation failures surfaced in HANDOFF §15.9 live testing.
 
-## 7. Mode: Bridge (Phase 4)
+### 5.4 `.showDontTell` (Phase 4)
 
-**What it does.** Generates a transition between two passages. User selects passage A, then passage B (or just selects across a gap), and asks Loom to write the connective tissue.
+- **System prompt:** *"Dramatise the selected telling-sentence into showing prose. Preserve the same events; use sensory detail, action, and dialogue."* 
+- **Code:** PromptBuilder + a structural-limit guard (one telling sentence → one showing paragraph; longer expansions produce purple prose).
 
-**Trigger.** Multi-selection with intentional gap, or two scenes both highlighted. `⌘⇧B`.
+### 5.5 `.brainstorm`, `.critique`, `.bridge`, `.describe`, `.nameSuggest` (Phase 4)
 
-**System prompt skeleton:**
+Each has a tailored system prompt and a different acceptance UX:
 
-```
-You are a fiction writer composing a transition between two passages. Passage A ends with {LAST_300_CHARS_OF_A}. Passage B begins with {FIRST_300_CHARS_OF_B}. Write a bridge of approximately {N_WORDS=200} words that:
-- Connects the two passages naturally — temporal shift, scene break, or smooth flow as appropriate
-- Maintains voice, tense, POV
-- Does not contradict either passage
-- Ends with a clean lead-in to passage B's opening sentence
+- **Brainstorm** outputs to a sheet (not inserted at cursor); user picks a candidate to copy.
+- **Critique** outputs in the inspector History tab as an editorial note, not as inserted prose.
+- **Bridge** inserts at cursor between two written beats; takes the surrounding context heavily.
+- **Describe** uses the Bible entity (Setting / Object / Character) as the primary instruction source.
+- **NameSuggest** outputs a list; user picks one.
 
-Bridge:
-```
+## 6. Output post-processing
 
-**Output handling.** Inserts at the gap (or replaces the placeholder selection). Acceptance UI.
+`Sources/LoomCore/Generation/ThinkBlockStripper.swift` + `StreamingThinkBlockStripper.swift` + `RefusalDetector.swift` + `RefusalContinuation.swift` + `BeatOutputSanitizer.swift`.
 
----
+### 6.1 `<think>` block stripping
 
-## 8. Mode: Describe (Phase 4)
+Qwen-family models emit a `<think>...</think>` scratchpad before their actual response. The streaming stripper removes it on-the-fly so the user sees only the prose; the non-streaming stripper handles non-streaming endpoints. Without this, Qwen output renders with a visible reasoning trace.
 
-**What it does.** Sudowrite's Describe mode[A6] — generates rich sensory description of a thing, place, person, or feeling.
+### 6.2 Refusal detection + continuation
 
-**Trigger.** Selection of a *thing* (a noun phrase or a paragraph subject). Right-click → Describe, or `⌘⇧D`.
+`RefusalDetector` matches refusal patterns ("I cannot continue this content because…", "As an AI…", etc.). On match, `RefusalContinuation` constructs a continuation prompt that *unlocks* the refused beat by reframing — usually a clause appended to the original system prompt that asserts the work's literary stance + the requested explicitness. The user sees a one-click "Continue past refusal" button when a refusal is detected.
 
-**System prompt skeleton:**
+See [`LOOM_NSFW.md`](LOOM_NSFW.md) §3.5 for the design.
 
-```
-You are a fiction writer expanding a brief mention into rich, sensory prose. The selection identifies what to describe. Generate approximately {N_WORDS=150} words that:
-- Engage at least three of: sight, sound, smell, taste, touch, kinesthesia
-- Match the manuscript's voice, tense, and POV
-- Stay within the scene's emotional register (not florid prose in a tense scene)
-- Stop at a natural sentence boundary
+### 6.3 Beat output sanitisation
 
-Subject:
-{SELECTION}
-```
+`BeatOutputSanitizer` (Phase 7 — Scene-Template Generation) strips per-beat meta-commentary the model occasionally emits ("*This beat shows…*"). Generic post-processing; mostly applies to template-driven generation, not freehand modes.
 
-**Output handling.** Inserts at cursor (just after the selection). Acceptance UI.
+### 6.4 Anti-slop
 
----
+Anti-slop phrases (`ProjectSettings.antiSlopPhrases`, seeded from `AntiSlopDefaults`) are sent to KoboldCpp as `banned_strings` (phrase-level backtracking sampler). Per `Sources/LoomCore/Networking/KoboldClient.swift` → `GenerateRequest.bannedStrings`. The model never emits these phrases; the sampler backtracks if it tries. Seeded list curated from common "AI-tells" — *"eyes glinted with mischief,"* *"a shiver ran down her spine,"* etc.
 
-## 9. Mode: Name suggest (Phase 4)
+## 7. Per-call instruction (one-shot steering)
 
-**What it does.** Generate a list of names — characters, places, factions, items. Lightweight; replaces the popover-shape of Brainstorm with a more focused query.
+The editor's generation tray exposes a single-line **"Instruction"** input under the Continue/Expand buttons. Its content lands in `perCallInstruction` layer at generation time (just before `modeInstruction`) — one-shot steering for the next generation only. Cleared after the generation fires.
 
-**Trigger.** `⌘⇧Space N` (Loom-specific) or "+ Add character" in the Bible inspector when name is empty.
+Typical use:
 
-**System prompt skeleton:**
+- *"Make this dialogue-heavy."*
+- *"End on a cliffhanger."*
+- *"Mention the lighthouse."*
 
-```
-Generate {N=12} distinct names for a {character|place|faction|object} fitting:
-- Genre: {GENRE}
-- Setting: {SETTING_ONE_LINE}
-- Constraints: {USER_CONSTRAINTS or "no specific constraint"}
+Roll-Outcome (§1 above) populates this tray with a rolled lorebook entry's content; user can edit or accept-as-is before firing Continue.
 
-Names should be plausible, distinct from each other, and not over-clichéd for the genre. List one per line, no preamble.
-```
+## 8. Generation log + acceptance UX
 
-**Output handling.** Popover with selectable list. Click to use.
+### 8.1 `GenerationLogEntry`
 
----
+`Sources/LoomCore/Models/GenerationLog.swift` — one file per generation event at `generation-log/<iso-ts>.json`. Carries the full prompt assembly, the response, sampler snapshot, refusal flag, elapsed ms. See [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §17 for the shape.
 
-## 10. Mode-context matrix
+The **History inspector tab** pages over these files. Each entry expands to show the per-chiclet content (every layer's full text + token count). Useful for budget tuning and "why did the model say that."
 
-Quick reference: which context layers each mode consumes by default.
+### 8.2 Acceptance UX
 
-| Mode | Mem | BibleC | Style | Struct | BibleK | Ledger | Recent | FewShot | A/N | Phase |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Continue | ✓ | ✓ | (P5) | (P3+) | ✓ | (P4+) | **heavy** | (P5) | ✓ | 1 |
-| Expand | ✓ | ✓ | (P5) | (P3+) | ✓ | (P4+) | medium | (P5) | ✓ | 1 |
-| Rewrite (any) | ✓ | ✓ | (P5) | – | ✓ | – (POV: ✓) | light | (P5) | ✓ | 4 |
-| Brainstorm | ✓ | ✓ | – | (P3+) | ✓ | (P4+) | medium | – | – | 4 |
-| Critique | ✓ | ✓ | – | (P3+) | ✓ | (P4+) | medium | – | – | 4 |
-| Bridge | ✓ | ✓ | – | – | ✓ | (P4+) | A+B ends | – | ✓ | 4 |
-| Describe | – | ✓ | – | – | ✓ | – | light | – | ✓ | 4 |
-| Name suggest | – | ✓ (genre/setting only) | – | – | – | – | – | – | – | 4 |
+Generated spans get visual treatment per `LOOM_DESIGN_LANGUAGE.md` §14.6:
+- 6pt accent rule on the left of generated prose during pending state.
+- Accept / Reject / Redo buttons in a floating tray near the inserted text.
+- **Auto-accept on edit** — if the user types into a generated span, it's accepted; the rule disappears.
+- The span persists in `Scene.generatedSpans` as a record (with `accepted: true/false` and the `promptLogPath` back-pointer) — the visual badge fades but the history is permanent.
 
-`(P3+)` = available from that phase onward; `(P4+)` = same; `(P5)` = Phase 5 style ingestion.
+## 9. References
 
----
-
-## 11. Knowledge-ledger context layer (Phase 4+)
-
-Per research §O.2 / [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) §L.2 (Re3 Edit module).
-
-When the speaking POV character is identifiable, the prompt includes:
-
-```
-[KNOWLEDGE-LEDGER]
-{POV_CHARACTER} knows the following as of this scene:
-- {fact 1}
-- {fact 2}
-- ...
-
-{POV_CHARACTER} explicitly does NOT know:
-- {fact A}
-- ...
-
-{POV_CHARACTER} mistakenly believes:
-- {fact M} (actual: {fact M-truth})
-```
-
-This layer is small (~300–1000 tokens budget) but **load-bearing for consistency**. Without it, POV scenes routinely have characters reference information they couldn't have.
-
-The ledger is built incrementally:
-
-1. After scene completion, a side-call extractor (RPClient `summarizer` role server pattern) reads the new scene + the character list.
-2. Extractor outputs JSON: `[{character_id, fact, certainty, scene_id}]`.
-3. Loom merges into `bible/characters/<id>.json` `knownFactsBySceneId`.
-4. User can edit/delete facts in the Bible inspector.
-
-Implementation deferred to Phase 4. Schema lives in [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §3.1.
-
----
-
-## 12. Refusal handling
-
-Per RPClient `feedback_quirk_detectors` inheritance: when the response matches refusal patterns ("I can't help with…", "As an AI assistant…"), the History tab logs `refusalDetected: true` and the generation event surfaces a yellow chip in the History UI[§14.5.2]. Loom does **not** retry, modify the prompt, or apologise — the user sees what happened, sees the prompt, decides what to do.
-
-For uncensored local models this should be rare. When it happens, common causes are:
-
-- Model card uses a system prompt expecting safe-content alignment (user can override Memory).
-- Instruct template mismatch leading the model to revert to chat-default behaviour.
-- The user has typed a content prompt the model finds disagreeable; sampler increase or model swap solves.
-
----
-
-## 13. Output post-processing
-
-Minimal. Per RPClient `feedback_postprocessing_minimalism`:
-
-- Strip `<think>...</think>` blocks if model is thinking-mode-tuned (RPClient `ThinkBlockFilter` reuse).
-- Strip leading/trailing whitespace.
-- Strip leading "Sure, here's" / "Of course" / role-prefix artifacts ("Assistant:", "Author:", character name colon prefixes that aren't legitimate dialogue tags) — small allow-list of stripping patterns; conservative.
-
-**Do not:** auto-correct grammar; auto-format markdown; auto-collapse whitespace; auto-rephrase. The model's voice is what the user wanted.
-
----
-
-## 14. Mode acceptance UX summary
-
-| Mode | Inserts at | Replaces? | UI surface |
-|---|---|---|---|
-| Continue | Cursor | No | Inline acceptance |
-| Expand | Selection | Yes (sketch → prose) | Inline acceptance + auto-Snapshot |
-| Rewrite (any) | Selection | Yes | Inline acceptance + auto-Snapshot |
-| Brainstorm | Popover | – | Popover; click to insert |
-| Critique | History tab | – | Inspector pane only |
-| Bridge | Gap / selection | Yes | Inline acceptance |
-| Describe | After selection | No (insert) | Inline acceptance |
-| Name suggest | Popover | – | Popover; click to insert |
-
----
-
-## 15. References
-
-**Internal:**
-- [`LOOM_PLAN.md`](LOOM_PLAN.md) — phasing.
-- [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) — `GenerationLogEntry`, `GenerationDefaults`, `Scene` shape.
-- [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) — knowledge ledger pipeline.
-- [`LOOM_RESEARCH.md`](LOOM_RESEARCH.md) — citations.
-
-**External (RPClient):**
-- `Sources/RPClientCore/PromptBuilder.swift` — layered-injection precedent.
-- `Sources/RPClientCore/Templates.swift`, `GemmaTemplate.swift`, `QwenTemplate.swift` — instruct-template handling reuse.
-- `Sources/RPClientCore/ThinkBlockFilter.swift` — `<think>` strip reuse.
+- [`LOOM_DATA_MODEL.md`](LOOM_DATA_MODEL.md) §4.4 (Scene/GeneratedSpan/Snapshot), §4.5 (GenerationMode enum), §17 (GenerationLog).
+- [`LOOM_STORY_BIBLE.md`](LOOM_STORY_BIBLE.md) §8 (assembled injection order — high-level companion to §2 here).
+- [`LOOM_MEMORY.md`](LOOM_MEMORY.md) — conceptual architecture; this doc is the implementation reference.
+- [`LOOM_NSFW.md`](LOOM_NSFW.md) §3 (WritingDirection layer), §3.5 (refusal detection + continuation).
+- [`LOOM_SCENE_TEMPLATE.md`](LOOM_SCENE_TEMPLATE.md) + [`LOOM_SCENE_EXEMPLAR.md`](LOOM_SCENE_EXEMPLAR.md) — the L7 / L8 Scene-Template Generation path.
+- [`LOOM_TECH_STACK.md`](LOOM_TECH_STACK.md) "LLM transport & generation" + "Structured extraction" — solved-problem registry.
+- `Sources/LoomCore/Generation/PromptBuilder.swift` — the canonical implementation.
+- `Sources/LoomCore/Generation/GenerationCoordinator.swift` — the async orchestration around it.

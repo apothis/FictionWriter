@@ -207,12 +207,15 @@ Snapshots are taken automatically before AI rewrites and on demand. Stored inlin
 public enum GenerationMode: String, Codable, CaseIterable {
     case continueProse, expand,
          rewrite, rewriteVoice, rewriteTense, rewritePOV, rewriteLength,
-         showDontTell, brainstorm, critique, bridge, describe, nameSuggest,
-         rollOutcome, templateScene
+         showDontTell, brainstorm, critique, bridge, describe, nameSuggest
 }
 ```
 
-Per-mode prompt assembly lives in [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md). Availability per mode/cursor/selection lives in `Sources/LoomCore/Generation/GenerationModeAvailability.swift`.
+13 cases. Per-mode prompt assembly lives in [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md). Availability per mode/cursor/selection lives in `Sources/LoomCore/Generation/GenerationModeAvailability.swift`.
+
+Two adjacent generation paths exist outside the enum:
+- **Roll-Outcome** (Bible menu) — rolls a weighted lorebook group entry into the per-call instruction tray; it primes the next Continue rather than firing its own generation. `AppDelegate.rollOutcomeClicked` + `LorebookRoller.swift`.
+- **Scene-Template Generation** (L7) — per-template per-beat draft via `TemplateGenerationCoordinator.swift`. Its own pipeline (`BeatGeneration.buildBeatPrompt`); not represented in `GenerationMode`.
 
 ## 5. Bible
 
@@ -643,7 +646,7 @@ public struct GenerationResponse: Codable, Equatable {
 }
 ```
 
-One file per generation event at `generation-log/<iso-timestamp>.json`. `ContextChiclet` carries `label / sourceKind: ChicletKind / sourceId / contentExcerpt / fullContent / tokenCount`; `ChicletKind` covers `recentProse, sceneSummary, chapterSummary, projectSummary, characterSheet, settingSheet, objectSheet, factionSheet, lorebookEntry, authorsNote, memory, styleSheet, sceneMetadata, knowledgeLedger, fewShotStyleExample, dynamicSheet, writingDirection`.
+One file per generation event at `generation-log/<iso-timestamp>.json`. `ContextChiclet` carries `label / sourceKind: ChicletKind / sourceId / contentExcerpt / fullContent / tokenCount`. The actual `ChicletKind` enum (`PromptBuilder.swift`) has 20 cases — `system, projectMemory, styleSheet, projectSummary, chapterSummary, sceneSummary, bibleConstant, bibleKeyed, lorebookEntry, knowledgeLedger, recentProse, sceneAnchor, authorsNote, perCallInstruction, modeInstruction, fewShotStyleExample, directionDirective, sceneFraming, dynamicSheet, intimateAnatomy`. See [`LOOM_GENERATION_MODES.md`](LOOM_GENERATION_MODES.md) §2 for layer ordering + above/below-cache split.
 
 `TemplateGenerationInfo` carries L7's per-template generation metadata (template id, beat being generated, etc.) — set only when `mode == .templateScene`.
 
