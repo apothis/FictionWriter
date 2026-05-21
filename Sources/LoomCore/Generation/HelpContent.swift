@@ -54,6 +54,13 @@ public enum HelpContent {
             order: 3,
             group: "Getting Started"
         ),
+        HelpSection(
+            id: "getting-started-first-project",
+            title: "Your first project",
+            book: .userHelp,
+            order: 4,
+            group: "Getting Started"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
