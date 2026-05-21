@@ -47,6 +47,13 @@ public enum HelpContent {
             order: 2,
             group: "Getting Started"
         ),
+        HelpSection(
+            id: "getting-started-configure-servers",
+            title: "Configure your model servers",
+            book: .userHelp,
+            order: 3,
+            group: "Getting Started"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
