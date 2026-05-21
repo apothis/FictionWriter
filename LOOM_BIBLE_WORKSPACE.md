@@ -1,18 +1,9 @@
-# Loom — Phase 4.5 Bible Workspace (WKWebView pilot)
+# Loom — Bible Workspace (WKWebView)
 
-> **Status: planned, not started (2026-05-12).** Five-session arc.
-> First session ships the build pipeline + bridge + read-only entity
-> list. See §7 *Session plan* for the work breakdown and §11 *Status
-> ledger* for what's landed.
->
-> **Reference back:** [`LOOM_PLAN.md`](LOOM_PLAN.md) row L4.5 +
-> [`LOOM_PLAN.md`](LOOM_PLAN.md) §5 *Phase 4.5 — Bible Workspace*
-> point at this doc as the authoritative scope.
->
-> **Repo state at plan-start:** main branch on `06c7f1a`, 808/808
-> tests passing. Three Phase 4 §15.10 slices shipped this session
-> (rewriteTense no-op-target guard, streaming-aware ThinkBlockStripper,
-> POV picker disambiguation). Bible Workspace is the next major arc.
+> **Last code cross-check:** 2026-05-21
+> **Status:** ✅ **Phase 4.5 complete** 2026-05-13 (the original 5-session arc shipped end-to-end); subsequent phases extended the workspace with **References (Phase 5)**, **Template Scenes (Phase 7)**, **Scene Exemplars (Phase 8)**, **Entity Proposals (Phase 9)**, and **DynamicSheet** editors. The doc body (§§1–10) is the *authoritative architectural rationale* (why webview, why this bridge contract, why this surface only — all still load-bearing). The five Phase 4.5 sessions in §11 are historical records of how it landed. **§1.1 below** is the only current surface map; all later additions live there.
+> **Posture:** where this doc and code disagree, **the code wins**. The pivot-rationale (§2) and architectural choices (§4–§5) are evergreen design intent and remain authoritative.
+> **Reference back:** [`LOOM_PLAN.md`](LOOM_PLAN.md) row L4.5 marked ✅ landed 2026-05-13.
 
 ---
 
@@ -24,16 +15,26 @@ existing AppKit side-pane inspector stays for always-glanceable
 mode + inject-pill workflow; the workspace is for the long-form
 editing the side-pane can't fit.
 
-Surfaces, in landing order (§7):
+### 1.1 Current surfaces (as of 2026-05-21)
 
-1. **Window shell + bridge** + read-only entity list
-2. **Full character editor** — every `Character` field (relationships,
-   canon-brief, custom fields, etc.)
-3. **Lorebook full editor** — all 11 `LorebookEntry` fields (current
-   v1 surfaces only 4 of 11)
-4. **Accepted-facts examiner** — per-character KNOWS grouped by
-   sceneId, with delete affordance (fills the §15.9 audit gap)
-5. **Suggestions-queue review** — cross-character pending suggestions
+The workspace today renders the following sections, each its own React view under `web/bible-workspace/src/views/`:
+
+| Section | Surface | Source code | Phase |
+|---|---|---|---|
+| **Characters** | Full editor (every `Character` field), Tabs primitive, knowledge-ledger examiner with per-scene facts grouped + delete, Kinks tab (NSFW), Custom Fields tab, intimate/apparent anatomy fields | `CharacterEditor.tsx` | 4.5 + NSFW extensions |
+| **Lorebook** | All 13 power-user `LorebookEntry` fields editable: keys, secondaryKeys, activationMode, priority, positionMode + conditional depth, maxRecentScenesScanned, group, weight, sticky, activateFromSceneId, activateUntilSceneId | `LorebookEditor.tsx` | 4.5 |
+| **Dynamics** | Per-relationship `DynamicSheet` editor: participants picker, roles/wants/softLimits/hardLimits/safeword/arc, alwaysOn / participant-keyed toggle | `DynamicSheetEditor.tsx` | 4 NSFW arc |
+| **References** | L5 style ingestion — name, NSFW flag, body, ingest/re-ingest/delete header actions, chunk-count badge + word count + stale-model warning | `ReferenceEditor.tsx` | 5 |
+| **Template Scenes** | L7 structural blueprints — body editor + "Extract beats" action, beat-count badge | `TemplateSceneEditor.tsx` | 7 |
+| **Scene Exemplars** | L8 unified surface — one entity creates both a Reference AND a Template under a shared UUID; one Ingest action fans out to both pipelines | `SceneExemplarEditor.tsx` | 8 |
+| **Entity proposals** | L9 auto-discovery review queue — per-row editable canonical name + aliases + one-line + evidence quote + collapsible facts, accept-as-Character/Setting/Object | `EntityProposalsQueue.tsx` | 9 |
+| **Suggestions queue** | Cross-character pending knowledge-ledger fact suggestions (accept/reject per fact) | `SuggestionsQueue.tsx` | 4.5 |
+
+Each section's left-rail entry shows in-flight indicators when a background pipeline is running on it (L5 ingest pulse-dot, L7 beat-extract pulse, L9 entity-discovery pulse).
+
+### 1.2 Original Phase 4.5 surfaces (historical, §7+§11)
+
+Phase 4.5's five-session arc shipped Characters / Lorebook / Accepted-Facts Examiner / Suggestions Queue (the 4 of the 5 sections above that pre-date Phase 5). The "Session N" history in §11 records how those landed. The sections that came *later* (References, Templates, Scene Exemplars, Dynamics editor, Entity Proposals) are recorded in [`HANDOFF.md`](HANDOFF.md) per their phase (§15.13 for L5, §15.14 for L7, §15.15/§15.16 for L8, §15.18+ for L9).
 
 ---
 
