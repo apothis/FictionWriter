@@ -12,6 +12,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     private var mainWindow: MainWindowController!
     private weak var recentProjectsMenu: NSMenu?
     private var settingsWindow: SettingsWindowController?
+    /// Lazy in-app reference help window. Opened via Help → Loom Help
+    /// (or ⌘?). One instance per app; survives re-opens.
+    private var helpWindow: HelpWindowController?
 
     /// Last server status observed by the periodic health probe.
     /// Drives edge-only debug logging via
@@ -409,6 +412,25 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         discoverRelationships.toolTip = "Run relationship discovery against the current scene. Proposed character relationships are written to the project's proposed-relationships sidecar. (Phase 10)"
         bibleMenu.addItem(discoverRelationships)
         bibleMenuItem.submenu = bibleMenu
+
+        // Help menu — last in the menu bar by macOS convention.
+        // Carries the canonical "<App> Help" item; future entries
+        // (release notes, report-an-issue, etc.) live here too.
+        let helpMenuItem = NSMenuItem()
+        main.addItem(helpMenuItem)
+        let helpMenu = NSMenu(title: "Help")
+        let loomHelp = NSMenuItem(
+            title: "Loom Help",
+            action: #selector(showHelp(_:)),
+            keyEquivalent: "?")
+        loomHelp.target = self
+        loomHelp.toolTip = "Open the in-app reference help panel (User Help + Technical Reference)."
+        helpMenu.addItem(loomHelp)
+        helpMenuItem.submenu = helpMenu
+        // Tell AppKit this is the application's Help menu so it gets
+        // the standard Spotlight-search field at the top + correct
+        // automatic positioning.
+        NSApp.helpMenu = helpMenu
 
         NSApp.mainMenu = main
     }
@@ -1032,6 +1054,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             settingsWindow = SettingsWindowController(appState: AppState.shared)
         }
         settingsWindow?.showAndActivate()
+    }
+
+    /// Open (or front) the in-app help panel. App-level — no project
+    /// context needed. Lazy-created on first invocation; reused
+    /// thereafter so the user's place in the TOC survives close/open.
+    @objc func showHelp(_ sender: Any?) {
+        if helpWindow == nil {
+            helpWindow = HelpWindowController()
+        }
+        helpWindow?.showWindow(nil)
+        helpWindow?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
