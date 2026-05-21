@@ -33,6 +33,13 @@ public enum HelpContent {
             order: 0,
             group: nil
         ),
+        HelpSection(
+            id: "getting-started-what-is-loom",
+            title: "What Loom is",
+            book: .userHelp,
+            order: 1,
+            group: "Getting Started"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
