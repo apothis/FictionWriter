@@ -124,6 +124,13 @@ public enum HelpContent {
             order: 150,
             group: "Reference"
         ),
+        HelpSection(
+            id: "references",
+            title: "References (style ingestion)",
+            book: .userHelp,
+            order: 160,
+            group: "Reference"
+        ),
     ]
 
     /// Technical Reference — engineer-facing architectural + per-
