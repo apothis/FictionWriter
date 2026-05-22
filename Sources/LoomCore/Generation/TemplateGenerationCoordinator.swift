@@ -41,6 +41,17 @@ public final class TemplateGenerationCoordinator {
     /// closure over the project's `RetrievalService` (the same shape
     /// as `GenerationCoordinator.styleRetriever`).
     public let styleRetriever: ((_ query: String, _ modality: NarrativeMode?) -> [StyleExemplar])?
+    /// Resolves the instruct template the per-beat prompt is wrapped in
+    /// before it hits the writer. `BeatGeneration.buildBeatPrompt`
+    /// produces an instruct-template-AGNOSTIC body (plain `[SYSTEM]`
+    /// text markers); KoboldCpp's `/api/v1/generate` is raw completion,
+    /// so without wrapping the body reaches a Gemma/Qwen *instruct*
+    /// model with no turn framing — which degrades instruction-following
+    /// badly (POV drift, incoherent seams; observed 2026-05-22). This
+    /// closure lets AppState supply the writer's detected template;
+    /// default `{ .auto }` (raw, unchanged body) preserves existing
+    /// test behaviour.
+    public let instructTemplateResolver: () -> InstructTemplate
     private let logStore: GenerationLogStore
 
     /// Posted when a template generation starts. Object is `self`.
@@ -118,13 +129,15 @@ public final class TemplateGenerationCoordinator {
         writerResolver: @escaping (UUID?) -> KoboldGenerating,
         appDefaultProfileIdProvider: @escaping () -> UUID? = { nil },
         logStore: GenerationLogStore = GenerationLogStore(),
-        styleRetriever: ((_ query: String, _ modality: NarrativeMode?) -> [StyleExemplar])? = nil
+        styleRetriever: ((_ query: String, _ modality: NarrativeMode?) -> [StyleExemplar])? = nil,
+        instructTemplateResolver: @escaping () -> InstructTemplate = { .auto }
     ) {
         self.session = session
         self.writerResolver = writerResolver
         self.appDefaultProfileIdProvider = appDefaultProfileIdProvider
         self.logStore = logStore
         self.styleRetriever = styleRetriever
+        self.instructTemplateResolver = instructTemplateResolver
     }
 
     // MARK: - Lifecycle
@@ -269,13 +282,21 @@ public final class TemplateGenerationCoordinator {
             imitateContent: pendingImitateContent,
             extraInstruction: pendingExtraInstruction
         ) + WritingDirectionPrompt.systemAddendum(session.project.settings.writingDirection)
-        // Capture per-beat prompt for the generation-log entry. Append
-        // on the FIRST attempt of each beat (retries reuse the slot
-        // rather than create duplicate entries).
+        // Wrap the instruct-template-agnostic body in the writer's
+        // actual chat template (Gemma/Qwen/Mistral turn tokens). Raw
+        // `/api/v1/generate` does no wrapping, so an unwrapped body
+        // reaches an instruct model with no turn framing — the cause of
+        // the 2026-05-22 POV-drift / incoherent-seam output. `.auto`
+        // (raw) leaves the body unchanged.
+        let adapter = InstructTemplates.adapter(for: instructTemplateResolver())
+        let wrappedPrompt = adapter.wrap(system: "", userBody: prompt, prefill: "")
+        // Capture the WRAPPED prompt for the generation-log entry — it's
+        // what was actually sent. Append on the FIRST attempt of each
+        // beat (retries reuse the slot rather than create duplicates).
         if retryAttemptsRemaining == 1 {
-            pendingBeatPrompts.append(prompt)
+            pendingBeatPrompts.append(wrappedPrompt)
         } else if let lastIdx = pendingBeatPrompts.indices.last {
-            pendingBeatPrompts[lastIdx] = prompt
+            pendingBeatPrompts[lastIdx] = wrappedPrompt
         }
         // Punchlist item 2 (§7.a.2): NO bare `[` in the stop list — the
         // model opens beats with `[silence]` / `[the protagonist…]`
@@ -308,7 +329,7 @@ public final class TemplateGenerationCoordinator {
             "[LENGTH ", "[PACING ", "[VOICE ", "[DIALOGUE ",
             "[OUTPUT ", "[PROSE ", "[SCENE ", "[META ",
             "[SELF ", "[VERIFY ", "[NOTE ",
-        ]
+        ] + adapter.stopSequences   // stop at the model's end-of-turn token
         self.lastStopSequences = stops
 
         // Phase 8.b.x — beat budget bumped from 2× targetWords to
@@ -330,7 +351,7 @@ public final class TemplateGenerationCoordinator {
         DebugLog.shared.write("[template-gen] beat \(index)/\(skeleton.beats.count - 1) (\(beat.modality.rawValue), \(beat.function.rawValue), target \(beat.targetWords)w)")
 
         writer.generate(
-            prompt: prompt,
+            prompt: wrappedPrompt,
             stopSequences: stops,
             params: params,
             maxContextLength: session.project.settings.contextBudgetTokens,

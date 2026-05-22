@@ -851,6 +851,23 @@ public final class AppState {
         return true
     }
 
+    /// The writer model's name, resolved freshest-first: an explicit
+    /// profile override, then the live health-probe result, then the
+    /// cached capabilities. Nil only when nothing is known yet.
+    public func writerModelName() -> String? {
+        settings.writerServer()?.model
+            ?? lastProbedModelName
+            ?? settings.writerServer()?.capabilities?.modelName
+    }
+
+    /// The instruct template for the writer, from `writerModelName()`,
+    /// falling back to `.auto` (raw) for an unknown/absent model. Wraps
+    /// both Pass-A beat extraction and Pass-B per-beat generation so an
+    /// instruct model gets its turn framing instead of a raw blob.
+    public func writerInstructTemplate() -> InstructTemplate {
+        writerModelName().flatMap(InstructTemplates.detect) ?? .auto
+    }
+
     // MARK: - Project lifecycle (1.j.A)
 
     /// Create a fresh `.loom` directory at `url`, switch the current
@@ -1111,14 +1128,12 @@ public final class AppState {
         // unrecognised/absent name falls back to `.auto` (raw) — the
         // GBNF still constrains output, so this can't regress to garbage.
         let client = registry.clientForDefault()
-        // Resolve the writer's model name, freshest signal first:
-        // an explicit profile override, then the live health-probe
-        // result, then the cached capabilities. The live probe means
-        // template detection works without the user typing a model.
-        let writerModelName = writer.model ?? lastProbedModelName ?? writer.capabilities?.modelName
-        let template = writerModelName.flatMap(InstructTemplates.detect) ?? .auto
+        // Freshest-first model resolution + template detection live on
+        // AppState (shared with Pass-B per-beat generation).
+        let resolvedModelName = writerModelName()
+        let template = writerInstructTemplate()
         let maxContext = writer.capabilities?.trueMaxContext ?? 8192
-        DebugLog.shared.write("[template] extract via writer model=\(writerModelName ?? "unknown") template=\(template.rawValue) id=\(id)")
+        DebugLog.shared.write("[template] extract via writer model=\(resolvedModelName ?? "unknown") template=\(template.rawValue) id=\(id)")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let extractor = KoboldBeatExtractor(
                 client: client, template: template, maxContextLength: maxContext

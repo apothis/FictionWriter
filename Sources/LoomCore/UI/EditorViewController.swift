@@ -341,7 +341,10 @@ public final class EditorViewController: NSViewController, NSTextViewDelegate {
             appDefaultProfileIdProvider: {
                 AppState.shared.settings.defaultServerId
             },
-            styleRetriever: AppState.shared.styleRetriever()
+            styleRetriever: AppState.shared.styleRetriever(),
+            instructTemplateResolver: {
+                AppState.shared.writerInstructTemplate()
+            }
         )
         templateGenStartObserver = NotificationCenter.default.addObserver(
             forName: TemplateGenerationCoordinator.didStartNotification,

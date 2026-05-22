@@ -86,6 +86,44 @@ func phase7TemplateGenerationCoordinatorTests() -> TestSuite {
         }
     }
 
+    // MARK: - Instruct-template wrapping (2026-05-22 POV-drift fix)
+
+    s.test("Per-beat prompt is wrapped in the resolved instruct template (gemma4)") {
+        let (projectURL, templateId) = try bootstrap(beatCount: 1)
+        defer { try? FileManager.default.removeItem(at: projectURL) }
+        let session = ProjectSession(project: Project(title: "T"), url: projectURL)
+        _ = session.addScene()
+        let stub = StubWriter(responses: [.success("Beat zero prose.")])
+        let coord = TemplateGenerationCoordinator(
+            session: session,
+            writerResolver: { _ in stub },
+            instructTemplateResolver: { .gemma4 }
+        )
+        coord.start(templateId: templateId, castMapping: "Maya is protagonist", cursorOffset: 0)
+        stub.flush()
+        let sent = try expectNotNil(stub.capturedPrompts.first)
+        // KoboldCpp /api/v1/generate is raw; the coordinator must apply
+        // the model's turn framing or an instruct model gets a raw blob.
+        try expectTrue(sent.contains("<|turn>user"), "expected gemma4 turn framing")
+        // The agnostic body still sits inside the wrapped prompt.
+        try expectTrue(sent.contains("Write beat 0"))
+    }
+
+    s.test("Default instruct template (.auto) leaves the per-beat body raw") {
+        let (projectURL, templateId) = try bootstrap(beatCount: 1)
+        defer { try? FileManager.default.removeItem(at: projectURL) }
+        let session = ProjectSession(project: Project(title: "T"), url: projectURL)
+        _ = session.addScene()
+        let stub = StubWriter(responses: [.success("Beat zero prose.")])
+        // No resolver → default .auto → RawAdapter → body unchanged.
+        let coord = TemplateGenerationCoordinator(session: session, writerResolver: { _ in stub })
+        coord.start(templateId: templateId, castMapping: "Maya", cursorOffset: 0)
+        stub.flush()
+        let sent = try expectNotNil(stub.capturedPrompts.first)
+        try expectFalse(sent.contains("<|turn>"), "auto/raw must not add turn tokens")
+        try expectTrue(sent.contains("Write beat 0"))
+    }
+
     // MARK: - Happy path
 
     s.test("Coordinator runs M beats sequentially, accumulating prose") {
