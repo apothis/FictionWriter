@@ -285,6 +285,13 @@ public enum HelpContent {
             group: nil
         ),
         HelpSection(
+            id: "conventions-dead-ends",
+            title: "Conventions + dead ends",
+            book: .technical,
+            order: 120,
+            group: nil
+        ),
+        HelpSection(
             id: "debug-log",
             title: "Debug log subsystems + signal reference",
             book: .technical,
