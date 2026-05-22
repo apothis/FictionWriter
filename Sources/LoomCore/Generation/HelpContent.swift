@@ -160,6 +160,13 @@ public enum HelpContent {
             group: "Reference"
         ),
         HelpSection(
+            id: "snapshots",
+            title: "Snapshots + version history",
+            book: .userHelp,
+            order: 185,
+            group: "Reference"
+        ),
+        HelpSection(
             id: "nsfw-posture",
             title: "NSFW / dark-fiction posture",
             book: .userHelp,
