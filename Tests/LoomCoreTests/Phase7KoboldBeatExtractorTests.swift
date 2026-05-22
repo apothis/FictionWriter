@@ -69,14 +69,14 @@ func phase7KoboldBeatExtractorTests() -> TestSuite {
         {"beats": [{"index": 0, "function": "setup", "modality": "description", "summary": "{PROTAGONIST} arrives.", "targetWords": 80, "wordRangeStart": 0, "wordRangeEnd": 80, "beatTensionChange": 0}], "sourceCharacters": ["Hadley"], "sourceSettingMarkers": ["kitchen"], "voiceDescriptor": {"sentenceCadence": "shortClipped", "dialogueDensity": "balanced", "rhetoricalFlourish": "minimal", "register": "noir", "distinctiveTechniques": ["fragments"]}}
         """
 
-    s.test("KoboldBeatExtractor sends the GBNF grammar + instruct-wrapped prompt; parses success") {
+    s.test("KoboldBeatExtractor is unconstrained by default (no grammar) but instruct-wraps; parses success") {
         let stub = StubKoboldClient(responses: [.success(canned)])
         let extractor = KoboldBeatExtractor(client: stub)
         var result: Result<ExtractedSceneSkeleton, Error>? = nil
         extractor.extractSkeleton(from: "She walked into the kitchen.") { r in result = r }
-        // Grammar + wrapped prompt captured before completion fires.
-        try expectNotNil(stub.capturedGrammar)
-        try expectTrue(stub.capturedGrammar?.contains("root ::=") == true)
+        // Default path: NO grammar (let a Thinking writer reason first),
+        // but the prompt is still instruct-wrapped + carries the source.
+        try expectNil(stub.capturedGrammar)
         try expectTrue(stub.capturedPrompt?.contains("She walked into the kitchen.") == true)
         stub.flush()
         if case .success(let skel) = result {
@@ -86,6 +86,17 @@ func phase7KoboldBeatExtractorTests() -> TestSuite {
         } else {
             try expectFalse(true, "expected success")
         }
+    }
+
+    s.test("KoboldBeatExtractor sends the GBNF grammar when useGrammar: true (non-thinking writers)") {
+        let stub = StubKoboldClient(responses: [.success(canned)])
+        let extractor = KoboldBeatExtractor(client: stub, useGrammar: true)
+        var result: Result<ExtractedSceneSkeleton, Error>? = nil
+        extractor.extractSkeleton(from: "x") { r in result = r }
+        try expectNotNil(stub.capturedGrammar)
+        try expectTrue(stub.capturedGrammar?.contains("root ::=") == true)
+        stub.flush()
+        if case .success = result {} else { try expectFalse(true, "expected success") }
     }
 
     s.test("KoboldBeatExtractor retries on decodingFailed (malformed roll) and recovers") {

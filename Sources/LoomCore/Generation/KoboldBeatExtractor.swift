@@ -25,17 +25,30 @@ public final class KoboldBeatExtractor: BeatExtractor {
     private let template: InstructTemplate
     private let baseParams: SamplerParams
     private let maxContextLength: Int
+    private let useGrammar: Bool
 
+    /// `useGrammar` defaults to **false** — Pass-A runs unconstrained.
+    /// GBNF guarantees well-formed JSON but not *meaningful* structure:
+    /// on a reasoning (Thinking) writer, forcing JSON from token 0
+    /// suppresses the reasoning the model needs to assign sensible beat
+    /// functions + word counts, and it emits valid-but-degenerate
+    /// skeletons (live 2026-05-22: 26 beats all `arrival`, targetWords
+    /// 0). Unconstrained lets the model think first; we strip the think
+    /// block + tolerant-parse the JSON it emits after. Pass `useGrammar:
+    /// true` for a non-thinking writer where the grammar's structural
+    /// guarantee is a net win.
     public init(
         client: KoboldGenerating,
         template: InstructTemplate = .mistralV7,
         params: SamplerParams = .phase1Defaults,
-        maxContextLength: Int = 8192
+        maxContextLength: Int = 8192,
+        useGrammar: Bool = false
     ) {
         self.client = client
         self.template = template
         self.baseParams = params
         self.maxContextLength = maxContextLength
+        self.useGrammar = useGrammar
     }
 
     /// Source-length-scaled output budget. Same scaling as
@@ -54,7 +67,7 @@ public final class KoboldBeatExtractor: BeatExtractor {
         completion: @escaping (Result<ExtractedSceneSkeleton, Error>) -> Void
     ) {
         let prompt = BeatExtraction.buildExtractionPrompt(sourceProse: sourceProse)
-        let grammar = BeatExtraction.gbnfGrammar()
+        let grammar: String? = useGrammar ? BeatExtraction.gbnfGrammar() : nil
         let adapter = InstructTemplates.adapter(for: template)
         let wrapped = adapter.wrap(system: "", userBody: prompt, prefill: "")
 
@@ -77,7 +90,7 @@ public final class KoboldBeatExtractor: BeatExtractor {
         wrapped: String,
         stops: [String],
         params: SamplerParams,
-        grammar: String,
+        grammar: String?,
         attemptsRemaining: Int,
         completion: @escaping (Result<ExtractedSceneSkeleton, Error>) -> Void
     ) {
@@ -94,9 +107,11 @@ public final class KoboldBeatExtractor: BeatExtractor {
         ) { result in
             switch result {
             case .success(let raw):
-                // Defensive think-strip: the grammar should prevent a
-                // `<think>` prefix, but stripping is free and robust if
-                // the server applies the grammar after a reasoning span.
+                // Strip the reasoning block. On the unconstrained path
+                // (the default) the Thinking writer reasons first, THEN
+                // emits the JSON — so the `<think>`/`<|channel>thought`
+                // span is expected here and must come off before the
+                // tolerant parser looks for the `{...}`.
                 let cleaned = ThinkBlockStripper.strip(raw)
                 if cleaned.isEmpty, attemptsRemaining > 0 {
                     var bumped = params

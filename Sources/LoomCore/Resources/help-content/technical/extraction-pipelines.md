@@ -32,7 +32,7 @@ Every Ollama extractor follows the same shape:
 | **Entity discovery** | 9 | `GLiNERCandidateDetector` + `OllamaEntityDiscoveryExtractor` | post-scene, 500-word delta (`EntityDiscoveryTrigger`), piggybacks on ledger | `ProposedEntitiesStore` |
 | **Relationship discovery** | 10 | `OllamaRelationshipDiscoveryExtractor` (vote-aggregated) | post-scene | `ProposedRelationshipsStore` |
 | **Continuity audit** | 10 | `OllamaContinuityExtractor` (two-stage) | on-demand | `ContinuityAuditStore` |
-| **Scene-template beats** | 7 | `KoboldBeatExtractor` (Pass-A, **writer + GBNF**) | on Extract (manual) | `templates/<id>.beats.json` |
+| **Scene-template beats** | 7 | `KoboldBeatExtractor` (Pass-A, **writer**; unconstrained by default) | on Extract (manual) | `templates/<id>.beats.json` |
 
 ### Knowledge ledger
 
@@ -56,7 +56,13 @@ The most elaborate. Per-scene typed-claim extraction (`OllamaContinuityExtractor
 
 `KoboldBeatExtractor` (Pass-A) walks a template scene's prose and emits an `ExtractedSceneSkeleton` — ordered beats with modality tags + pacing + a `VoiceDescriptor`. Persisted as `templates/<id>.beats.json`, consumed at generation time by `TemplateGenerationCoordinator` (Pass-B). See **Scene exemplars + templates** in User Help + `LOOM_SCENE_TEMPLATE_SPIKE.md`.
 
-This is the one extraction pass that runs on the **writer (KoboldCpp) with a GBNF grammar** (`BeatExtraction.gbnfGrammar()`), not the Ollama extractor — and it's the exception that proves the transport rule above. It originally used the Ollama `format`-schema path and hit exactly the documented failure mode (2026-05-22: a 97KB off-schema body that failed to parse). GBNF on the writer is the reliable structural constraint; `KoboldBeatExtractor` instruct-wraps the prompt, constrains with the grammar, strips `<think>` defensively (the writer may be a Thinking model), tolerant-parses, and retries once on empty / `noJSONObjectFound` / `decodingFailed`. A sibling `OllamaBeatExtractor` (same retry posture, `format`-schema) is retained but no longer the production path.
+This pass runs on the **writer (KoboldCpp)**, not the Ollama extractor, and its transport history is instructive:
+
+1. It started on the Ollama `format`-schema path and hit the documented failure (2026-05-22: a 97KB off-schema body that failed to parse).
+2. Moved to the writer **with a GBNF grammar** — which fixed the *parse* failure (always valid JSON) but exposed a deeper one: GBNF guarantees structure, not *meaningful values*. On a **Thinking** writer, forcing JSON from token 0 suppresses the reasoning the model needs, and it emits valid-but-degenerate skeletons (26 beats all `arrival`, `targetWords` 0).
+3. So the production default is now **unconstrained** (`useGrammar: false`): the Thinking writer reasons first, then emits the JSON; `KoboldBeatExtractor` instruct-wraps the prompt, strips the `<think>`/`<|channel>thought` block, tolerant-parses the `{...}` after it, and retries once on empty / `noJSONObjectFound` / `decodingFailed`. `useGrammar: true` re-enables the grammar for a **non-thinking** writer, where the structural guarantee is a net win.
+
+A sibling `OllamaBeatExtractor` (same retry posture, `format`-schema) is retained but is not the production path. The lesson: **GBNF buys well-formed JSON, not well-chosen values — and on a reasoning model the two trade off.**
 
 ## Why the tolerant parser, concretely
 
