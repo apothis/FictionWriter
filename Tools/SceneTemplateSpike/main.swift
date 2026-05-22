@@ -251,11 +251,12 @@ func runPassB(
         let elapsed = Date().timeIntervalSince(start)
         switch result {
         case .success(let raw):
-            // Strip per-beat meta-commentary ([Length:...]/[Pacing
-            // check]/etc.) exactly as production does
-            // (TemplateGenerationCoordinator → BeatOutputSanitizer.strip),
-            // so the spike's assembled scene matches the app's output.
-            let trimmed = BeatOutputSanitizer.strip(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+            // Strip per-beat meta-commentary + trim over-long beats to a
+            // sentence boundary, exactly as production does
+            // (TemplateGenerationCoordinator → BeatOutputSanitizer), so
+            // the spike's assembled scene matches the app's output.
+            let stripped = BeatOutputSanitizer.strip(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+            let trimmed = BeatOutputSanitizer.truncateToSentenceBoundary(stripped, targetWords: beat.targetWords)
             let words = trimmed.split(whereSeparator: { $0.isWhitespace }).count
             log("  → \(words)w (target \(beat.targetWords)) in \(String(format: "%.1fs", elapsed))")
             outputs.append(BeatGenerationOutput(

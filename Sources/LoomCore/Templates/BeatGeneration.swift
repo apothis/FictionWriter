@@ -108,6 +108,12 @@ public enum BeatGeneration {
         if priorBeatsProse.isEmpty {
             priorBeatsSection = "[BEATS BEFORE THIS — no prior beats yet; this is the opening]"
         } else {
+            // Full running scene for continuity. A short-tail variant
+            // was tried (2026-05-22) to curb long-range verbatim copying
+            // but it cost character-name consistency across beats — the
+            // writer lost track of established names — so the full buffer
+            // is retained; the anti-repetition instruction below is the
+            // lever against copying.
             priorBeatsSection = """
                 [BEATS BEFORE THIS — already generated, do not regenerate]
                 \(priorBeatsProse)

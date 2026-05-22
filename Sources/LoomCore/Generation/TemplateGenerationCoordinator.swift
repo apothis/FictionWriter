@@ -460,7 +460,16 @@ public final class TemplateGenerationCoordinator {
         let beatRange = NSRange(location: start, length: totalLen - start)
         guard beatRange.length > 0 else { return }
         let beatTail = totalNS.substring(with: beatRange)
-        let cleaned = BeatOutputSanitizer.strip(beatTail)
+        var cleaned = BeatOutputSanitizer.strip(beatTail)
+        // Rein in over-long beats to a sentence boundary (the writer
+        // ignores the soft length nudge on long-form scenes). No-op
+        // when within budget or when beatIndex is out of range.
+        if let skeleton = pendingSkeleton,
+           beatIndex >= 0, beatIndex < skeleton.beats.count {
+            cleaned = BeatOutputSanitizer.truncateToSentenceBoundary(
+                cleaned, targetWords: skeleton.beats[beatIndex].targetWords
+            )
+        }
         guard cleaned != beatTail else { return }
 
         // Replace the tail in insertedText.

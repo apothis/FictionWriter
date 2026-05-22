@@ -178,4 +178,53 @@ public enum BeatOutputSanitizer {
         }
         return out
     }
+
+    /// Trim a beat that overshot its target length back to a SENTENCE
+    /// boundary, never mid-word. The writer systematically runs long
+    /// and ignores soft length nudges (2026-05-22 test5 run: beats 1.5–2×
+    /// over target); a hard token cap would clip mid-word, so instead
+    /// we drop whole trailing sentences once the beat exceeds
+    /// `targetWords * (1 + maxOvershoot)`.
+    ///
+    /// Conservative: if no sentence boundary keeps the beat within
+    /// budget (one long run-on sentence), the text is returned
+    /// untouched rather than mangled. `targetWords <= 0` is a no-op.
+    public static func truncateToSentenceBoundary(
+        _ text: String,
+        targetWords: Int,
+        maxOvershoot: Double = 0.5
+    ) -> String {
+        guard targetWords > 0 else { return text }
+        let totalWords = text.split(whereSeparator: { $0.isWhitespace }).count
+        let budget = Int(Double(targetWords) * (1 + maxOvershoot))
+        guard totalWords > budget else { return text }
+
+        let sentences = SentenceSplitter.split(text)
+        guard sentences.count > 1 else { return text }
+
+        var kept: [String] = []
+        var cumulative = 0
+        for sentence in sentences {
+            let w = sentence.split(whereSeparator: { $0.isWhitespace }).count
+            if cumulative + w <= budget {
+                kept.append(sentence)
+                cumulative += w
+            } else {
+                break
+            }
+        }
+        guard !kept.isEmpty else { return text }  // first sentence already over budget
+
+        // Locate the cut offset in the ORIGINAL text so paragraph
+        // breaks + punctuation are preserved (SentenceSplitter trims).
+        var searchStart = text.startIndex
+        var cutEnd = text.startIndex
+        for sentence in kept {
+            if let r = text.range(of: sentence, range: searchStart..<text.endIndex) {
+                cutEnd = r.upperBound
+                searchStart = r.upperBound
+            }
+        }
+        return String(text[..<cutEnd])
+    }
 }

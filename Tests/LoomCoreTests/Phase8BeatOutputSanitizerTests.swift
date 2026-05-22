@@ -193,5 +193,44 @@ func phase8BeatOutputSanitizerTests() -> TestSuite {
         try expectTrue(cleaned.hasSuffix("\"Very much.\""))
     }
 
+    // MARK: - truncateToSentenceBoundary (over-long beat trimming)
+
+    s.test("truncate leaves a within-budget beat unchanged") {
+        let text = "One two three."
+        try expectEqual(
+            BeatOutputSanitizer.truncateToSentenceBoundary(text, targetWords: 10),
+            text
+        )
+    }
+
+    s.test("truncate trims an over-long beat to the last sentence boundary within budget") {
+        // target 10, +50% overshoot → budget 15 words.
+        // S1 (5w) + S2 (5w) = 10 ≤ 15; S3 (7w) → 17 > 15, dropped.
+        let text = "One two three four five. Six seven eight nine ten. Eleven twelve thirteen fourteen fifteen sixteen seventeen."
+        let out = BeatOutputSanitizer.truncateToSentenceBoundary(text, targetWords: 10)
+        try expectEqual(out, "One two three four five. Six seven eight nine ten.")
+        try expectFalse(out.contains("Eleven"))
+        // Ends cleanly on a terminator — no mid-word cut.
+        try expectTrue(out.hasSuffix("."))
+    }
+
+    s.test("truncate leaves a single over-long sentence untouched (no mid-sentence mangling)") {
+        // No sentence boundary within budget → return as-is rather
+        // than hard-cutting mid-thought.
+        let text = "One two three four five six seven eight nine ten eleven twelve."
+        try expectEqual(
+            BeatOutputSanitizer.truncateToSentenceBoundary(text, targetWords: 4),
+            text
+        )
+    }
+
+    s.test("truncate preserves paragraph breaks in the kept portion") {
+        // target 6, budget 9. S1 (3w) + S2 (3w) = 6 ≤ 9; S3 dropped.
+        let text = "First sentence here.\n\nSecond paragraph sentence.\n\nThird one is far too long to keep."
+        let out = BeatOutputSanitizer.truncateToSentenceBoundary(text, targetWords: 6)
+        try expectTrue(out.contains("\n\n"))
+        try expectFalse(out.contains("Third one"))
+    }
+
     return s
 }

@@ -426,8 +426,26 @@ public enum BeatExtraction {
     /// word budgets and extending the word range; (3) re-index the
     /// survivors 0..n-1. Voice descriptor + character/setting markers
     /// pass through untouched.
+    /// Default beat budget for a beat whose extracted `targetWords` is
+    /// non-positive. Mirrors `parseFlatSkeleton`'s `≤0 → 100` guard;
+    /// the nested (GBNF) path doesn't sanitize, and Goetia emits
+    /// negative counts under the grammar (2026-05-22 test5 run).
+    private static let defaultTargetWords = 100
+
     public static func normalizeSkeleton(_ skeleton: ExtractedSceneSkeleton) -> ExtractedSceneSkeleton {
-        let sorted = skeleton.beats.sorted { $0.index < $1.index }
+        // Clamp garbage target counts up front so merge-sums + the
+        // downstream length cap see only sane values.
+        let sorted = skeleton.beats
+            .sorted { $0.index < $1.index }
+            .map { b -> SceneBeat in
+                guard b.targetWords <= 0 else { return b }
+                return SceneBeat(
+                    index: b.index, summary: b.summary, modality: b.modality,
+                    function: b.function, targetWords: defaultTargetWords,
+                    wordRangeStart: b.wordRangeStart, wordRangeEnd: b.wordRangeEnd,
+                    beatTensionChange: b.beatTensionChange
+                )
+            }
 
         var merged: [SceneBeat] = []
         for beat in sorted {

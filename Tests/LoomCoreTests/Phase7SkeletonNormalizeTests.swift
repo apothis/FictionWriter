@@ -61,6 +61,26 @@ func phase7SkeletonNormalizeTests() -> TestSuite {
         try expectEqual(out.beats.count, 3)
     }
 
+    s.test("clamps non-positive targetWords (GBNF can emit negatives) to a sane default") {
+        // Goetia under the GBNF grammar (integer ::= "-"? [0-9]+) emits
+        // negative target counts on some beats (2026-05-22 test5 run:
+        // -75, -155). They disable the length cap + corrupt budgets;
+        // the nested parser doesn't guard them, so normalize does.
+        let skel = ExtractedSceneSkeleton(
+            beats: [
+                beat(0, "Alpha.", target: -75),
+                beat(1, "Beta.", target: 0),
+                beat(2, "Gamma.", target: 80),
+            ],
+            sourceCharacters: [], sourceSettingMarkers: []
+        )
+        let out = BeatExtraction.normalizeSkeleton(skel)
+        try expectEqual(out.beats.count, 3)
+        try expectTrue(out.beats[0].targetWords > 0)
+        try expectTrue(out.beats[1].targetWords > 0)
+        try expectEqual(out.beats[2].targetWords, 80)  // valid value untouched
+    }
+
     s.test("preserves voice descriptor + character/setting markers") {
         let voice = VoiceDescriptor(
             sentenceCadence: .shortClipped, dialogueDensity: .balanced,
