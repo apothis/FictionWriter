@@ -240,6 +240,27 @@ public final class KoboldClient: NSObject, URLSessionDataDelegate, KoboldGenerat
         )
     }
 
+    /// GBNF-constrained variant of the `KoboldGenerating` protocol —
+    /// threads `grammar` into a `GenerateRequest` and routes through
+    /// the request-based path. Used by `KoboldBeatExtractor`.
+    public func generate(
+        prompt: String,
+        stopSequences: [String],
+        params: SamplerParams,
+        maxContextLength: Int,
+        grammar: String?,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let request = GenerateRequest(
+            prompt: prompt,
+            stopSequences: stopSequences,
+            params: params,
+            maxContextLength: maxContextLength,
+            grammar: grammar
+        )
+        generate(request: request, completion: completion)
+    }
+
     /// Non-streaming generation taking a full `GenerateRequest`. Use
     /// this overload when you need to pass fields beyond the basic
     /// prompt/sampler set — specifically `grammar` for GBNF-constrained

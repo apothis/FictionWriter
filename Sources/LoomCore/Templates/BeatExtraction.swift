@@ -172,6 +172,74 @@ public enum BeatExtraction {
         ]
     }
 
+    // MARK: - GBNF grammar (KoboldCpp `grammar` parameter)
+
+    /// GBNF grammar for the `ExtractedSceneSkeleton` shape. Used by the
+    /// Kobold-writer beat-extraction path (`KoboldBeatExtractor`) as the
+    /// reliable structural constraint — the Ollama `format`-schema path
+    /// flakes (LOOM_TECH_STACK §3: ~50% degenerate on small gemma; and
+    /// live 2026-05-22 it produced a 97KB off-schema body on the writer
+    /// model). GBNF guarantees well-formed, on-shape JSON at the sampler
+    /// level instead.
+    ///
+    /// Mirrors `jsonSchema()`: same keys, same enum constraints on
+    /// `function` / `modality` / the three voice-descriptor enum fields.
+    /// All four top-level keys are required (the voice descriptor is the
+    /// load-bearing generation signal — we want the model forced to emit
+    /// it, not allowed to skip it).
+    ///
+    /// Empirical guards inherited from `LedgerExtraction.gbnfGrammar`:
+    /// each rule definition is one line (multi-line defs failed grammar
+    /// compilation on KoboldCpp v1.111), and `ws ::= " "?` rather than a
+    /// greedy whitespace class (the greedy form let the model stall
+    /// emitting unbounded whitespace between fields).
+    public static func gbnfGrammar() -> String {
+        func enumAlt<T: RawRepresentable & CaseIterable>(_ type: T.Type) -> String
+        where T.RawValue == String {
+            T.allCases.map { "\"\\\"\($0.rawValue)\\\"\"" }.joined(separator: " | ")
+        }
+        // A `"key":` literal as a grammar token.
+        func key(_ k: String) -> String { "\"\\\"\(k)\\\":\"" }
+
+        let funcAlt = enumAlt(BeatFunction.self)
+        let modAlt = enumAlt(NarrativeMode.self)
+        let cadAlt = enumAlt(SentenceCadence.self)
+        let densAlt = enumAlt(DialogueDensity.self)
+        let flourAlt = enumAlt(RhetoricalFlourish.self)
+
+        let beat = "beat ::= \"{\" ws "
+            + key("index") + " ws integer ws \",\" ws "
+            + key("function") + " ws (\(funcAlt)) ws \",\" ws "
+            + key("modality") + " ws (\(modAlt)) ws \",\" ws "
+            + key("summary") + " ws string ws \",\" ws "
+            + key("targetWords") + " ws integer ws \",\" ws "
+            + key("wordRangeStart") + " ws integer ws \",\" ws "
+            + key("wordRangeEnd") + " ws integer ws \",\" ws "
+            + key("beatTensionChange") + " ws integer ws \"}\""
+
+        let voice = "voice ::= \"{\" ws "
+            + key("sentenceCadence") + " ws (\(cadAlt)) ws \",\" ws "
+            + key("dialogueDensity") + " ws (\(densAlt)) ws \",\" ws "
+            + key("rhetoricalFlourish") + " ws (\(flourAlt)) ws \",\" ws "
+            + key("register") + " ws string ws \",\" ws "
+            + key("distinctiveTechniques") + " ws strarray ws \"}\""
+
+        let root = "root ::= \"{\" ws "
+            + key("beats") + " ws beats ws \",\" ws "
+            + key("sourceCharacters") + " ws strarray ws \",\" ws "
+            + key("sourceSettingMarkers") + " ws strarray ws \",\" ws "
+            + key("voiceDescriptor") + " ws voice ws \"}\""
+
+        return root + "\n"
+            + "beats ::= \"[\" ws (beat (ws \",\" ws beat)*)? ws \"]\"\n"
+            + beat + "\n"
+            + voice + "\n"
+            + "strarray ::= \"[\" ws (string (ws \",\" ws string)*)? ws \"]\"\n"
+            + "integer ::= \"-\"? [0-9]+\n"
+            + "string ::= \"\\\"\" ([^\"\\\\] | \"\\\\\" .)* \"\\\"\"\n"
+            + "ws ::= \" \"?"
+    }
+
     // MARK: - Response parser
 
     public enum ParseError: Error, Equatable {

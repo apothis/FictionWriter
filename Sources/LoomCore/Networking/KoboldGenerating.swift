@@ -29,6 +29,24 @@ public protocol KoboldGenerating: AnyObject {
         onToken: @escaping (String) -> Void,
         completion: @escaping (Result<String, Error>) -> Void
     )
+
+    /// GBNF-constrained variant for structured extraction on the writer
+    /// model. `grammar` is KoboldCpp's `/api/v1/generate` `grammar`
+    /// parameter (GBNF). The default protocol-extension impl drops the
+    /// grammar and falls back to the unconstrained method — so test
+    /// stubs that only implement the base method still work — while
+    /// `KoboldClient` overrides this to thread the grammar into a
+    /// `GenerateRequest`. Used by `KoboldBeatExtractor` (Pass-A beat
+    /// extraction on the writer, replacing the flaky Ollama
+    /// `format`-schema path).
+    func generate(
+        prompt: String,
+        stopSequences: [String],
+        params: SamplerParams,
+        maxContextLength: Int,
+        grammar: String?,
+        completion: @escaping (Result<String, Error>) -> Void
+    )
 }
 
 extension KoboldGenerating {
@@ -51,6 +69,25 @@ extension KoboldGenerating {
             }
             completion(result)
         }
+    }
+
+    /// Default: drop the grammar and fall back to unconstrained
+    /// generation. `KoboldClient` overrides to honor it.
+    public func generate(
+        prompt: String,
+        stopSequences: [String],
+        params: SamplerParams,
+        maxContextLength: Int,
+        grammar: String?,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        generate(
+            prompt: prompt,
+            stopSequences: stopSequences,
+            params: params,
+            maxContextLength: maxContextLength,
+            completion: completion
+        )
     }
 }
 

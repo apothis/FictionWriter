@@ -138,6 +138,48 @@ func phase7BeatExtractionTests() -> TestSuite {
         try expectEqual(Set(modEnum), Set(NarrativeMode.allCases.map(\.rawValue)))
     }
 
+    // MARK: - GBNF grammar (Kobold-writer path)
+
+    s.test("BeatExtraction.gbnfGrammar emits one-line rules for the skeleton shape") {
+        let g = BeatExtraction.gbnfGrammar()
+        // Core rules present.
+        try expectTrue(g.contains("root ::="))
+        try expectTrue(g.contains("beat ::="))
+        try expectTrue(g.contains("voice ::="))
+        try expectTrue(g.contains("beats ::="))
+        try expectTrue(g.contains("strarray ::="))
+        try expectTrue(g.contains("integer ::="))
+        // The empirical-guard whitespace rule (single optional space).
+        try expectTrue(g.contains("ws ::= \" \"?"))
+        // Enum values made it into the alternations.
+        try expectTrue(g.contains("setup"))      // a BeatFunction case
+        try expectTrue(g.contains("dialogue"))   // a NarrativeMode case
+        // All four required top-level keys.
+        for k in ["beats", "sourceCharacters", "sourceSettingMarkers", "voiceDescriptor"] {
+            try expectTrue(g.contains(k), "grammar should reference key \(k)")
+        }
+        // Every rule definition is on its own single line (multi-line
+        // rule defs failed grammar compilation on KoboldCpp v1.111).
+        for line in g.split(separator: "\n") {
+            let occurrences = line.components(separatedBy: "::=").count - 1
+            try expectTrue(occurrences <= 1, "a grammar line has >1 rule def: \(line)")
+        }
+    }
+
+    s.test("BeatExtraction.gbnfGrammar's target shape round-trips through the parser") {
+        // A minimal skeleton matching the grammar's required shape
+        // (all four top-level keys incl. voiceDescriptor) must decode
+        // cleanly via the production parser — ties the grammar's target
+        // to the parser contract.
+        let conformant = """
+        {"beats": [{"index": 0, "function": "setup", "modality": "description", "summary": "{PROTAGONIST} waits.", "targetWords": 70, "wordRangeStart": 0, "wordRangeEnd": 70, "beatTensionChange": 0}], "sourceCharacters": ["Mara"], "sourceSettingMarkers": ["dock"], "voiceDescriptor": {"sentenceCadence": "shortClipped", "dialogueDensity": "balanced", "rhetoricalFlourish": "minimal", "register": "noir", "distinctiveTechniques": ["sentence fragments"]}}
+        """
+        let skeleton = try BeatExtraction.parseExtractedSkeleton(conformant)
+        try expectEqual(skeleton.beats.count, 1)
+        try expectEqual(skeleton.sourceCharacters, ["Mara"])
+        try expectNotNil(skeleton.voiceDescriptor)
+    }
+
     // MARK: - Response parser
 
     s.test("BeatExtraction.parseExtractedSkeleton parses a clean response (post-§7.a.1: no pacingStats)") {
