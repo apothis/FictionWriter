@@ -256,6 +256,13 @@ public enum HelpContent {
             order: 70,
             group: nil
         ),
+        HelpSection(
+            id: "ui-architecture",
+            title: "UI architecture — AppKit / WKWebView",
+            book: .technical,
+            order: 80,
+            group: nil
+        ),
     ]
 
     public static func toc(for book: HelpBook) -> [HelpSection] {
