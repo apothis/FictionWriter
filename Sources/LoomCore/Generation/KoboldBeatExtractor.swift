@@ -74,7 +74,14 @@ public final class KoboldBeatExtractor: BeatExtractor {
         var params = baseParams
         // Deterministic extraction — tight sampler, not creative.
         params.temperature = 0.2
-        params.maxLength = Self.budgetForProse(sourceProse)
+        // Output budget = the context remaining after the prompt, so a
+        // verbose Thinking writer has room for its reasoning AND the full
+        // JSON. The old flat 8192 cap was the bug: a reasoner spent most
+        // of it thinking and the JSON truncated mid-structure (2026-05-22,
+        // on a 16384-context server). Bounded at 12288 so a huge context
+        // doesn't license an unbounded run.
+        let promptTokens = TokenEstimator.estimate(wrapped)
+        params.maxLength = max(2048, min(maxContextLength - promptTokens - 256, 12288))
 
         callWithRetry(
             wrapped: wrapped,
@@ -115,7 +122,7 @@ public final class KoboldBeatExtractor: BeatExtractor {
                 let cleaned = ThinkBlockStripper.strip(raw)
                 if cleaned.isEmpty, attemptsRemaining > 0 {
                     var bumped = params
-                    bumped.maxLength = min(8192, params.maxLength * 2)
+                    bumped.maxLength = min(12288, params.maxLength * 2)
                     DebugLog.shared.write("[template] empty extraction (kobold) — retrying with maxLength=\(bumped.maxLength)")
                     self.callWithRetry(
                         wrapped: wrapped, stops: stops, params: bumped,

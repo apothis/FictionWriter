@@ -32,7 +32,7 @@ Every Ollama extractor follows the same shape:
 | **Entity discovery** | 9 | `GLiNERCandidateDetector` + `OllamaEntityDiscoveryExtractor` | post-scene, 500-word delta (`EntityDiscoveryTrigger`), piggybacks on ledger | `ProposedEntitiesStore` |
 | **Relationship discovery** | 10 | `OllamaRelationshipDiscoveryExtractor` (vote-aggregated) | post-scene | `ProposedRelationshipsStore` |
 | **Continuity audit** | 10 | `OllamaContinuityExtractor` (two-stage) | on-demand | `ContinuityAuditStore` |
-| **Scene-template beats** | 7 | `KoboldBeatExtractor` (Pass-A, **writer**; unconstrained by default) | on Extract (manual) | `templates/<id>.beats.json` |
+| **Scene-template beats** | 7 | Pass-A — **prefers** `OllamaBeatExtractor` (gemma4_2b, unconstrained); falls back to `KoboldBeatExtractor` (writer, unconstrained) | on Extract (manual) | `templates/<id>.beats.json` |
 
 ### Knowledge ledger
 
@@ -56,13 +56,14 @@ The most elaborate. Per-scene typed-claim extraction (`OllamaContinuityExtractor
 
 `KoboldBeatExtractor` (Pass-A) walks a template scene's prose and emits an `ExtractedSceneSkeleton` — ordered beats with modality tags + pacing + a `VoiceDescriptor`. Persisted as `templates/<id>.beats.json`, consumed at generation time by `TemplateGenerationCoordinator` (Pass-B). See **Scene exemplars + templates** in User Help + `LOOM_SCENE_TEMPLATE_SPIKE.md`.
 
-This pass runs on the **writer (KoboldCpp)**, not the Ollama extractor, and its transport history is instructive:
+This pass's transport history is the cautionary tale of the whole page (all dated 2026-05-22, on a 31B Thinking writer at 16384 context):
 
-1. It started on the Ollama `format`-schema path and hit the documented failure (2026-05-22: a 97KB off-schema body that failed to parse).
-2. Moved to the writer **with a GBNF grammar** — which fixed the *parse* failure (always valid JSON) but exposed a deeper one: GBNF guarantees structure, not *meaningful values*. On a **Thinking** writer, forcing JSON from token 0 suppresses the reasoning the model needs, and it emits valid-but-degenerate skeletons (26 beats all `arrival`, `targetWords` 0).
-3. So the production default is now **unconstrained** (`useGrammar: false`): the Thinking writer reasons first, then emits the JSON; `KoboldBeatExtractor` instruct-wraps the prompt, strips the `<think>`/`<|channel>thought` block, tolerant-parses the `{...}` after it, and retries once on empty / `noJSONObjectFound` / `decodingFailed`. `useGrammar: true` re-enables the grammar for a **non-thinking** writer, where the structural guarantee is a net win.
+1. **Ollama `format`-schema** → ~97KB off-schema body, parse failure (the documented format-schema flake).
+2. **Writer + GBNF** → fixed the *parse* (always valid JSON) but exposed a deeper failure: GBNF guarantees structure, not *meaningful values*. On a Thinking writer, forcing JSON from token 0 suppresses reasoning → valid-but-degenerate skeletons (26 beats all `arrival`, `targetWords` 0).
+3. **Writer, unconstrained (think-first)** → the model can reason, but on a verbose reasoner the reasoning ate the output budget and the JSON truncated mid-structure → parse failure. (The output-token cap, not the context, was the limiter — fixed by sizing `num_predict` to the *remaining* context.)
+4. **Settled:** Pass-A now **prefers the small non-thinking `OllamaBeatExtractor` (gemma4_2b), unconstrained + tolerant-parse** — no reasoning to burn budget, fast, separate from the writer's context. It falls back to `KoboldBeatExtractor` (writer, unconstrained, context-aware budget; `useGrammar: true` re-enables GBNF for a non-thinking writer) when no extractor is configured.
 
-A sibling `OllamaBeatExtractor` (same retry posture, `format`-schema) is retained but is not the production path. The lesson: **GBNF buys well-formed JSON, not well-chosen values — and on a reasoning model the two trade off.**
+The lessons, in order: **the Ollama `format` schema flakes; GBNF buys well-formed JSON but not well-chosen values; a reasoning model's reasoning competes with its output budget; and the structural pass wants a small deterministic model, not a big reasoner.**
 
 ## Why the tolerant parser, concretely
 

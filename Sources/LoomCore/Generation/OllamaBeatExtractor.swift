@@ -42,7 +42,13 @@ public final class OllamaBeatExtractor: BeatExtractor {
         completion: @escaping (Result<ExtractedSceneSkeleton, Error>) -> Void
     ) {
         let prompt = BeatExtraction.buildExtractionPrompt(sourceProse: sourceProse)
-        let schema = BeatExtraction.jsonSchema()
+        // Unconstrained — do NOT pass the JSON `format` schema. The
+        // schema-constrained path flakes ~50% on small gemma (degenerate
+        // buffer → empty / off-schema; LOOM_TECH_STACK §3, live
+        // 2026-05-22). The prompt pins the field names; we tolerant-parse
+        // + retry instead, matching the ledger/continuity Ollama
+        // extractors.
+        let schema: [String: Any] = [:]
         let options = OllamaChatOptions(
             // Extraction wants deterministic JSON, not creative
             // variation. Tight sampler matches the LedgerSpike §sampler-

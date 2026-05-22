@@ -1098,13 +1098,17 @@ public final class AppState {
             DebugLog.shared.write("[template] extract skipped: in-memory session id=\(id)")
             return
         }
-        // Pass-A beat extraction runs on the WRITER model with a GBNF
-        // grammar (KoboldBeatExtractor), not the Ollama extractor.
-        // Rationale (2026-05-22): the Ollama `format`-schema path is
-        // unreliable — it produced a 97KB off-schema body that failed
-        // to parse. GBNF on the writer guarantees on-shape JSON.
-        guard let writer = settings.writerServer() else {
-            DebugLog.shared.write("[template] extract skipped: no writer server configured id=\(id)")
+        // Pass-A beat extraction prefers the small, non-thinking Ollama
+        // EXTRACTOR (gemma4_2b) — it's what the structural pass was
+        // calibrated for, it's fast, and it doesn't burn the writer's
+        // context on reasoning. Falls back to the writer (KoboldBeat
+        // Extractor, unconstrained) when no extractor is configured.
+        // Both run unconstrained + tolerant-parse: the Ollama
+        // format-schema and the writer GBNF paths each had their own
+        // failure mode on a Thinking writer (2026-05-22 — see the
+        // KoboldBeatExtractor / commit history).
+        guard settings.extractorServer() != nil || settings.writerServer() != nil else {
+            DebugLog.shared.write("[template] extract skipped: no extractor or writer server configured id=\(id)")
             return
         }
         // Reject re-entrancy. Double-clicking Extract while a run is
@@ -1121,24 +1125,23 @@ public final class AppState {
             name: ProjectSession.didChangeNotification,
             object: currentSession
         )
-        // Resolve the writer client + its instruct template + context
-        // budget on the calling thread (don't touch registry/settings
-        // off-main). Template prefers the profile's explicit `model`
-        // (the user-set field), then the probed model name; an
-        // unrecognised/absent name falls back to `.auto` (raw) — the
-        // GBNF still constrains output, so this can't regress to garbage.
-        let client = registry.clientForDefault()
-        // Freshest-first model resolution + template detection live on
-        // AppState (shared with Pass-B per-beat generation).
-        let resolvedModelName = writerModelName()
-        let template = writerInstructTemplate()
-        let maxContext = writer.capabilities?.trueMaxContext ?? 8192
-        DebugLog.shared.write("[template] extract via writer model=\(resolvedModelName ?? "unknown") template=\(template.rawValue) id=\(id)")
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let extractor = KoboldBeatExtractor(
-                client: client, template: template, maxContextLength: maxContext
+        // Build the extractor on the calling thread (don't touch
+        // registry/settings off-main). Prefer the Ollama extractor.
+        let beatExtractor: BeatExtractor
+        if let ex = settings.extractorServer() {
+            let model = ex.model ?? ex.capabilities?.modelName ?? "gemma4_2b:latest"
+            beatExtractor = OllamaBeatExtractor(client: OllamaClient(baseURL: ex.baseURL, model: model))
+            DebugLog.shared.write("[template] extract via extractor model=\(model) (unconstrained) id=\(id)")
+        } else {
+            let template = writerInstructTemplate()
+            let maxContext = settings.writerServer()?.capabilities?.trueMaxContext ?? 8192
+            beatExtractor = KoboldBeatExtractor(
+                client: registry.clientForDefault(), template: template, maxContextLength: maxContext
             )
-            let pipeline = BeatExtractionPipeline(projectURL: projectURL, extractor: extractor)
+            DebugLog.shared.write("[template] extract via writer model=\(writerModelName() ?? "unknown") template=\(template.rawValue) (unconstrained) id=\(id)")
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let pipeline = BeatExtractionPipeline(projectURL: projectURL, extractor: beatExtractor)
             pipeline.extractAndPersist(templateId: id) { result in
                 DispatchQueue.main.async {
                     guard let self = self else { return }

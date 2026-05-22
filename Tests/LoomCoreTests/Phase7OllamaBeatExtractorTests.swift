@@ -60,7 +60,7 @@ func phase7OllamaBeatExtractorTests() -> TestSuite {
         }
         """
 
-    s.test("OllamaBeatExtractor sends Pass-A prompt + schema; parses successful response") {
+    s.test("OllamaBeatExtractor sends the Pass-A prompt UNCONSTRAINED (no format schema); parses success") {
         let stub = StubOllamaProvider(responses: [.success(cannedSkeleton)])
         let extractor = OllamaBeatExtractor(provider: stub)
 
@@ -68,7 +68,9 @@ func phase7OllamaBeatExtractorTests() -> TestSuite {
         extractor.extractSkeleton(from: "She walked into the kitchen.") { r in result = r }
         // Captured before completion fires.
         try expectTrue(stub.capturedPrompt?.contains("She walked into the kitchen.") == true)
-        try expectNotNil(stub.capturedSchema)
+        // No format-schema — the schema-constrained path flakes on small
+        // gemma; we rely on the prompt + tolerant parse instead.
+        try expectTrue(stub.capturedSchema?.isEmpty == true)
         stub.flush()
         try expectNotNil(result)
         if case .success(let skeleton) = result {
