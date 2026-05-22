@@ -305,6 +305,13 @@ public enum HelpContent {
             order: 140,
             group: nil
         ),
+        HelpSection(
+            id: "add-bible-field",
+            title: "How to add: a new Bible entity field",
+            book: .technical,
+            order: 150,
+            group: nil
+        ),
     ]
 
     public static func toc(for book: HelpBook) -> [HelpSection] {
