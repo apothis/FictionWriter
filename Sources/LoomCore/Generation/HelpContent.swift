@@ -83,6 +83,13 @@ public enum HelpContent {
             group: "Getting Started"
         ),
         HelpSection(
+            id: "editor-surface",
+            title: "Editor surface",
+            book: .userHelp,
+            order: 90,
+            group: "Reference"
+        ),
+        HelpSection(
             id: "generation-modes",
             title: "Generation modes",
             book: .userHelp,
