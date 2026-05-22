@@ -66,7 +66,12 @@ public final class KoboldBeatExtractor: BeatExtractor {
         from sourceProse: String,
         completion: @escaping (Result<ExtractedSceneSkeleton, Error>) -> Void
     ) {
-        let prompt = BeatExtraction.buildExtractionPrompt(sourceProse: sourceProse)
+        // Unconstrained (default): JSONL prompt — the shape models hit
+        // reliably. GBNF path (useGrammar:true, a non-thinking writer):
+        // the nested single-object schema the grammar enforces.
+        let prompt = useGrammar
+            ? BeatExtraction.buildExtractionPrompt(sourceProse: sourceProse)
+            : BeatExtraction.buildJSONLPrompt(sourceProse: sourceProse)
         let grammar: String? = useGrammar ? BeatExtraction.gbnfGrammar() : nil
         let adapter = InstructTemplates.adapter(for: template)
         let wrapped = adapter.wrap(system: "", userBody: prompt, prefill: "")
@@ -132,7 +137,9 @@ public final class KoboldBeatExtractor: BeatExtractor {
                     return
                 }
                 do {
-                    let skeleton = try BeatExtraction.parseExtractedSkeleton(cleaned)
+                    let skeleton = self.useGrammar
+                        ? try BeatExtraction.parseExtractedSkeleton(cleaned)
+                        : try BeatExtraction.parseJSONLSkeleton(cleaned)
                     completion(.success(skeleton))
                 } catch let parseError as BeatExtraction.ParseError where attemptsRemaining > 0 {
                     // A malformed/missing-brace roll is transient — re-roll

@@ -41,7 +41,7 @@ public final class OllamaBeatExtractor: BeatExtractor {
         from sourceProse: String,
         completion: @escaping (Result<ExtractedSceneSkeleton, Error>) -> Void
     ) {
-        let prompt = BeatExtraction.buildExtractionPrompt(sourceProse: sourceProse)
+        let prompt = BeatExtraction.buildJSONLPrompt(sourceProse: sourceProse)
         // Unconstrained — do NOT pass the JSON `format` schema. The
         // schema-constrained path flakes ~50% on small gemma (degenerate
         // buffer → empty / off-schema; LOOM_TECH_STACK §3, live
@@ -102,7 +102,7 @@ public final class OllamaBeatExtractor: BeatExtractor {
                     return
                 }
                 do {
-                    let skeleton = try BeatExtraction.parseExtractedSkeleton(raw)
+                    let skeleton = try BeatExtraction.parseJSONLSkeleton(raw)
                     completion(.success(skeleton))
                 } catch let parseError as BeatExtraction.ParseError where attemptsRemaining > 0 {
                     // Transient parse failures are retried once. Two

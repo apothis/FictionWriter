@@ -180,6 +180,83 @@ func phase7BeatExtractionTests() -> TestSuite {
         try expectNotNil(skeleton.voiceDescriptor)
     }
 
+    // MARK: - JSONL parser (the production path)
+
+    s.test("buildJSONLPrompt asks for one-object-per-line with the source + role-token rule") {
+        let p = BeatExtraction.buildJSONLPrompt(sourceProse: "She crossed the room.")
+        try expectTrue(p.contains("She crossed the room."))
+        try expectTrue(p.contains("ONE JSON object per line"))
+        try expectTrue(p.contains("\"type\":\"beat\""))
+        try expectTrue(p.contains("{PROTAGONIST}"))
+    }
+
+    s.test("parseJSONLSkeleton parses voice + beats + meta lines") {
+        let raw = """
+        {"type":"voice","sentenceCadence":"shortClipped","dialogueDensity":"balanced","rhetoricalFlourish":"minimal","register":"noir","distinctiveTechniques":["fragments","present tense"]}
+        {"type":"beat","index":0,"function":"setup","modality":"description","summary":"{PROTAGONIST} waits.","targetWords":70}
+        {"type":"beat","index":1,"function":"escalation","modality":"action","summary":"{ANTAGONIST} arrives.","targetWords":110}
+        {"type":"meta","characters":["Mara","Jude"],"settings":["dock","dusk"]}
+        """
+        let skel = try BeatExtraction.parseJSONLSkeleton(raw)
+        try expectEqual(skel.beats.count, 2)
+        try expectEqual(skel.beats[0].function, .setup)
+        try expectEqual(skel.beats[1].modality, .action)
+        try expectEqual(skel.sourceCharacters, ["Mara", "Jude"])
+        try expectEqual(skel.sourceSettingMarkers, ["dock", "dusk"])
+        try expectEqual(skel.voiceDescriptor?.sentenceCadence, .shortClipped)
+    }
+
+    s.test("parseJSONLSkeleton tolerates fences, preamble, and a malformed line") {
+        let raw = """
+        Here is the skeleton:
+        ```json
+        {"type":"beat","index":0,"function":"setup","modality":"description","summary":"A.","targetWords":50}
+        {"type":"beat" "index":1 BROKEN LINE no commas}
+        {"type":"beat","index":1,"function":"reveal","modality":"dialogue","summary":"B.","targetWords":60}
+        ```
+        """
+        let skel = try BeatExtraction.parseJSONLSkeleton(raw)
+        // The two good beat lines parse; the broken one + fences are skipped.
+        try expectEqual(skel.beats.count, 2)
+    }
+
+    s.test("parseJSONLSkeleton defaults a zero/missing targetWords to 100 and unknown enums sensibly") {
+        let raw = """
+        {"type":"beat","index":0,"function":"WEIRD","modality":"alsoweird","summary":"x","targetWords":0}
+        {"type":"beat","index":1,"function":"reveal","modality":"dialogue","summary":"y"}
+        """
+        let skel = try BeatExtraction.parseJSONLSkeleton(raw)
+        try expectEqual(skel.beats.count, 2)
+        // Zero/absent targetWords → 100 (never the truncating floor).
+        try expectEqual(skel.beats[0].targetWords, 100)
+        try expectEqual(skel.beats[1].targetWords, 100)
+        // Unknown enum values fall back rather than dropping the beat.
+        try expectEqual(skel.beats[0].function, .escalation)
+        try expectEqual(skel.beats[0].modality, .mixed)
+    }
+
+    s.test("parseJSONLSkeleton re-indexes beats contiguously regardless of emitted index") {
+        let raw = """
+        {"type":"beat","index":5,"function":"setup","modality":"action","summary":"a","targetWords":50}
+        {"type":"beat","index":2,"function":"reveal","modality":"action","summary":"b","targetWords":50}
+        """
+        let skel = try BeatExtraction.parseJSONLSkeleton(raw)
+        try expectEqual(skel.beats.map(\.index), [0, 1])
+        // Sorted by emitted index first: index 2 (b) before index 5 (a).
+        try expectEqual(skel.beats[0].summary, "b")
+    }
+
+    s.test("parseJSONLSkeleton throws noJSONObjectFound when a roll has zero beats (wrong schema)") {
+        // gemma4_2b's failure mode: a generic title/characters/plot shape
+        // with no beat lines. Zero beats → retryable parse error.
+        let raw = """
+        {"title":"A Night","characters":[{"name":"Narrator"}],"plot":[{"event":"start"}]}
+        """
+        try expectThrows {
+            _ = try BeatExtraction.parseJSONLSkeleton(raw)
+        }
+    }
+
     // MARK: - Response parser
 
     s.test("BeatExtraction.parseExtractedSkeleton parses a clean response (post-§7.a.1: no pacingStats)") {

@@ -65,7 +65,14 @@ func phase7KoboldBeatExtractorTests() -> TestSuite {
         }
     }
 
+    // Default (unconstrained) path parses JSONL.
     let canned = """
+        {"type":"voice","sentenceCadence":"shortClipped","dialogueDensity":"balanced","rhetoricalFlourish":"minimal","register":"noir","distinctiveTechniques":["fragments"]}
+        {"type":"beat","index":0,"function":"setup","modality":"description","summary":"{PROTAGONIST} arrives.","targetWords":80}
+        {"type":"meta","characters":["Hadley"],"settings":["kitchen"]}
+        """
+    // GBNF path (useGrammar:true) parses the nested single object.
+    let cannedNested = """
         {"beats": [{"index": 0, "function": "setup", "modality": "description", "summary": "{PROTAGONIST} arrives.", "targetWords": 80, "wordRangeStart": 0, "wordRangeEnd": 80, "beatTensionChange": 0}], "sourceCharacters": ["Hadley"], "sourceSettingMarkers": ["kitchen"], "voiceDescriptor": {"sentenceCadence": "shortClipped", "dialogueDensity": "balanced", "rhetoricalFlourish": "minimal", "register": "noir", "distinctiveTechniques": ["fragments"]}}
         """
 
@@ -88,8 +95,8 @@ func phase7KoboldBeatExtractorTests() -> TestSuite {
         }
     }
 
-    s.test("KoboldBeatExtractor sends the GBNF grammar when useGrammar: true (non-thinking writers)") {
-        let stub = StubKoboldClient(responses: [.success(canned)])
+    s.test("KoboldBeatExtractor sends the GBNF grammar + nested schema when useGrammar: true (non-thinking writers)") {
+        let stub = StubKoboldClient(responses: [.success(cannedNested)])
         let extractor = KoboldBeatExtractor(client: stub, useGrammar: true)
         var result: Result<ExtractedSceneSkeleton, Error>? = nil
         extractor.extractSkeleton(from: "x") { r in result = r }
@@ -99,20 +106,22 @@ func phase7KoboldBeatExtractorTests() -> TestSuite {
         if case .success = result {} else { try expectFalse(true, "expected success") }
     }
 
-    s.test("KoboldBeatExtractor retries on decodingFailed (malformed roll) and recovers") {
+    s.test("KoboldBeatExtractor retries when a roll yields zero parseable beats, and recovers") {
+        // JSONL is per-line tolerant — a malformed / off-schema roll
+        // yields no beat lines → noJSONObjectFound → retry → recover.
         let stub = StubKoboldClient(responses: [
-            .success("{ \"beats\": [ : ] }"),   // balanced braces, invalid JSON
+            .success("{ \"title\": \"wrong schema\", \"plot\": [] }"),  // no beat lines
             .success(canned),
         ])
         let extractor = KoboldBeatExtractor(client: stub)
         var result: Result<ExtractedSceneSkeleton, Error>? = nil
         extractor.extractSkeleton(from: "x") { r in result = r }
-        stub.flush()  // malformed → retry
+        stub.flush()  // no beats → retry
         stub.flush()  // retry → success
         if case .success(let skel) = result {
             try expectEqual(skel.beats.count, 1)
         } else {
-            try expectFalse(true, "expected success on retry after decodingFailed")
+            try expectFalse(true, "expected success on retry after a no-beats roll")
         }
     }
 
