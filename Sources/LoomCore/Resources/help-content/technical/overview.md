@@ -53,7 +53,7 @@ Two model servers, both user-supplied, both kept loose-coupled behind a `ServerP
 | Role | Default backend | Used for |
 |---|---|---|
 | **Writer** | KoboldCpp, `/api/v1/generate` | All creative prose generation (`KoboldClient`, `KoboldGenerating`, `KoboldCallProvider` in `Networking/`). Wrapped by `InstructTemplates` for per-family template emission. |
-| **Extractor** | Ollama, `/api/chat` (with optional JSON Schema) | Knowledge-ledger extraction, entity discovery, relationship discovery, beat extraction, continuity audit, narrative-mode classification. `OllamaClient` + per-pipeline `OllamaXxxExtractor`. |
+| **Extractor** | Ollama, `/api/chat` (with optional JSON Schema) | Knowledge-ledger extraction, entity discovery, relationship discovery, continuity audit, narrative-mode classification. `OllamaClient` + per-pipeline `OllamaXxxExtractor`. (Scene-template beat extraction is the exception — it runs on the *writer* with GBNF; see **Extraction pipelines**.) |
 
 Two further inference paths run **in-process** (no server):
 

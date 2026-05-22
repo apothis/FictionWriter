@@ -111,7 +111,7 @@ For per-session safety, the **`project.json.bak`** file (covered in **Where your
 ### Reference / Scene Exemplar ingest fails
 
 - **Ingest button does nothing or errors out.** Most often a Wegmann CoreML init failure on first use. Watch `[coreml-embed]` and `[embed-factory]` lines. The first ingest after a fresh install compiles the model; that takes a few seconds. If it errors instead of stalling, the model bundle didn't ship — rebuild Loom.
-- **"Extracted 0 beats" on a scene that's clearly multi-beat.** The Pass-A skeleton extractor's Ollama call returned empty / malformed JSON. Check `[ollama]` and `[scene-exemplar]` lines. The pipeline retries internally; if every retry fails, the model is having a bad day or the prose has confused it. Try with a shorter, structurally simpler scene first.
+- **"Extracted 0 beats" on a scene that's clearly multi-beat.** Pass-A beat extraction runs on your **writer** server with a grammar constraint. Check `[template]` log lines for the resolved model + template, and `[gen]`/writer-server reachability. The pipeline retries once on an empty or malformed roll; if it still fails, the writer is having a bad day or the prose confused it — try a shorter, structurally simpler scene. (If you see a giant off-schema response, confirm your writer profile's model name is set so the right instruct template is detected.)
 
 ### App slows down over time
 

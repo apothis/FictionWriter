@@ -29,7 +29,7 @@ Open the **Bible Workspace** (**⌘⇧B**) and pick the **References** tab (Scen
 Two actions are available on each entry:
 
 - **Ingest** runs the Phase 5 pipeline: chunk → modality-classify → Wegmann embed → write `.index` sidecar. This is the **References** half — covered fully in the previous section.
-- **Extract** runs the Phase 7 Pass-A skeleton extraction: walks the prose with the writer model and an Ollama-side structured-task pass to identify beats, modalities, pacing, and a voice descriptor. Writes the `.beats.json` sidecar.
+- **Extract** runs the Phase 7 Pass-A skeleton extraction: the writer model walks the prose (under a grammar constraint that guarantees well-formed output) to identify beats, modalities, pacing, and a voice descriptor. Writes the `.beats.json` sidecar. This runs against your writer server, not the extractor — so you don't need an extractor configured to use templates.
 
 You can run them independently:
 

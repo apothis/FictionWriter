@@ -21,7 +21,7 @@ Every Ollama extractor follows the same shape:
 2. **Scene-aware token budget.** `OllamaLedgerExtractor.budgetForSceneWords(_:)` = `min(8192, max(2048, sceneWords * 8))`. The model emits ~1 fact per ~14 scene-words, each fact ~70 tokens of JSON, so ~8× scene-words of headroom closes the output. Floor 2048 (live-verified safe minimum), cap 8192 (keeps a runaway scene from monopolising the extractor).
 3. **Retry-on-empty with doubled budget.** `callWithRetry` — on an empty `message.content`, retry once with `num_predict` doubled (capped 8192). Empty responses come from two causes: a transient degenerate roll (any retry fixes it) OR `num_predict` cut the output before the first token survived EOS (only a budget bump fixes it). The doubled-budget retry covers both.
 4. **Tolerant parse.** `LedgerExtraction.parseExtractedFacts` / `ContinuityAudit.parseClaims` — locate the structured payload inside chatty preamble/postamble, accept JSONL or a JSON array interchangeably, recover per-object so one bad row doesn't drop the rest. Throws `noJSONObjectFound` / `noJSONArrayFound` only when there's genuinely nothing parseable.
-5. **Retry on parse-fail for NSFW prose.** Stage A2 (entity discovery) and the beat extractor retry on `noJSONObjectFound` / `noJSONArrayFound` — NSFW prose has a ~30% transient parse-fail rate; a re-roll usually clears it.
+5. **Retry on parse-fail.** Stage A2 (entity discovery) retries on `noJSONObjectFound` / `noJSONArrayFound`; the beat extractors retry on **any** `BeatExtraction.ParseError` (both `noJSONObjectFound` *and* `decodingFailed` — braces found but malformed). NSFW prose has a ~30% transient parse-fail rate; a re-roll usually clears it. (The `decodingFailed` case was a silent-fail gap fixed 2026-05-22 — a malformed roll used to give up after one attempt.)
 6. **Post-extraction filters, fail-soft.** Raw extractor output is noisy (paraphrase dupes, hallucinated evidence quotes, prompt-leakage). `LedgerFilters` runs cosine dedup + evidence-quote validation + prompt-leakage detection; `LedgerFilterPipeline` runs them async and fail-soft (a filter erroring degrades to pass-through, never drops the whole batch).
 
 ## Per-pipeline map
@@ -32,7 +32,7 @@ Every Ollama extractor follows the same shape:
 | **Entity discovery** | 9 | `GLiNERCandidateDetector` + `OllamaEntityDiscoveryExtractor` | post-scene, 500-word delta (`EntityDiscoveryTrigger`), piggybacks on ledger | `ProposedEntitiesStore` |
 | **Relationship discovery** | 10 | `OllamaRelationshipDiscoveryExtractor` (vote-aggregated) | post-scene | `ProposedRelationshipsStore` |
 | **Continuity audit** | 10 | `OllamaContinuityExtractor` (two-stage) | on-demand | `ContinuityAuditStore` |
-| **Scene-template beats** | 7 | `OllamaBeatExtractor` (Pass-A) | on Extract (manual) | `templates/<id>.beats.json` |
+| **Scene-template beats** | 7 | `KoboldBeatExtractor` (Pass-A, **writer + GBNF**) | on Extract (manual) | `templates/<id>.beats.json` |
 
 ### Knowledge ledger
 
@@ -54,7 +54,9 @@ The most elaborate. Per-scene typed-claim extraction (`OllamaContinuityExtractor
 
 ### Scene-template beat extraction
 
-`OllamaBeatExtractor` (Pass-A) walks a template scene's prose and emits an `ExtractedSceneSkeleton` — ordered beats with modality tags + pacing + a `VoiceDescriptor`. Persisted as `templates/<id>.beats.json`, consumed at generation time by `TemplateGenerationCoordinator` (Pass-B). See **Scene exemplars + templates** in User Help + `LOOM_SCENE_TEMPLATE_SPIKE.md`.
+`KoboldBeatExtractor` (Pass-A) walks a template scene's prose and emits an `ExtractedSceneSkeleton` — ordered beats with modality tags + pacing + a `VoiceDescriptor`. Persisted as `templates/<id>.beats.json`, consumed at generation time by `TemplateGenerationCoordinator` (Pass-B). See **Scene exemplars + templates** in User Help + `LOOM_SCENE_TEMPLATE_SPIKE.md`.
+
+This is the one extraction pass that runs on the **writer (KoboldCpp) with a GBNF grammar** (`BeatExtraction.gbnfGrammar()`), not the Ollama extractor — and it's the exception that proves the transport rule above. It originally used the Ollama `format`-schema path and hit exactly the documented failure mode (2026-05-22: a 97KB off-schema body that failed to parse). GBNF on the writer is the reliable structural constraint; `KoboldBeatExtractor` instruct-wraps the prompt, constrains with the grammar, strips `<think>` defensively (the writer may be a Thinking model), tolerant-parses, and retries once on empty / `noJSONObjectFound` / `decodingFailed`. A sibling `OllamaBeatExtractor` (same retry posture, `format`-schema) is retained but no longer the production path.
 
 ## Why the tolerant parser, concretely
 
