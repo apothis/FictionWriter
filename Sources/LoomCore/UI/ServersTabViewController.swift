@@ -14,6 +14,7 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
     public let appState: AppState
     private var tableView: NSTableView!
     private var addButton: NSButton!
+    private var editButton: NSButton!
     private var removeButton: NSButton!
     private var setDefaultButton: NSButton!
     private var setExtractorButton: NSButton!
@@ -55,17 +56,18 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         tableView = table
 
         addButton = NSButton(title: "Add Server…", target: self, action: #selector(addClicked))
+        editButton = NSButton(title: "Edit…", target: self, action: #selector(editClicked))
         removeButton = NSButton(title: "Remove", target: self, action: #selector(removeClicked))
         setDefaultButton = NSButton(title: "Set as Default", target: self, action: #selector(setDefaultClicked))
         setExtractorButton = NSButton(title: "Set as Extractor", target: self, action: #selector(setExtractorClicked))
-        for b in [addButton!, removeButton!, setDefaultButton!, setExtractorButton!] {
+        for b in [addButton!, editButton!, removeButton!, setDefaultButton!, setExtractorButton!] {
             b.bezelStyle = .rounded
             b.controlSize = .regular
             b.font = DesignTokens.Typography.subheadline
             b.translatesAutoresizingMaskIntoConstraints = false
         }
 
-        let buttonRow = NSStackView(views: [addButton, removeButton, setDefaultButton, setExtractorButton])
+        let buttonRow = NSStackView(views: [addButton, editButton, removeButton, setDefaultButton, setExtractorButton])
         buttonRow.orientation = .horizontal
         buttonRow.spacing = DesignTokens.Spacing.sm
         buttonRow.translatesAutoresizingMaskIntoConstraints = false
@@ -162,6 +164,39 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         refreshButtons()
     }
 
+    /// Update an existing profile's editable fields in place, preserving
+    /// its id, role assignments (default/extractor track the id), and
+    /// probed capabilities. Re-probes only when the URL or kind changed
+    /// (the cached capabilities may then be stale).
+    public func updateServer(id: UUID, name: String, baseURL: URL, kind: ServerKind, model: String?) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ServersTabError.emptyName }
+        var settings = appState.settings
+        guard let existing = settings.servers.first(where: { $0.id == id }) else {
+            throw ServersTabError.unknownId
+        }
+        let trimmedModel = model?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kindChanged = existing.kind != kind
+        let updated = ServerProfile(
+            id: id,
+            name: trimmed,
+            baseURL: baseURL,
+            kind: kind,
+            model: (trimmedModel?.isEmpty ?? true) ? nil : trimmedModel,
+            // Drop stale capabilities if the endpoint moved or its kind
+            // flipped; otherwise keep what the probe found.
+            capabilities: (existing.baseURL == baseURL && !kindChanged) ? existing.capabilities : nil,
+            lastProbed: (existing.baseURL == baseURL && !kindChanged) ? existing.lastProbed : nil
+        )
+        guard settings.updateServer(updated) else { throw ServersTabError.unknownId }
+        try appState.updateSettings(settings)
+        tableView?.reloadData()
+        refreshButtons()
+        if existing.baseURL != baseURL || kindChanged {
+            autoProbeAsync(profileId: id, baseURL: baseURL, kind: kind)
+        }
+    }
+
     /// Promote a server to default, persist, refresh.
     public func setDefault(id: UUID) throws {
         var settings = appState.settings
@@ -196,6 +231,12 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
 
     @objc private func addClicked() {
         presentAddServerSheet()
+    }
+
+    @objc private func editClicked() {
+        let row = tableView.selectedRow
+        guard row >= 0, row < appState.settings.servers.count else { return }
+        presentServerSheet(editing: appState.settings.servers[row])
     }
 
     @objc private func removeClicked() {
@@ -239,10 +280,18 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
     }
 
     private func presentAddServerSheet() {
+        presentServerSheet(editing: nil)
+    }
+
+    /// Shared add/edit sheet. `editing == nil` adds a new profile;
+    /// non-nil pre-fills the fields and updates that profile in place
+    /// (preserving its id + probed capabilities).
+    private func presentServerSheet(editing existing: ServerProfile?) {
+        let isEdit = existing != nil
         let alert = NSAlert()
-        alert.messageText = "Add Server"
-        alert.informativeText = "Name, base URL, and kind for the new backend endpoint."
-        alert.addButton(withTitle: "Add")
+        alert.messageText = isEdit ? "Edit Server" : "Add Server"
+        alert.informativeText = "Name, base URL, kind, and (optional) model for the backend endpoint."
+        alert.addButton(withTitle: isEdit ? "Save" : "Add")
         alert.addButton(withTitle: "Cancel")
 
         let stack = NSStackView()
@@ -253,10 +302,12 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
 
         let nameField = NSTextField()
         nameField.placeholderString = "Name (e.g. \"Home\")"
+        nameField.stringValue = existing?.name ?? ""
         nameField.translatesAutoresizingMaskIntoConstraints = false
 
         let urlField = NSTextField()
         urlField.placeholderString = "http://192.168.1.201:5001"
+        urlField.stringValue = existing?.baseURL.absoluteString ?? ""
         urlField.translatesAutoresizingMaskIntoConstraints = false
 
         // Kind picker — segmented control, Kobold default. Switching
@@ -264,7 +315,7 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         // default port (11434) without typing.
         let kindPicker = NSSegmentedControl(labels: ["Kobold (writer)", "Ollama (extractor)"], trackingMode: .selectOne, target: nil, action: nil)
         kindPicker.translatesAutoresizingMaskIntoConstraints = false
-        kindPicker.selectedSegment = 0
+        kindPicker.selectedSegment = (existing?.kind == .ollama) ? 1 : 0
         kindPicker.target = self
         kindPicker.action = #selector(kindPickerChanged(_:))
         // Model field — the explicit model this endpoint uses. For
@@ -274,6 +325,7 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         // detection. Optional — blank falls back to the probe.
         let modelField = NSTextField()
         modelField.placeholderString = "Model (optional, e.g. \"gemma4_2b:latest\")"
+        modelField.stringValue = existing?.model ?? ""
         modelField.translatesAutoresizingMaskIntoConstraints = false
         modelField.tag = 97
 
@@ -306,7 +358,11 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
             guard response == .alertFirstButtonReturn else { return }
             guard let url = URL(string: urlField.stringValue) else { return }
             let kind: ServerKind = kindPicker.selectedSegment == 1 ? .ollama : .kobold
-            try? self?.addServer(name: nameField.stringValue, baseURL: url, kind: kind, model: modelField.stringValue)
+            if let existing = existing {
+                try? self?.updateServer(id: existing.id, name: nameField.stringValue, baseURL: url, kind: kind, model: modelField.stringValue)
+            } else {
+                try? self?.addServer(name: nameField.stringValue, baseURL: url, kind: kind, model: modelField.stringValue)
+            }
         }
     }
 
@@ -332,6 +388,7 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         // click handlers now validate at action time and fall back
         // sensibly when `selectedRow == -1`.
         let hasRows = !appState.settings.servers.isEmpty
+        editButton.isEnabled = hasRows
         removeButton.isEnabled = hasRows
         setDefaultButton.isEnabled = hasRows
         setExtractorButton.isEnabled = hasRows

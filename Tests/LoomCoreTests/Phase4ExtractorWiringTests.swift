@@ -41,6 +41,72 @@ func phase4ExtractorWiringTests() -> TestSuite {
         try expectEqual(stored.kind, .kobold)
     }
 
+    s.test("addServer persists an explicit model field") {
+        let appState = freshAppState()
+        let vc = SettingsViewController(appState: appState)
+        _ = vc.view
+        try vc.serversTabVC.addServer(
+            name: "Extractor", baseURL: URL(string: "http://localhost:11434")!,
+            kind: .ollama, model: "gemma4_2b:latest"
+        )
+        let stored = try expectNotNil(appState.settings.servers.first)
+        try expectEqual(stored.model, "gemma4_2b:latest")
+    }
+
+    s.test("addServer treats a blank model as nil") {
+        let appState = freshAppState()
+        let vc = SettingsViewController(appState: appState)
+        _ = vc.view
+        try vc.serversTabVC.addServer(
+            name: "W", baseURL: URL(string: "http://w")!, kind: .kobold, model: "   "
+        )
+        let stored = try expectNotNil(appState.settings.servers.first)
+        try expectNil(stored.model)
+    }
+
+    s.test("updateServer edits fields in place, preserving id, and sets the model") {
+        let appState = freshAppState()
+        let vc = SettingsViewController(appState: appState)
+        _ = vc.view
+        try vc.serversTabVC.addServer(name: "Writer", baseURL: URL(string: "http://192.168.1.201:5001")!, kind: .kobold)
+        let id = try expectNotNil(appState.settings.servers.first?.id)
+        // Edit: rename + pin a model, same URL/kind.
+        try vc.serversTabVC.updateServer(
+            id: id, name: "Home Writer",
+            baseURL: URL(string: "http://192.168.1.201:5001")!,
+            kind: .kobold, model: "gemma-4-31B-it-Thinking"
+        )
+        try expectEqual(appState.settings.servers.count, 1)
+        let updated = try expectNotNil(appState.settings.servers.first)
+        try expectEqual(updated.id, id, "id is preserved across edit")
+        try expectEqual(updated.name, "Home Writer")
+        try expectEqual(updated.model, "gemma-4-31B-it-Thinking")
+    }
+
+    s.test("updateServer that keeps the same URL preserves probed capabilities") {
+        let appState = freshAppState()
+        let vc = SettingsViewController(appState: appState)
+        _ = vc.view
+        // Seed a profile with cached capabilities directly via settings.
+        var settings = appState.settings
+        let probed = ServerProfile(
+            name: "W", baseURL: URL(string: "http://192.168.1.201:5001")!, kind: .kobold,
+            capabilities: ServerCapabilities(modelName: "probed-model", trueMaxContext: 16384, version: "1.x")
+        )
+        settings.addServer(probed)
+        try appState.updateSettings(settings)
+        // Edit only the model, same URL/kind → capabilities should survive.
+        try vc.serversTabVC.updateServer(
+            id: probed.id, name: "W",
+            baseURL: URL(string: "http://192.168.1.201:5001")!,
+            kind: .kobold, model: "pinned-model"
+        )
+        let updated = try expectNotNil(appState.settings.servers.first)
+        try expectEqual(updated.model, "pinned-model")
+        try expectEqual(updated.capabilities?.modelName, "probed-model", "caps survive a same-URL edit")
+        try expectEqual(updated.capabilities?.trueMaxContext, 16384)
+    }
+
     s.test("setExtractor(id:) persists extractorServerId through AppState.updateSettings") {
         let appState = freshAppState()
         let vc = SettingsViewController(appState: appState)
