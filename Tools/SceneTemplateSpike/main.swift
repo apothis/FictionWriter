@@ -124,6 +124,12 @@ func koboldGenerate(prompt: String, maxLength: Int) -> Result<String, Error> {
     guard let url = URL(string: "api/v1/generate", relativeTo: URL(string: koboldURLString))?.absoluteURL else {
         return .failure(NSError(domain: "Spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "bad kobold URL"]))
     }
+    // Instruct-wrap the prompt (mirrors production GenerationCoordinator).
+    // BeatGeneration.buildBeatPrompt returns a template-agnostic body;
+    // a Mistral writer (Goetia) emits EOS immediately on a raw,
+    // unwrapped prompt — so Pass-B comes back empty without this.
+    let adapter = InstructTemplates.adapter(for: .mistralV7)
+    let prompt = adapter.wrap(system: "", userBody: prompt, prefill: "")
     // Sampler — matches Loom's GenerationDefaults.phase1Defaults shape
     // (creative-writing-tuned: temp 1.0, top-p 0.95, min-p 0.05, DRY 0.8).
     let body: [String: Any] = [
@@ -144,7 +150,7 @@ func koboldGenerate(prompt: String, maxLength: Int) -> Result<String, Error> {
         // typically pauses at a natural sentence boundary near the
         // target length, but the stops below prevent it from
         // continuing into a second beat or echoing prompt sections.
-        "stop_sequence": ["[BEAT", "===", "[INSTRUCTION", "[SYSTEM"],
+        "stop_sequence": ["[BEAT", "===", "[INSTRUCTION", "[SYSTEM"] + adapter.stopSequences,
     ]
     var req = URLRequest(url: url)
     req.httpMethod = "POST"
@@ -995,26 +1001,76 @@ func dateStamp() -> String {
     return f.string(from: Date())
 }
 
-func runGoetiaCompare() {
-    // Confirm Goetia is live + read the context budget.
-    guard let koboldBase = URL(string: koboldURLString) else {
-        log("ABORT: bad kobold URL \(koboldURLString)"); exit(1)
-    }
-    let probe = KoboldClient(baseURL: koboldBase)
+/// Confirm Goetia is live + read the context budget. Returns nil on a
+/// bad URL; otherwise (modelName, maxContext) with sensible fallbacks.
+func probeGoetia() -> (modelName: String, maxContext: Int)? {
+    guard let base = URL(string: koboldURLString) else { return nil }
+    let probe = KoboldClient(baseURL: base)
     var modelName = "?"
     var maxContext = 16384
-    let sem1 = DispatchSemaphore(value: 0)
-    probe.fetchModel { r in
-        if case .success(let n) = r { modelName = n }
-        sem1.signal()
+    let s1 = DispatchSemaphore(value: 0)
+    probe.fetchModel { if case .success(let n) = $0 { modelName = n }; s1.signal() }
+    s1.wait()
+    let s2 = DispatchSemaphore(value: 0)
+    probe.fetchTrueMaxContext { if case .success(let c) = $0 { maxContext = c }; s2.signal() }
+    s2.wait()
+    return (modelName, maxContext)
+}
+
+func goetiaModelIsLoaded(_ modelName: String) -> Bool {
+    let lower = modelName.lowercased()
+    return lower.contains("goetia") || lower.contains("mistral-small") || lower.contains("mistral_small")
+}
+
+/// Pass-A via the production winner (Goetia + GBNF, nested schema).
+/// Returns the parsed skeleton, or nil on transport/parse failure.
+func extractViaGoetiaGBNF(sceneBody: String, maxContext: Int) -> ExtractedSceneSkeleton? {
+    let prompt = BeatExtraction.buildExtractionPrompt(sourceProse: sceneBody)
+    switch goetiaKoboldRaw(prompt: prompt, grammar: BeatExtraction.gbnfGrammar(), maxContext: maxContext) {
+    case .success(let raw):
+        let (skel, err) = goetiaParse(raw, with: .nested)
+        if let err = err { log("[goetia-gen] Pass-A parse fail: \(err)") }
+        return skel
+    case .failure(let e):
+        log("[goetia-gen] Pass-A transport fail: \(e.localizedDescription)")
+        return nil
     }
-    sem1.wait()
-    let sem2 = DispatchSemaphore(value: 0)
-    probe.fetchTrueMaxContext { r in
-        if case .success(let c) = r { maxContext = c }
-        sem2.signal()
+}
+
+/// End-to-end smoke: Pass-A via Goetia+GBNF on a registered fixture,
+/// then Pass-B per-beat on the writer with the fixture's cast mapping.
+/// Confirms the full Write-Scene-From-Template flow now produces usable
+/// prose with the new default route.
+func runGoetiaGenerate(fixtureFilename: String) {
+    guard let mapping = castMappings[fixtureFilename] else {
+        log("[\(fixtureFilename)] no cast mapping registered; skipping. (Registered: \(castMappings.keys.sorted().joined(separator: ", ")))")
+        return
     }
-    sem2.wait()
+    guard let probe = probeGoetia() else { log("ABORT: bad kobold URL \(koboldURLString)"); exit(1) }
+    log("[goetia-gen] writer model: \(probe.modelName), maxContext: \(probe.maxContext)")
+    guard goetiaModelIsLoaded(probe.modelName) else {
+        log("ABORT: Kobold model \"\(probe.modelName)\" is not Goetia / Mistral-Small."); exit(1)
+    }
+    let fixturePath = cwd.appendingPathComponent(fixturesDir).appendingPathComponent(fixtureFilename)
+    guard let fixture = try? loadFixture(path: fixturePath) else {
+        log("ABORT: can't load fixture \(fixturePath.path)"); exit(1)
+    }
+    log("[goetia-gen] Pass-A via Goetia+GBNF (\(fixture.body.split(whereSeparator: { $0.isWhitespace }).count)w source)...")
+    guard let skeleton = extractViaGoetiaGBNF(sceneBody: fixture.body, maxContext: probe.maxContext) else {
+        log("[goetia-gen] Pass-A produced no skeleton; aborting Pass-B."); exit(1)
+    }
+    log("[goetia-gen] Pass-A → \(skeleton.beats.count) beats; running Pass-B per-beat...")
+    let run = runPassB(fixture: fixture, extracted: skeleton, castMapping: mapping)
+    writeGenerationReport(run)
+}
+
+func runGoetiaCompare() {
+    // Confirm Goetia is live + read the context budget.
+    guard let probe = probeGoetia() else {
+        log("ABORT: bad kobold URL \(koboldURLString)"); exit(1)
+    }
+    let modelName = probe.modelName
+    let maxContext = probe.maxContext
     log("[goetia] writer model: \(modelName), maxContext: \(maxContext)")
     let lower = modelName.lowercased()
     guard lower.contains("goetia") || lower.contains("mistral-small") || lower.contains("mistral_small") else {
@@ -1134,6 +1190,12 @@ case "--ablate-voice":
     runVoiceAblation(fixtureFilename: args[2])
 case "--goetia-compare":
     runGoetiaCompare()
+case "--goetia-generate":
+    guard args.count >= 3 else {
+        log("--goetia-generate requires a fixture basename (e.g. 01_the_doorway_dialogue.md)")
+        exit(1)
+    }
+    runGoetiaGenerate(fixtureFilename: args[2])
 default:
     log("Unknown command: \(cmd)")
     exit(1)
