@@ -94,13 +94,19 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
     /// appends to AppSettings.servers, auto-promotes to default if
     /// the list was previously empty, persists via
     /// `AppState.updateSettings`, kicks off a kind-aware auto-probe.
-    public func addServer(name: String, baseURL: URL, kind: ServerKind = .kobold) throws {
+    public func addServer(name: String, baseURL: URL, kind: ServerKind = .kobold, model: String? = nil) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw ServersTabError.emptyName
         }
+        let trimmedModel = model?.trimmingCharacters(in: .whitespacesAndNewlines)
         var settings = appState.settings
-        let profile = ServerProfile(name: trimmed, baseURL: baseURL, kind: kind)
+        let profile = ServerProfile(
+            name: trimmed,
+            baseURL: baseURL,
+            kind: kind,
+            model: (trimmedModel?.isEmpty ?? true) ? nil : trimmedModel
+        )
         settings.addServer(profile)
         try appState.updateSettings(settings)
         tableView?.reloadData()
@@ -261,6 +267,16 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         kindPicker.selectedSegment = 0
         kindPicker.target = self
         kindPicker.action = #selector(kindPickerChanged(_:))
+        // Model field — the explicit model this endpoint uses. For
+        // Ollama it pins the extractor model (a multi-model install
+        // otherwise resolves to "first in /api/tags", which could be an
+        // embedding model). For Kobold it informs instruct-template
+        // detection. Optional — blank falls back to the probe.
+        let modelField = NSTextField()
+        modelField.placeholderString = "Model (optional, e.g. \"gemma4_2b:latest\")"
+        modelField.translatesAutoresizingMaskIntoConstraints = false
+        modelField.tag = 97
+
         // Tag the URL field so the action handler can find it.
         urlField.tag = 99
         // Stash the kindPicker as accessible via tag too.
@@ -269,11 +285,13 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
         stack.addArrangedSubview(nameField)
         stack.addArrangedSubview(urlField)
         stack.addArrangedSubview(kindPicker)
+        stack.addArrangedSubview(modelField)
         nameField.widthAnchor.constraint(equalToConstant: 320).isActive = true
         urlField.widthAnchor.constraint(equalToConstant: 320).isActive = true
         kindPicker.widthAnchor.constraint(equalToConstant: 320).isActive = true
+        modelField.widthAnchor.constraint(equalToConstant: 320).isActive = true
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 100))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 132))
         container.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: container.topAnchor),
@@ -288,7 +306,7 @@ public final class ServersTabViewController: NSViewController, NSTableViewDataSo
             guard response == .alertFirstButtonReturn else { return }
             guard let url = URL(string: urlField.stringValue) else { return }
             let kind: ServerKind = kindPicker.selectedSegment == 1 ? .ollama : .kobold
-            try? self?.addServer(name: nameField.stringValue, baseURL: url, kind: kind)
+            try? self?.addServer(name: nameField.stringValue, baseURL: url, kind: kind, model: modelField.stringValue)
         }
     }
 

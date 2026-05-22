@@ -129,7 +129,7 @@ public final class AppState {
         let coordinator = LedgerExtractionCoordinator(
             extractorProvider: { () -> LedgerExtractor? in
                 guard let profile = settingsSnapshot().extractorServer() else { return nil }
-                let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
+                let model = profile.model ?? profile.capabilities?.modelName ?? "gemma4_2b:latest"
                 return OllamaLedgerExtractor(baseURL: profile.baseURL, model: model)
             },
             scheduler: TimerScheduler(),
@@ -388,7 +388,7 @@ public final class AppState {
             DebugLog.shared.write("[proposals] runEntityDiscovery ignored — already in flight for scene=\(sceneId)")
             return
         }
-        let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
+        let model = profile.model ?? profile.capabilities?.modelName ?? "gemma4_2b:latest"
         let client = OllamaClient(baseURL: profile.baseURL, model: model)
         let embedder = embeddingClientFactory(projectURL)
         let prose = scene.prose
@@ -600,7 +600,7 @@ public final class AppState {
             DebugLog.shared.write("[relationships] runRelationshipDiscovery dropped — fewer than two bible characters")
             return
         }
-        let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
+        let model = profile.model ?? profile.capabilities?.modelName ?? "gemma4_2b:latest"
         let extractor = OllamaRelationshipDiscoveryExtractor(
             client: OllamaClient(baseURL: profile.baseURL, model: model)
         )
@@ -1046,8 +1046,13 @@ public final class AppState {
             DebugLog.shared.write("[template] extract skipped: in-memory session id=\(id)")
             return
         }
-        guard let profile = settings.extractorServer() else {
-            DebugLog.shared.write("[template] extract skipped: no extractor server configured id=\(id)")
+        // Pass-A beat extraction runs on the WRITER model with a GBNF
+        // grammar (KoboldBeatExtractor), not the Ollama extractor.
+        // Rationale (2026-05-22): the Ollama `format`-schema path is
+        // unreliable — it produced a 97KB off-schema body that failed
+        // to parse. GBNF on the writer guarantees on-shape JSON.
+        guard let writer = settings.writerServer() else {
+            DebugLog.shared.write("[template] extract skipped: no writer server configured id=\(id)")
             return
         }
         // Reject re-entrancy. Double-clicking Extract while a run is
@@ -1064,10 +1069,21 @@ public final class AppState {
             name: ProjectSession.didChangeNotification,
             object: currentSession
         )
-        let model = profile.capabilities?.modelName ?? "gemma4_2b:latest"
+        // Resolve the writer client + its instruct template + context
+        // budget on the calling thread (don't touch registry/settings
+        // off-main). Template prefers the profile's explicit `model`
+        // (the user-set field), then the probed model name; an
+        // unrecognised/absent name falls back to `.auto` (raw) — the
+        // GBNF still constrains output, so this can't regress to garbage.
+        let client = registry.clientForDefault()
+        let writerModelName = writer.model ?? writer.capabilities?.modelName
+        let template = writerModelName.flatMap(InstructTemplates.detect) ?? .auto
+        let maxContext = writer.capabilities?.trueMaxContext ?? 8192
+        DebugLog.shared.write("[template] extract via writer model=\(writerModelName ?? "unknown") template=\(template.rawValue) id=\(id)")
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let client = OllamaClient(baseURL: profile.baseURL, model: model)
-            let extractor = OllamaBeatExtractor(client: client)
+            let extractor = KoboldBeatExtractor(
+                client: client, template: template, maxContextLength: maxContext
+            )
             let pipeline = BeatExtractionPipeline(projectURL: projectURL, extractor: extractor)
             pipeline.extractAndPersist(templateId: id) { result in
                 DispatchQueue.main.async {

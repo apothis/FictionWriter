@@ -49,6 +49,37 @@ func phase4ServerProfileKindTests() -> TestSuite {
         try expectEqual(decoded.name, "Old Writer")
     }
 
+    s.test("ServerProfile.model defaults to nil and round-trips when set") {
+        let none = ServerProfile(name: "W", baseURL: URL(string: "http://localhost:5001")!)
+        try expectNil(none.model)
+        let pinned = ServerProfile(
+            name: "Extractor",
+            baseURL: URL(string: "http://localhost:11434")!,
+            kind: .ollama,
+            model: "gemma4_2b:latest"
+        )
+        let data = try JSONEncoder.loomPretty.encode(pinned)
+        let decoded = try JSONDecoder.loom.decode(ServerProfile.self, from: data)
+        try expectEqual(decoded.model, "gemma4_2b:latest")
+        try expectEqual(decoded, pinned)
+    }
+
+    s.test("ServerProfile JSON without `model` decodes to nil (forward-load contract)") {
+        // Pre-model-field profiles on disk have no `model` key; they must
+        // load forward without rewriting.
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "name": "Extractor",
+          "baseURL": "http://localhost:11434/",
+          "kind": "ollama"
+        }
+        """
+        let decoded = try JSONDecoder.loom.decode(ServerProfile.self, from: Data(json.utf8))
+        try expectNil(decoded.model)
+        try expectEqual(decoded.kind, .ollama)
+    }
+
     s.test("AppSettings JSON with multiple profiles where some lack `kind` decodes mixed-kind correctly") {
         // Real shape: a Phase 4 settings.json after the user has added an
         // Ollama extractor next to their legacy kobold writer. The kobold

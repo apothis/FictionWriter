@@ -39,6 +39,14 @@ public struct ServerProfile: Codable, Equatable, Identifiable {
     public var name: String
     public var baseURL: URL
     public var kind: ServerKind
+    /// Explicit model selection for this endpoint. For Ollama this is
+    /// the model the extractor calls (`gemma4_2b:latest` etc.) — a multi-
+    /// model Ollama install otherwise leaves the choice to the probe's
+    /// "first in /api/tags", which is order-dependent and could even
+    /// resolve to an embedding model. For Kobold this informs instruct-
+    /// template detection when the probe didn't capture a model name.
+    /// `nil` = fall back to the probed `capabilities.modelName`.
+    public var model: String?
     public var capabilities: ServerCapabilities?
     public var lastProbed: Date?
 
@@ -47,6 +55,7 @@ public struct ServerProfile: Codable, Equatable, Identifiable {
         name: String,
         baseURL: URL,
         kind: ServerKind = .kobold,
+        model: String? = nil,
         capabilities: ServerCapabilities? = nil,
         lastProbed: Date? = nil
     ) {
@@ -54,6 +63,7 @@ public struct ServerProfile: Codable, Equatable, Identifiable {
         self.name = name
         self.baseURL = baseURL
         self.kind = kind
+        self.model = model
         self.capabilities = capabilities
         self.lastProbed = lastProbed
     }
@@ -64,6 +74,7 @@ public struct ServerProfile: Codable, Equatable, Identifiable {
         self.name = try c.decode(String.self, forKey: .name)
         self.baseURL = try c.decode(URL.self, forKey: .baseURL)
         self.kind = try c.decodeIfPresent(ServerKind.self, forKey: .kind) ?? .kobold
+        self.model = try c.decodeIfPresent(String.self, forKey: .model)
         self.capabilities = try c.decodeIfPresent(ServerCapabilities.self, forKey: .capabilities)
         self.lastProbed = try c.decodeIfPresent(Date.self, forKey: .lastProbed)
     }
