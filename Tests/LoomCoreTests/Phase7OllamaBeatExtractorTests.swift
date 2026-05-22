@@ -50,14 +50,12 @@ func phase7OllamaBeatExtractorTests() -> TestSuite {
         }
     }
 
-    // JSONL — the production Pass-A shape (one flat object per line).
+    // Flat structure-of-arrays — the production Pass-A shape.
     let cannedSkeleton = """
-        {"type":"voice","sentenceCadence":"shortClipped","dialogueDensity":"balanced","rhetoricalFlourish":"minimal","register":"noir","distinctiveTechniques":["fragments"]}
-        {"type":"beat","index":0,"function":"setup","modality":"description","summary":"{PROTAGONIST} arrives.","targetWords":80}
-        {"type":"meta","characters":["Hadley"],"settings":["kitchen"]}
+        {"sentenceCadence":"shortClipped","dialogueDensity":"balanced","rhetoricalFlourish":"minimal","register":"noir","distinctiveTechniques":["fragments"],"characters":["Hadley"],"settings":["kitchen"],"beatFunctions":["setup"],"beatModalities":["description"],"beatSummaries":["{PROTAGONIST} arrives."],"beatTargetWords":[80]}
         """
 
-    s.test("OllamaBeatExtractor sends the Pass-A prompt UNCONSTRAINED (no format schema); parses success") {
+    s.test("OllamaBeatExtractor sends the flat prompt + flat format schema; parses success") {
         let stub = StubOllamaProvider(responses: [.success(cannedSkeleton)])
         let extractor = OllamaBeatExtractor(provider: stub)
 
@@ -65,9 +63,11 @@ func phase7OllamaBeatExtractorTests() -> TestSuite {
         extractor.extractSkeleton(from: "She walked into the kitchen.") { r in result = r }
         // Captured before completion fires.
         try expectTrue(stub.capturedPrompt?.contains("She walked into the kitchen.") == true)
-        // No format-schema — the schema-constrained path flakes on small
-        // gemma; we rely on the prompt + tolerant parse instead.
-        try expectTrue(stub.capturedSchema?.isEmpty == true)
+        // The FLAT format-schema constrains the keys (the flake was the
+        // nested array-of-objects; this flat schema is shallow).
+        try expectTrue(stub.capturedSchema?["properties"] != nil)
+        let props = stub.capturedSchema?["properties"] as? [String: Any]
+        try expectNotNil(props?["beatSummaries"])
         stub.flush()
         try expectNotNil(result)
         if case .success(let skeleton) = result {

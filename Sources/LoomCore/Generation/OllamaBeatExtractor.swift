@@ -41,14 +41,14 @@ public final class OllamaBeatExtractor: BeatExtractor {
         from sourceProse: String,
         completion: @escaping (Result<ExtractedSceneSkeleton, Error>) -> Void
     ) {
-        let prompt = BeatExtraction.buildJSONLPrompt(sourceProse: sourceProse)
-        // Unconstrained — do NOT pass the JSON `format` schema. The
-        // schema-constrained path flakes ~50% on small gemma (degenerate
-        // buffer → empty / off-schema; LOOM_TECH_STACK §3, live
-        // 2026-05-22). The prompt pins the field names; we tolerant-parse
-        // + retry instead, matching the ledger/continuity Ollama
-        // extractors.
-        let schema: [String: Any] = [:]
+        let prompt = BeatExtraction.buildFlatPrompt(sourceProse: sourceProse)
+        // FLAT schema as the `format` constraint. Unconstrained, small
+        // gemma free-forms a wrong shape (prose / speaker-utterance /
+        // title-plot — live 2026-05-22); the constraint forces the keys.
+        // The flake that plagued the *nested* schema was the deep
+        // array-of-objects nesting — this flat structure-of-arrays is
+        // shallow enough for the format decoder to honour reliably.
+        let schema = BeatExtraction.flatJSONSchema()
         let options = OllamaChatOptions(
             // Extraction wants deterministic JSON, not creative
             // variation. Tight sampler matches the LedgerSpike §sampler-
@@ -102,7 +102,7 @@ public final class OllamaBeatExtractor: BeatExtractor {
                     return
                 }
                 do {
-                    let skeleton = try BeatExtraction.parseJSONLSkeleton(raw)
+                    let skeleton = try BeatExtraction.parseFlatSkeleton(raw)
                     completion(.success(skeleton))
                 } catch let parseError as BeatExtraction.ParseError where attemptsRemaining > 0 {
                     // Transient parse failures are retried once. Two

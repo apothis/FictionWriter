@@ -65,11 +65,9 @@ func phase7KoboldBeatExtractorTests() -> TestSuite {
         }
     }
 
-    // Default (unconstrained) path parses JSONL.
+    // Default (unconstrained) path parses the flat structure-of-arrays.
     let canned = """
-        {"type":"voice","sentenceCadence":"shortClipped","dialogueDensity":"balanced","rhetoricalFlourish":"minimal","register":"noir","distinctiveTechniques":["fragments"]}
-        {"type":"beat","index":0,"function":"setup","modality":"description","summary":"{PROTAGONIST} arrives.","targetWords":80}
-        {"type":"meta","characters":["Hadley"],"settings":["kitchen"]}
+        {"sentenceCadence":"shortClipped","dialogueDensity":"balanced","rhetoricalFlourish":"minimal","register":"noir","distinctiveTechniques":["fragments"],"characters":["Hadley"],"settings":["kitchen"],"beatFunctions":["setup"],"beatModalities":["description"],"beatSummaries":["{PROTAGONIST} arrives."],"beatTargetWords":[80]}
         """
     // GBNF path (useGrammar:true) parses the nested single object.
     let cannedNested = """

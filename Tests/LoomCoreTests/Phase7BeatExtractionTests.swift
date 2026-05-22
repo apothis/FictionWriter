@@ -180,80 +180,76 @@ func phase7BeatExtractionTests() -> TestSuite {
         try expectNotNil(skeleton.voiceDescriptor)
     }
 
-    // MARK: - JSONL parser (the production path)
+    // MARK: - Flat parser (the production path)
 
-    s.test("buildJSONLPrompt asks for one-object-per-line with the source + role-token rule") {
-        let p = BeatExtraction.buildJSONLPrompt(sourceProse: "She crossed the room.")
+    s.test("buildFlatPrompt puts the scene first + a JSON-only directive last with the flat keys") {
+        let p = BeatExtraction.buildFlatPrompt(sourceProse: "She crossed the room.")
         try expectTrue(p.contains("She crossed the room."))
-        try expectTrue(p.contains("ONE JSON object per line"))
-        try expectTrue(p.contains("\"type\":\"beat\""))
+        // Scene precedes the directive (recency keeps the model on-task).
+        let sceneIdx = p.range(of: "She crossed the room.")!.lowerBound
+        let directiveIdx = p.range(of: "Begin now (JSON only):")!.lowerBound
+        try expectTrue(sceneIdx < directiveIdx)
+        try expectTrue(p.contains("beatSummaries"))
         try expectTrue(p.contains("{PROTAGONIST}"))
     }
 
-    s.test("parseJSONLSkeleton parses voice + beats + meta lines") {
+    s.test("flatJSONSchema is a shallow object with parallel beat arrays + enum-constrained items") {
+        let schema = BeatExtraction.flatJSONSchema()
+        let props = schema["properties"] as! [String: Any]
+        // Flat — beat fields are parallel arrays, NOT an array of objects.
+        let funcs = props["beatFunctions"] as! [String: Any]
+        try expectEqual(funcs["type"] as? String, "array")
+        let items = funcs["items"] as! [String: Any]
+        try expectEqual(Set(items["enum"] as! [String]), Set(BeatFunction.allCases.map(\.rawValue)))
+        try expectNotNil(props["beatSummaries"])
+        try expectNotNil(props["beatTargetWords"])
+    }
+
+    s.test("parseFlatSkeleton zips the parallel arrays into beats + reads voice/markers") {
         let raw = """
-        {"type":"voice","sentenceCadence":"shortClipped","dialogueDensity":"balanced","rhetoricalFlourish":"minimal","register":"noir","distinctiveTechniques":["fragments","present tense"]}
-        {"type":"beat","index":0,"function":"setup","modality":"description","summary":"{PROTAGONIST} waits.","targetWords":70}
-        {"type":"beat","index":1,"function":"escalation","modality":"action","summary":"{ANTAGONIST} arrives.","targetWords":110}
-        {"type":"meta","characters":["Mara","Jude"],"settings":["dock","dusk"]}
+        {"sentenceCadence":"shortClipped","dialogueDensity":"balanced","rhetoricalFlourish":"minimal","register":"noir","distinctiveTechniques":["fragments"],"characters":["Mara","Jude"],"settings":["dock"],"beatFunctions":["setup","escalation"],"beatModalities":["description","action"],"beatSummaries":["{PROTAGONIST} waits.","{ANTAGONIST} arrives."],"beatTargetWords":[70,110]}
         """
-        let skel = try BeatExtraction.parseJSONLSkeleton(raw)
+        let skel = try BeatExtraction.parseFlatSkeleton(raw)
         try expectEqual(skel.beats.count, 2)
         try expectEqual(skel.beats[0].function, .setup)
         try expectEqual(skel.beats[1].modality, .action)
+        try expectEqual(skel.beats[1].targetWords, 110)
         try expectEqual(skel.sourceCharacters, ["Mara", "Jude"])
-        try expectEqual(skel.sourceSettingMarkers, ["dock", "dusk"])
         try expectEqual(skel.voiceDescriptor?.sentenceCadence, .shortClipped)
     }
 
-    s.test("parseJSONLSkeleton tolerates fences, preamble, and a malformed line") {
+    s.test("parseFlatSkeleton tolerates a code fence + preamble around the object") {
         let raw = """
         Here is the skeleton:
         ```json
-        {"type":"beat","index":0,"function":"setup","modality":"description","summary":"A.","targetWords":50}
-        {"type":"beat" "index":1 BROKEN LINE no commas}
-        {"type":"beat","index":1,"function":"reveal","modality":"dialogue","summary":"B.","targetWords":60}
+        {"sentenceCadence":"moderateBalanced","dialogueDensity":"balanced","rhetoricalFlourish":"moderate","register":"x","distinctiveTechniques":[],"characters":[],"settings":[],"beatFunctions":["setup"],"beatModalities":["action"],"beatSummaries":["A."],"beatTargetWords":[50]}
         ```
         """
-        let skel = try BeatExtraction.parseJSONLSkeleton(raw)
-        // The two good beat lines parse; the broken one + fences are skipped.
-        try expectEqual(skel.beats.count, 2)
+        let skel = try BeatExtraction.parseFlatSkeleton(raw)
+        try expectEqual(skel.beats.count, 1)
     }
 
-    s.test("parseJSONLSkeleton defaults a zero/missing targetWords to 100 and unknown enums sensibly") {
+    s.test("parseFlatSkeleton defaults zero/missing targetWords to 100 + ragged arrays + unknown enums") {
+        // Ragged: 2 summaries, only 1 function/modality, targetWords [0].
         let raw = """
-        {"type":"beat","index":0,"function":"WEIRD","modality":"alsoweird","summary":"x","targetWords":0}
-        {"type":"beat","index":1,"function":"reveal","modality":"dialogue","summary":"y"}
+        {"sentenceCadence":"x","dialogueDensity":"x","rhetoricalFlourish":"x","register":"r","distinctiveTechniques":[],"characters":[],"settings":[],"beatFunctions":["WEIRD"],"beatModalities":["alsoweird"],"beatSummaries":["a","b"],"beatTargetWords":[0]}
         """
-        let skel = try BeatExtraction.parseJSONLSkeleton(raw)
+        let skel = try BeatExtraction.parseFlatSkeleton(raw)
         try expectEqual(skel.beats.count, 2)
-        // Zero/absent targetWords → 100 (never the truncating floor).
-        try expectEqual(skel.beats[0].targetWords, 100)
-        try expectEqual(skel.beats[1].targetWords, 100)
-        // Unknown enum values fall back rather than dropping the beat.
-        try expectEqual(skel.beats[0].function, .escalation)
+        try expectEqual(skel.beats[0].targetWords, 100)   // 0 → 100
+        try expectEqual(skel.beats[1].targetWords, 100)   // missing → 100
+        try expectEqual(skel.beats[0].function, .escalation)  // unknown → default
         try expectEqual(skel.beats[0].modality, .mixed)
+        try expectEqual(skel.beats[1].function, .escalation)  // missing → default
     }
 
-    s.test("parseJSONLSkeleton re-indexes beats contiguously regardless of emitted index") {
+    s.test("parseFlatSkeleton throws noJSONObjectFound when there are no beat summaries (wrong schema)") {
+        // gemma4_2b's failure modes: wrong-key JSON / no beats.
         let raw = """
-        {"type":"beat","index":5,"function":"setup","modality":"action","summary":"a","targetWords":50}
-        {"type":"beat","index":2,"function":"reveal","modality":"action","summary":"b","targetWords":50}
-        """
-        let skel = try BeatExtraction.parseJSONLSkeleton(raw)
-        try expectEqual(skel.beats.map(\.index), [0, 1])
-        // Sorted by emitted index first: index 2 (b) before index 5 (a).
-        try expectEqual(skel.beats[0].summary, "b")
-    }
-
-    s.test("parseJSONLSkeleton throws noJSONObjectFound when a roll has zero beats (wrong schema)") {
-        // gemma4_2b's failure mode: a generic title/characters/plot shape
-        // with no beat lines. Zero beats → retryable parse error.
-        let raw = """
-        {"title":"A Night","characters":[{"name":"Narrator"}],"plot":[{"event":"start"}]}
+        {"title":"A Night","speaker":"Narrator","utterance":"..."}
         """
         try expectThrows {
-            _ = try BeatExtraction.parseJSONLSkeleton(raw)
+            _ = try BeatExtraction.parseFlatSkeleton(raw)
         }
     }
 

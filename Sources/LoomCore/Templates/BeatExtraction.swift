@@ -304,98 +304,105 @@ public enum BeatExtraction {
 
     // MARK: - JSONL prompt + parser (the production path)
 
-    /// JSONL Pass-A prompt — the shape small/instruct models reliably
-    /// produce (the ledger/continuity extractors use the same family).
-    /// The previous single-nested-object schema (`buildExtractionPrompt`
-    /// + `parseExtractedSkeleton`) proved too complex for gemma4_2b
-    /// unconstrained (it free-formed a wrong title/characters/setting/
-    /// plot shape — live 2026-05-22) and degenerated under GBNF on a
-    /// Thinking writer. Flat type-discriminated lines sidestep both.
+    /// **Flat** Pass-A schema + prompt + parser — the production shape.
     ///
-    /// Output: one JSON object per line — a `voice` line, then one
-    /// `beat` line per beat, then a `meta` line. `parseJSONLSkeleton`
-    /// is per-line tolerant (a bad line is skipped, not fatal).
-    public static func buildJSONLPrompt(sourceProse: String) -> String {
-        // Structure matters for small models: the SCENE comes first, the
-        // output directive LAST, so recency keeps the model on-task. A
-        // long format spec placed before a 3000-word scene gets "forgotten"
-        // and gemma4_2b reverts to a prose summary (live 2026-05-22). The
-        // closing "Output ONLY JSONL … begin with {" is the dominant
-        // instruction; the example lines lock in the exact shape.
+    /// Every other shape failed on the available models (2026-05-22):
+    /// the nested single object flaked under Ollama `format` and
+    /// degenerated under GBNF on a Thinking writer; unconstrained,
+    /// gemma4_2b free-formed a wrong schema (nested) or reverted to prose
+    /// / wrong-key JSON (JSONL). The fix: a **flat structure-of-arrays**
+    /// object — no nested objects, no arrays-of-objects — which (a) the
+    /// Ollama `format` decoder constrains reliably (the flake was the
+    /// deep nesting) and (b) a small model can actually produce.
+    ///
+    /// Shape: one object with the voice fields at top level + parallel
+    /// arrays `beatFunctions` / `beatModalities` / `beatSummaries` /
+    /// `beatTargetWords` (zipped by index into beats).
+    public static func flatJSONSchema() -> [String: Any] {
+        return [
+            "type": "object",
+            "properties": [
+                "sentenceCadence": ["type": "string", "enum": SentenceCadence.allCases.map(\.rawValue)],
+                "dialogueDensity": ["type": "string", "enum": DialogueDensity.allCases.map(\.rawValue)],
+                "rhetoricalFlourish": ["type": "string", "enum": RhetoricalFlourish.allCases.map(\.rawValue)],
+                "register": ["type": "string"],
+                "distinctiveTechniques": ["type": "array", "items": ["type": "string"]],
+                "characters": ["type": "array", "items": ["type": "string"]],
+                "settings": ["type": "array", "items": ["type": "string"]],
+                "beatFunctions": ["type": "array", "items": ["type": "string", "enum": BeatFunction.allCases.map(\.rawValue)]],
+                "beatModalities": ["type": "array", "items": ["type": "string", "enum": NarrativeMode.allCases.map(\.rawValue)]],
+                "beatSummaries": ["type": "array", "items": ["type": "string"]],
+                "beatTargetWords": ["type": "array", "items": ["type": "integer"]],
+            ],
+            "required": [
+                "sentenceCadence", "dialogueDensity", "rhetoricalFlourish",
+                "register", "distinctiveTechniques", "characters", "settings",
+                "beatFunctions", "beatModalities", "beatSummaries", "beatTargetWords",
+            ],
+        ]
+    }
+
+    /// Flat-shape prompt. Scene first, directive last (recency); a
+    /// worked example pins the exact flat shape. Used with `format:
+    /// flatJSONSchema()` on Ollama (the schema forces the keys) and
+    /// unconstrained on a Kobold fallback.
+    public static func buildFlatPrompt(sourceProse: String) -> String {
         return """
-        You convert a narrative scene into a structural skeleton. Read the SCENE, then output the skeleton.
+        You convert a narrative scene into a structural skeleton. Read the SCENE, then output ONE JSON object describing it.
 
         SCENE:
         \(sourceProse)
 
         ===
-        Now output ONLY the skeleton as JSONL — exactly ONE JSON object per line, nothing else. NO prose, NO markdown, NO headings, NO analysis, NO blank lines. Your first character must be `{`.
+        Now output ONLY a single JSON object — no prose, no markdown, no analysis. First character must be `{`. Use exactly these keys, with the parallel beat arrays the same length (5–12 entries), in order:
 
-        Emit these lines, in this order:
-        1) one voice line:
-        {"type":"voice","sentenceCadence":"shortClipped|moderateBalanced|longFlowing","dialogueDensity":"dialogueHeavy|balanced|narrativeHeavy","rhetoricalFlourish":"minimal|moderate|ornate","register":"short phrase e.g. noir minimalism","distinctiveTechniques":["2-5 specific craft moves"]}
-        2) then 5–12 beat lines in order:
-        {"type":"beat","index":0,"function":"setup|arrival|escalation|reveal|conflict|reaction|resolution|exit","modality":"action|dialogue|interiority|description|summary|mixed","summary":"one sentence using role tokens {PROTAGONIST}/{ANTAGONIST}/{ALLY_1}, never literal names","targetWords":80}
-        3) one meta line:
-        {"type":"meta","characters":["names"],"settings":["place/time/object markers"]}
+        {"sentenceCadence":"shortClipped|moderateBalanced|longFlowing","dialogueDensity":"dialogueHeavy|balanced|narrativeHeavy","rhetoricalFlourish":"minimal|moderate|ornate","register":"short phrase e.g. noir minimalism","distinctiveTechniques":["2-5 specific craft moves"],"characters":["names in the scene"],"settings":["place/time/object markers"],"beatFunctions":["setup","escalation","reveal"],"beatModalities":["description","action","dialogue"],"beatSummaries":["one sentence per beat using role tokens {PROTAGONIST}/{ANTAGONIST}, never literal names","..."],"beatTargetWords":[80,120,60]}
 
-        Rules: one JSON object per line; use only the enum values shown; targetWords is a real 50–150 estimate, never 0; summary uses role tokens, never literal names.
+        Rules: beatFunctions ∈ setup|arrival|escalation|reveal|conflict|reaction|resolution|exit; beatModalities ∈ action|dialogue|interiority|description|summary|mixed; the four beat arrays are equal length; beatSummaries use role tokens, never literal names; beatTargetWords are real 50–150 estimates.
 
         Begin now (JSON only):
         """
     }
 
-    /// Tolerant JSONL parser. Walks lines; on each, extracts the
-    /// `{...}` span (lenient about fences / leading prose), parses it,
-    /// and routes by `type`. Unparseable / unrecognised lines are
-    /// skipped. Unknown enum values fall back to a sensible default
-    /// rather than dropping the beat. `targetWords` ≤ 0 → 100 (kills the
-    /// degenerate-zero-budget truncation). Beats are re-indexed
-    /// contiguously so Pass-B's sequential loop is clean. Throws
-    /// `noJSONObjectFound` only when ZERO beats parse (so the extractor
-    /// retries).
-    public static func parseJSONLSkeleton(_ raw: String) throws -> ExtractedSceneSkeleton {
-        var beats: [SceneBeat] = []
-        var characters: [String] = []
-        var settings: [String] = []
-        var voice: VoiceDescriptor? = nil
+    /// Tolerant flat-shape parser. Finds the outermost `{...}`, zips the
+    /// parallel beat arrays into `SceneBeat`s (by `beatSummaries` count;
+    /// missing function/modality/targetWords default sensibly,
+    /// `targetWords ≤ 0 → 100`), reads the voice fields + character/
+    /// setting markers from the top level. Throws `noJSONObjectFound`
+    /// when there are no beat summaries (so the extractor retries).
+    public static func parseFlatSkeleton(_ raw: String) throws -> ExtractedSceneSkeleton {
+        guard let open = raw.firstIndex(of: "{"),
+              let close = raw.lastIndex(of: "}"), open < close else {
+            throw ParseError.noJSONObjectFound
+        }
+        let jsonStr = String(raw[open...close])
+        guard let data = jsonStr.data(using: .utf8),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { throw ParseError.decodingFailed("flat object was not valid JSON") }
 
-        for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: true) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
-            guard let open = line.firstIndex(of: "{"),
-                  let close = line.lastIndex(of: "}"),
-                  open < close else { continue }
-            let jsonStr = String(line[open...close])
-            guard let data = jsonStr.data(using: .utf8),
-                  let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            else { continue }
-            switch (obj["type"] as? String)?.lowercased() {
-            case "voice":
-                voice = voiceFromDict(obj)
-            case "meta":
-                if let c = stringArray(obj["characters"]) { characters = c }
-                if let s = stringArray(obj["settings"]) { settings = s }
-            case "beat":
-                if let b = beatFromDict(obj, fallbackIndex: beats.count) { beats.append(b) }
-            default:
-                // Untyped but beat-shaped (has a summary) → treat as a beat.
-                if obj["summary"] != nil, let b = beatFromDict(obj, fallbackIndex: beats.count) {
-                    beats.append(b)
-                }
-            }
+        let summaries = stringArray(obj["beatSummaries"]) ?? []
+        guard !summaries.isEmpty else { throw ParseError.noJSONObjectFound }
+        let funcs = stringArray(obj["beatFunctions"]) ?? []
+        let mods = stringArray(obj["beatModalities"]) ?? []
+        let targets = (obj["beatTargetWords"] as? [Any])?.compactMap { intValue($0) } ?? []
+
+        var beats: [SceneBeat] = []
+        for (i, summary) in summaries.enumerated() {
+            guard !summary.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+            let fn = i < funcs.count ? (BeatFunction(rawValue: funcs[i]) ?? .escalation) : .escalation
+            let md = i < mods.count ? (NarrativeMode(rawValue: mods[i]) ?? .mixed) : .mixed
+            let tw = (i < targets.count && targets[i] > 0) ? targets[i] : 100
+            beats.append(SceneBeat(
+                index: i, summary: summary, modality: md, function: fn,
+                targetWords: tw, wordRangeStart: 0, wordRangeEnd: 0, beatTensionChange: 0
+            ))
         }
         guard !beats.isEmpty else { throw ParseError.noJSONObjectFound }
-        beats.sort { $0.index < $1.index }
-        let reindexed = beats.enumerated().map { i, b in
-            SceneBeat(
-                index: i, summary: b.summary, modality: b.modality, function: b.function,
-                targetWords: b.targetWords, wordRangeStart: b.wordRangeStart,
-                wordRangeEnd: b.wordRangeEnd, beatTensionChange: b.beatTensionChange
-            )
-        }
         return ExtractedSceneSkeleton(
-            beats: reindexed, sourceCharacters: characters,
-            sourceSettingMarkers: settings, voiceDescriptor: voice
+            beats: beats,
+            sourceCharacters: stringArray(obj["characters"]) ?? [],
+            sourceSettingMarkers: stringArray(obj["settings"]) ?? [],
+            voiceDescriptor: voiceFromDict(obj)
         )
     }
 
@@ -410,23 +417,6 @@ public enum BeatExtraction {
         if let a = v as? [String] { return a }
         if let a = v as? [Any] { return a.compactMap { $0 as? String } }
         return nil
-    }
-
-    private static func beatFromDict(_ obj: [String: Any], fallbackIndex: Int) -> SceneBeat? {
-        guard let summary = obj["summary"] as? String,
-              !summary.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
-        let function = (obj["function"] as? String).flatMap { BeatFunction(rawValue: $0) } ?? .escalation
-        let modality = (obj["modality"] as? String).flatMap { NarrativeMode(rawValue: $0) } ?? .mixed
-        // Trust a sane positive targetWords; otherwise default to 100 so
-        // the per-beat budget never degenerates to the truncating floor.
-        let tw = intValue(obj["targetWords"]) ?? 0
-        return SceneBeat(
-            index: intValue(obj["index"]) ?? fallbackIndex,
-            summary: summary, modality: modality, function: function,
-            targetWords: tw > 0 ? tw : 100,
-            wordRangeStart: 0, wordRangeEnd: 0,
-            beatTensionChange: intValue(obj["beatTensionChange"]) ?? 0
-        )
     }
 
     private static func voiceFromDict(_ obj: [String: Any]) -> VoiceDescriptor {
