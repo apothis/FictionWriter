@@ -298,6 +298,13 @@ public enum HelpContent {
             order: 130,
             group: nil
         ),
+        HelpSection(
+            id: "add-generation-mode",
+            title: "How to add: a new generation mode",
+            book: .technical,
+            order: 140,
+            group: nil
+        ),
     ]
 
     public static func toc(for book: HelpBook) -> [HelpSection] {
