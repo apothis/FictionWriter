@@ -98,16 +98,21 @@ public final class OllamaBeatExtractor: BeatExtractor {
                 do {
                     let skeleton = try BeatExtraction.parseExtractedSkeleton(raw)
                     completion(.success(skeleton))
-                } catch BeatExtraction.ParseError.noJSONObjectFound where attemptsRemaining > 0 {
-                    // HANDOFF §15.16 follow-up #1: NSFW Pass-A
-                    // shows ~30% transient JSON-parse failures
-                    // (preamble noise eating the open brace, or a
-                    // sampling roll producing free-form prose
-                    // before the structured output). One retry
-                    // recovers most of those without the user
-                    // having to hit "Re-ingest" manually.
+                } catch let parseError as BeatExtraction.ParseError where attemptsRemaining > 0 {
+                    // Transient parse failures are retried once. Two
+                    // shapes occur in the wild, both transient:
+                    //   - noJSONObjectFound — preamble noise ate the
+                    //     open brace, or the roll produced free-form
+                    //     prose before any JSON (HANDOFF §15.16 #1;
+                    //     NSFW Pass-A shows ~30% of these).
+                    //   - decodingFailed — braces present but the body
+                    //     is malformed / off-schema (live 2026-05-22:
+                    //     a 97KB run with "Unexpected ':' in array").
+                    //     Previously this fell through with NO retry and
+                    //     failed silently after the round-trip.
+                    // A single bad roll shouldn't be terminal; re-roll.
                     let snippet = raw.prefix(200).replacingOccurrences(of: "\n", with: "\\n")
-                    DebugLog.shared.write("[template] parse failed (noJSONObjectFound) — retrying once. raw=\"\(snippet)\" len=\(raw.count)")
+                    DebugLog.shared.write("[template] parse failed (\(parseError)) — retrying once. raw=\"\(snippet)\" len=\(raw.count)")
                     self.callWithRetry(
                         prompt: prompt,
                         schema: schema,

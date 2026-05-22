@@ -127,6 +127,30 @@ func phase7OllamaBeatExtractorTests() -> TestSuite {
         }
     }
 
+    s.test("OllamaBeatExtractor retries on decodingFailed (braces found, malformed JSON) and recovers") {
+        // The live failure 2026-05-22: the model returned a brace-
+        // delimited but malformed/off-schema body (97KB, "Unexpected
+        // ':' in array"). parseExtractedSkeleton finds the braces so it
+        // is NOT noJSONObjectFound — it throws decodingFailed. That used
+        // to fall through to the generic catch with NO retry, so a
+        // single bad roll failed silently. A decodingFailed roll is just
+        // as transient as a noJSONObjectFound one; it must retry too.
+        let stub = StubOllamaProvider(responses: [
+            .success("{ \"beats\": [ : ] }"),   // balanced braces, invalid JSON → decodingFailed
+            .success(cannedSkeleton),
+        ])
+        let extractor = OllamaBeatExtractor(provider: stub)
+        var result: Result<ExtractedSceneSkeleton, Error>? = nil
+        extractor.extractSkeleton(from: "x") { r in result = r }
+        stub.flush()  // first attempt: decodingFailed → must retry
+        stub.flush()  // retry attempt: success
+        if case .success(let skel) = result {
+            try expectEqual(skel.beats.count, 1)
+        } else {
+            try expectFalse(true, "expected success on retry after decodingFailed")
+        }
+    }
+
     s.test("OllamaBeatExtractor surfaces parse errors after retry exhausts") {
         // Both attempts malformed → final result is failure.
         let stub = StubOllamaProvider(responses: [
