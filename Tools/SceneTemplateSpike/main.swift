@@ -792,6 +792,298 @@ func runFullPipeline(fixtureFilename: String) {
     writeGenerationReport(run)
 }
 
+// MARK: - Goetia 6-way Pass-A transport bake-off (2026-05-22)
+//
+// Pass-A beat extraction failed every transport on a *Thinking* 31B
+// writer + gemma4_2b (memory: feedback_beat_extraction_model_wall).
+// Goetia (Mistral-Small-3 24B, non-thinking) is now loaded on Kobold;
+// this command runs all 6 methods against the SAME source scene and
+// prints a comparison table to decide which transport (if any) is
+// usable. No production default is changed by this command.
+//
+//   swift run SceneTemplateSpike --goetia-compare
+//
+// Source scene: largest .md under /Volumes/SSD1/test5/templates|references.
+
+let goetiaScenePaths = [
+    "/Volumes/SSD1/test5/templates/10807B14-A7FD-482A-876A-EB5E8B4CCCB8.md",
+    "/Volumes/SSD1/test5/references/10807B14-A7FD-482A-876A-EB5E8B4CCCB8.md",
+]
+
+struct MethodResult {
+    let name: String
+    let detail: String
+    let raw: String
+    let elapsed: Double
+    let skeleton: ExtractedSceneSkeleton?
+    let error: String?
+}
+
+/// One non-streaming Kobold completion, raw text out. `grammar: nil`
+/// runs unconstrained. Mirrors `KoboldBeatExtractor`'s sampler posture
+/// (temp 0.2, source-scaled maxLength) but captures the raw roll.
+func goetiaKoboldRaw(prompt: String, grammar: String?, maxContext: Int) -> Result<String, Error> {
+    guard let base = URL(string: koboldURLString) else {
+        return .failure(NSError(domain: "spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "bad kobold URL"]))
+    }
+    let adapter = InstructTemplates.adapter(for: .mistralV7)
+    let wrapped = adapter.wrap(system: "", userBody: prompt, prefill: "")
+    var params = SamplerParams.phase1Defaults
+    params.temperature = 0.2
+    let promptTokens = TokenEstimator.estimate(wrapped)
+    params.maxLength = max(2048, min(maxContext - promptTokens - 256, 12288))
+    let client = KoboldClient(baseURL: base)
+    let sem = DispatchSemaphore(value: 0)
+    var out: Result<String, Error> = .failure(NSError(domain: "spike", code: -1))
+    client.generate(
+        prompt: wrapped,
+        stopSequences: adapter.stopSequences,
+        params: params,
+        maxContextLength: maxContext,
+        grammar: grammar
+    ) { r in out = r; sem.signal() }
+    sem.wait()
+    return out
+}
+
+/// One Ollama `/api/chat` call, raw text out. `schema` empty → omitted
+/// (unconstrained); non-empty → sent as `format`. Mirrors
+/// `OllamaBeatExtractor`'s sampler posture.
+func goetiaOllamaRaw(model: String, prompt: String, schema: [String: Any], sourceProse: String) -> Result<String, Error> {
+    guard let base = URL(string: ollamaURLString) else {
+        return .failure(NSError(domain: "spike", code: -1, userInfo: [NSLocalizedDescriptionKey: "bad ollama URL"]))
+    }
+    let client = OllamaClient(baseURL: base, model: model)
+    let options = OllamaChatOptions(
+        temperature: 0.2,
+        numPredict: OllamaBeatExtractor.budgetForProse(sourceProse),
+        repeatPenalty: 1.1
+    )
+    let sem = DispatchSemaphore(value: 0)
+    var out: Result<String, Error> = .failure(NSError(domain: "spike", code: -1))
+    client.extract(prompt: prompt, schema: schema, options: options) { r in
+        out = r.mapError { $0 as Error }; sem.signal()
+    }
+    sem.wait()
+    return out
+}
+
+enum GoetiaParser { case nested, flat }
+
+func goetiaParse(_ raw: String, with parser: GoetiaParser) -> (ExtractedSceneSkeleton?, String?) {
+    let cleaned = ThinkBlockStripper.strip(raw)
+    do {
+        let skel = parser == .nested
+            ? try BeatExtraction.parseExtractedSkeleton(cleaned)
+            : try BeatExtraction.parseFlatSkeleton(cleaned)
+        return (skel, nil)
+    } catch {
+        return (nil, String(describing: error))
+    }
+}
+
+func runGoetiaMethod(
+    name: String,
+    detail: String,
+    parser: GoetiaParser,
+    call: () -> Result<String, Error>
+) -> MethodResult {
+    log("[goetia] \(name) — \(detail)...")
+    let start = Date()
+    let result = call()
+    let elapsed = Date().timeIntervalSince(start)
+    switch result {
+    case .success(let raw):
+        let (skel, perr) = goetiaParse(raw, with: parser)
+        if let skel = skel {
+            log("  → parsed \(skel.beats.count) beats in \(String(format: "%.1fs", elapsed))")
+        } else {
+            log("  → PARSE FAIL (\(perr ?? "?")) in \(String(format: "%.1fs", elapsed)); raw len=\(raw.count)")
+        }
+        return MethodResult(name: name, detail: detail, raw: raw, elapsed: elapsed, skeleton: skel, error: perr)
+    case .failure(let err):
+        log("  → TRANSPORT FAIL: \(err.localizedDescription)")
+        return MethodResult(name: name, detail: detail, raw: "", elapsed: elapsed, skeleton: nil, error: "transport: \(err.localizedDescription)")
+    }
+}
+
+func renderGoetiaComparison(modelName: String, scenePath: String, sourceWords: Int, results: [MethodResult]) -> String {
+    func score(_ r: MethodResult) -> (parsed: String, beats: String, fns: String, tw: String, voice: String, secs: String) {
+        let secs = String(format: "%.1f", r.elapsed)
+        guard let s = r.skeleton else {
+            return ("**no**", "—", "—", "—", "—", secs)
+        }
+        let funcs = s.beats.map { $0.function.rawValue }
+        let distinct = Set(funcs).count
+        let fnSummary = "\(distinct) (\(Set(funcs).sorted().joined(separator: ",")))"
+        let tws = s.beats.map { $0.targetWords }
+        let zero = tws.filter { $0 == 0 }.count
+        let twSummary = tws.isEmpty ? "—" : "min \(tws.min()!) / max \(tws.max()!) / zero \(zero)"
+        let voice: String
+        if let v = s.voiceDescriptor {
+            voice = "yes (\(v.sentenceCadence.rawValue))"
+        } else {
+            voice = "no"
+        }
+        return ("yes", "\(s.beats.count)", fnSummary, twSummary, voice, secs)
+    }
+
+    var out = ""
+    out += "# Goetia Pass-A transport bake-off — \(dateStamp())\n\n"
+    out += "**Writer model:** `\(modelName)` on KoboldCpp `\(koboldURLString)`\n\n"
+    out += "**Extractor server:** Ollama `\(ollamaURLString)`\n\n"
+    out += "**Source scene:** `\(scenePath)` (\(sourceWords) words)\n\n"
+    out += "**Scoring:** USABLE = parses + 5–12 beats + ≥3 distinct functions + non-zero targetWords + voiceDescriptor present.\n\n"
+
+    out += "| # | Method | Parsed | Beats | Distinct fns | targetWords | Voice (cadence) | Secs |\n"
+    out += "|---|---|---|---|---|---|---|---|\n"
+    for (i, r) in results.enumerated() {
+        let sc = score(r)
+        out += "| \(i + 1) | \(r.name) — \(r.detail) | \(sc.parsed) | \(sc.beats) | \(sc.fns) | \(sc.tw) | \(sc.voice) | \(sc.secs) |\n"
+    }
+    out += "\n"
+
+    // Verdict per method.
+    out += "## Verdict\n\n"
+    for (i, r) in results.enumerated() {
+        let usable: Bool
+        var notes: [String] = []
+        if let s = r.skeleton {
+            let bc = s.beats.count
+            let distinct = Set(s.beats.map { $0.function.rawValue }).count
+            let nonZeroTW = s.beats.contains { $0.targetWords > 0 }
+            let voice = s.voiceDescriptor != nil
+            if bc < 5 || bc > 12 { notes.append("beatCount \(bc) outside 5–12") }
+            if distinct < 3 { notes.append("only \(distinct) distinct function(s) — degenerate") }
+            if !nonZeroTW { notes.append("all targetWords zero") }
+            if !voice { notes.append("no voiceDescriptor") }
+            usable = bc >= 5 && bc <= 12 && distinct >= 3 && nonZeroTW && voice
+        } else {
+            usable = false
+            notes.append(r.error ?? "no skeleton")
+        }
+        out += "- **\(i + 1). \(r.name)** — \(usable ? "✅ USABLE" : "❌ unusable")\(notes.isEmpty ? "" : " — " + notes.joined(separator: "; "))\n"
+    }
+    out += "\n"
+
+    // Failure dumps + parsed-beat tables.
+    out += "## Per-method detail\n\n"
+    for (i, r) in results.enumerated() {
+        out += "### \(i + 1). \(r.name) — \(r.detail)\n\n"
+        out += "_elapsed: \(String(format: "%.1fs", r.elapsed))_\n\n"
+        if let s = r.skeleton {
+            out += "| # | function | modality | targetWords | summary |\n"
+            out += "|---|---|---|---|---|\n"
+            for b in s.beats.prefix(14) {
+                out += "| \(b.index) | \(b.function.rawValue) | \(b.modality.rawValue) | \(b.targetWords) | \(b.summary.replacingOccurrences(of: "|", with: "\\|").prefix(90)) |\n"
+            }
+            if let v = s.voiceDescriptor {
+                out += "\n_voice:_ cadence=\(v.sentenceCadence.rawValue), dialogue=\(v.dialogueDensity.rawValue), flourish=\(v.rhetoricalFlourish.rawValue), register=\"\(v.register)\"\n\n"
+            }
+        } else {
+            out += "**FAILED** — \(r.error ?? "unknown")\n\n"
+            let dump = String(r.raw.prefix(800)).replacingOccurrences(of: "```", with: "`\u{200b}``")
+            out += "Raw (first 800 chars):\n\n```\n\(dump.isEmpty ? "(empty / transport failure)" : dump)\n```\n\n"
+        }
+    }
+    return out
+}
+
+func dateStamp() -> String {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd HH:mm"
+    return f.string(from: Date())
+}
+
+func runGoetiaCompare() {
+    // Confirm Goetia is live + read the context budget.
+    guard let koboldBase = URL(string: koboldURLString) else {
+        log("ABORT: bad kobold URL \(koboldURLString)"); exit(1)
+    }
+    let probe = KoboldClient(baseURL: koboldBase)
+    var modelName = "?"
+    var maxContext = 16384
+    let sem1 = DispatchSemaphore(value: 0)
+    probe.fetchModel { r in
+        if case .success(let n) = r { modelName = n }
+        sem1.signal()
+    }
+    sem1.wait()
+    let sem2 = DispatchSemaphore(value: 0)
+    probe.fetchTrueMaxContext { r in
+        if case .success(let c) = r { maxContext = c }
+        sem2.signal()
+    }
+    sem2.wait()
+    log("[goetia] writer model: \(modelName), maxContext: \(maxContext)")
+    let lower = modelName.lowercased()
+    guard lower.contains("goetia") || lower.contains("mistral-small") || lower.contains("mistral_small") else {
+        log("ABORT: Kobold model \"\(modelName)\" is not Goetia / Mistral-Small. Load Goetia before running --goetia-compare.")
+        exit(1)
+    }
+
+    // Load the source scene.
+    var scenePath = ""
+    var sceneBody = ""
+    for p in goetiaScenePaths {
+        if FileManager.default.fileExists(atPath: p),
+           let fx = try? loadFixture(path: URL(fileURLWithPath: p)) {
+            scenePath = p; sceneBody = fx.body; break
+        }
+    }
+    if sceneBody.isEmpty {
+        // Fall back to the largest spike fixture.
+        let fixturesURL = cwd.appendingPathComponent(fixturesDir)
+        if let entries = try? FileManager.default.contentsOfDirectory(at: fixturesURL, includingPropertiesForKeys: nil) {
+            let md = entries.filter { $0.pathExtension == "md" }
+                .compactMap { try? loadFixture(path: $0) }
+                .max { $0.body.count < $1.body.count }
+            if let md = md { scenePath = md.path.path; sceneBody = md.body }
+        }
+    }
+    guard !sceneBody.isEmpty else {
+        log("ABORT: no source scene found (test5 dir empty + no fixtures)."); exit(1)
+    }
+    let sourceWords = sceneBody.split(whereSeparator: { $0.isWhitespace }).count
+    log("[goetia] source scene: \(scenePath) (\(sourceWords) words)")
+
+    let nestedPrompt = BeatExtraction.buildExtractionPrompt(sourceProse: sceneBody)
+    let flatPrompt = BeatExtraction.buildFlatPrompt(sourceProse: sceneBody)
+
+    var results: [MethodResult] = []
+    // 1. Goetia + GBNF (nested grammar).
+    results.append(runGoetiaMethod(
+        name: "Goetia + GBNF", detail: "nested grammar", parser: .nested
+    ) { goetiaKoboldRaw(prompt: nestedPrompt, grammar: BeatExtraction.gbnfGrammar(), maxContext: maxContext) })
+    // 2. Goetia + unconstrained, FLAT.
+    results.append(runGoetiaMethod(
+        name: "Goetia + unconstrained", detail: "flat prompt", parser: .flat
+    ) { goetiaKoboldRaw(prompt: flatPrompt, grammar: nil, maxContext: maxContext) })
+    // 3. Goetia + unconstrained, NESTED.
+    results.append(runGoetiaMethod(
+        name: "Goetia + unconstrained", detail: "nested prompt", parser: .nested
+    ) { goetiaKoboldRaw(prompt: nestedPrompt, grammar: nil, maxContext: maxContext) })
+    // 4. gemma4_2b + flat `format` schema.
+    results.append(runGoetiaMethod(
+        name: "gemma4_2b + format", detail: "flat schema", parser: .flat
+    ) { goetiaOllamaRaw(model: "gemma4_2b:latest", prompt: flatPrompt, schema: BeatExtraction.flatJSONSchema(), sourceProse: sceneBody) })
+    // 5. gemma4_4b + flat `format` schema.
+    results.append(runGoetiaMethod(
+        name: "gemma4_4b + format", detail: "flat schema", parser: .flat
+    ) { goetiaOllamaRaw(model: "gemma4_4b:latest", prompt: flatPrompt, schema: BeatExtraction.flatJSONSchema(), sourceProse: sceneBody) })
+    // 6. gemma4_2b + NESTED `format` schema (the 2026-05-22 failure combo, control).
+    results.append(runGoetiaMethod(
+        name: "gemma4_2b + format", detail: "nested schema (control)", parser: .nested
+    ) { goetiaOllamaRaw(model: "gemma4_2b:latest", prompt: nestedPrompt, schema: BeatExtraction.jsonSchema(), sourceProse: sceneBody) })
+
+    let report = renderGoetiaComparison(modelName: modelName, scenePath: scenePath, sourceWords: sourceWords, results: results)
+    let outPath = cwd.appendingPathComponent(outputDir).appendingPathComponent("goetia-comparison.md")
+    try? FileManager.default.createDirectory(at: outPath.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try? report.write(to: outPath, atomically: true, encoding: .utf8)
+    log("[goetia] wrote \(outPath.path)")
+    print(report)
+}
+
 let cmd = args[1]
 let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 
@@ -840,6 +1132,8 @@ case "--ablate-voice":
         exit(1)
     }
     runVoiceAblation(fixtureFilename: args[2])
+case "--goetia-compare":
+    runGoetiaCompare()
 default:
     log("Unknown command: \(cmd)")
     exit(1)

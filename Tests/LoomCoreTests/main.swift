@@ -163,6 +163,7 @@ let suites: [TestSuite] = [
     phase7BeatExtractionPipelineTests(),
     phase7OllamaBeatExtractorTests(),
     phase7KoboldBeatExtractorTests(),
+    phase7PassARouteTests(),
     phase7TemplateGenerationCoordinatorTests(),
     phase7BibleWorkspaceTemplatesTests(),
     phase7VoiceDescriptorTests(),

@@ -1093,21 +1093,49 @@ public final class AppState {
     /// No-op for in-memory sessions or when no extractor server is
     /// configured. The transient `OllamaClient` is dropped at the
     /// end of the closure.
+    /// Pass-A beat-extraction route. See `passARoute`.
+    public enum PassARoute: Equatable {
+        /// Writer (KoboldCpp) + GBNF grammar — `KoboldBeatExtractor(useGrammar: true)`.
+        case writerGBNF
+        /// Ollama extractor — `OllamaBeatExtractor` (best-effort fallback).
+        case ollamaExtractor
+        /// No server configured for Pass-A.
+        case none
+    }
+
+    /// Decide which transport handles Pass-A beat extraction.
+    ///
+    /// The 2026-05-22 Goetia bake-off settled this: on a capable
+    /// non-thinking writer (Goetia 24B), the writer + GBNF grammar
+    /// produces a valid, varied skeleton (7 distinct beat functions,
+    /// non-zero target words, voice descriptor), while every gemma4
+    /// Ollama extractor still free-forms the wrong schema or
+    /// degenerates — the same capability wall hit on the prior Thinking
+    /// writer. So Pass-A now **prefers the writer with GBNF**; the
+    /// Ollama extractor remains only as a fallback when no writer is
+    /// configured.
+    public static func passARoute(hasWriterServer: Bool, hasExtractorServer: Bool) -> PassARoute {
+        if hasWriterServer { return .writerGBNF }
+        if hasExtractorServer { return .ollamaExtractor }
+        return .none
+    }
+
     public func extractTemplateScene(id: UUID) {
         guard let projectURL = currentSession.url else {
             DebugLog.shared.write("[template] extract skipped: in-memory session id=\(id)")
             return
         }
-        // Pass-A beat extraction prefers the small, non-thinking Ollama
-        // EXTRACTOR (gemma4_2b) — it's what the structural pass was
-        // calibrated for, it's fast, and it doesn't burn the writer's
-        // context on reasoning. Falls back to the writer (KoboldBeat
-        // Extractor, unconstrained) when no extractor is configured.
-        // Both run unconstrained + tolerant-parse: the Ollama
-        // format-schema and the writer GBNF paths each had their own
-        // failure mode on a Thinking writer (2026-05-22 — see the
-        // KoboldBeatExtractor / commit history).
-        guard settings.extractorServer() != nil || settings.writerServer() != nil else {
+        // Pass-A beat extraction prefers the capable WRITER (Goetia
+        // 24B non-thinking) with a GBNF grammar — the 2026-05-22 bake-off
+        // showed it's the only transport that produces a valid, varied
+        // skeleton; every gemma4 Ollama extractor free-forms the wrong
+        // schema. The Ollama extractor stays a best-effort fallback when
+        // no writer is configured. See `passARoute`.
+        let route = Self.passARoute(
+            hasWriterServer: settings.writerServer() != nil,
+            hasExtractorServer: settings.extractorServer() != nil
+        )
+        guard route != .none else {
             DebugLog.shared.write("[template] extract skipped: no extractor or writer server configured id=\(id)")
             return
         }
@@ -1126,19 +1154,24 @@ public final class AppState {
             object: currentSession
         )
         // Build the extractor on the calling thread (don't touch
-        // registry/settings off-main). Prefer the Ollama extractor.
+        // registry/settings off-main). Prefer the writer + GBNF.
         let beatExtractor: BeatExtractor
-        if let ex = settings.extractorServer() {
-            let model = ex.model ?? ex.capabilities?.modelName ?? "gemma4_2b:latest"
-            beatExtractor = OllamaBeatExtractor(client: OllamaClient(baseURL: ex.baseURL, model: model))
-            DebugLog.shared.write("[template] extract via extractor model=\(model) (unconstrained) id=\(id)")
-        } else {
+        switch route {
+        case .writerGBNF:
             let template = writerInstructTemplate()
             let maxContext = settings.writerServer()?.capabilities?.trueMaxContext ?? 8192
             beatExtractor = KoboldBeatExtractor(
-                client: registry.clientForDefault(), template: template, maxContextLength: maxContext
+                client: registry.clientForDefault(), template: template,
+                maxContextLength: maxContext, useGrammar: true
             )
-            DebugLog.shared.write("[template] extract via writer model=\(writerModelName() ?? "unknown") template=\(template.rawValue) (unconstrained) id=\(id)")
+            DebugLog.shared.write("[template] extract via writer model=\(writerModelName() ?? "unknown") template=\(template.rawValue) (GBNF) id=\(id)")
+        case .ollamaExtractor:
+            let ex = settings.extractorServer()!
+            let model = ex.model ?? ex.capabilities?.modelName ?? "gemma4_2b:latest"
+            beatExtractor = OllamaBeatExtractor(client: OllamaClient(baseURL: ex.baseURL, model: model))
+            DebugLog.shared.write("[template] extract via extractor model=\(model) (fallback, unconstrained) id=\(id)")
+        case .none:
+            return
         }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let pipeline = BeatExtractionPipeline(projectURL: projectURL, extractor: beatExtractor)
