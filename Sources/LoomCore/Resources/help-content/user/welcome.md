@@ -20,6 +20,6 @@ If you're new to Loom, start here:
 
 If you're returning, the **Reference** sections are non-linear; pick what you need.
 
-## This help is a work in progress
+## How this help is written
 
-The Phase B scaffolding lands the in-app surface. Sections marked in the TOC will fill in as Phase C content writing proceeds. Each section is grounded in the current code, not stale design intent — see [`docs/REFERENCE_PLAN.md`](docs/REFERENCE_PLAN.md) for the source-mapping behind the writing.
+Every section is grounded in the current shipped code, not design-doc intent — where the two disagree, the code wins, and the section says so. If a feature is half-shipped or a button doesn't do anything yet, the relevant section tells you plainly rather than describing the plan. Source files are cited in the Technical Reference so you can check anything yourself.
