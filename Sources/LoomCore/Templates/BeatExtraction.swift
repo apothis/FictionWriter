@@ -316,26 +316,32 @@ public enum BeatExtraction {
     /// `beat` line per beat, then a `meta` line. `parseJSONLSkeleton`
     /// is per-line tolerant (a bad line is skipped, not fatal).
     public static func buildJSONLPrompt(sourceProse: String) -> String {
+        // Structure matters for small models: the SCENE comes first, the
+        // output directive LAST, so recency keeps the model on-task. A
+        // long format spec placed before a 3000-word scene gets "forgotten"
+        // and gemma4_2b reverts to a prose summary (live 2026-05-22). The
+        // closing "Output ONLY JSONL … begin with {" is the dominant
+        // instruction; the example lines lock in the exact shape.
         return """
-        Analyze the narrative scene below and output its STRUCTURAL SKELETON as JSONL — exactly ONE JSON object per line. No surrounding array, no markdown fences, no commentary, no blank lines. Each line is one flat JSON object with a "type" field.
+        You convert a narrative scene into a structural skeleton. Read the SCENE, then output the skeleton.
 
-        First line — the voice fingerprint:
-        {"type":"voice","sentenceCadence":"shortClipped|moderateBalanced|longFlowing","dialogueDensity":"dialogueHeavy|balanced|narrativeHeavy","rhetoricalFlourish":"minimal|moderate|ornate","register":"a short phrase, e.g. noir minimalism","distinctiveTechniques":["2-5 specific craft moves the prose uses"]}
-
-        Then 5–12 beat lines, in order, one per line:
-        {"type":"beat","index":0,"function":"setup|arrival|escalation|reveal|conflict|reaction|resolution|exit","modality":"action|dialogue|interiority|description|summary|mixed","summary":"one sentence; replace character names with role tokens like {PROTAGONIST}/{ANTAGONIST}/{ALLY_1} and places with {INDOOR_PRIVATE_SPACE}/{OUTDOOR_PUBLIC_SPACE}","targetWords":80}
-
-        Last line — the cast + setting markers:
-        {"type":"meta","characters":["distinct character names in the scene"],"settings":["place / time / object markers"]}
-
-        Rules:
-        - Exactly one complete JSON object per line; nothing else on the line.
-        - "summary" MUST use role tokens, never literal names — the skeleton is reused for new scenes with different casts.
-        - "targetWords" is a real per-beat word estimate (typically 50–150), never 0.
-        - Use only the enum values listed.
-
-        Scene:
+        SCENE:
         \(sourceProse)
+
+        ===
+        Now output ONLY the skeleton as JSONL — exactly ONE JSON object per line, nothing else. NO prose, NO markdown, NO headings, NO analysis, NO blank lines. Your first character must be `{`.
+
+        Emit these lines, in this order:
+        1) one voice line:
+        {"type":"voice","sentenceCadence":"shortClipped|moderateBalanced|longFlowing","dialogueDensity":"dialogueHeavy|balanced|narrativeHeavy","rhetoricalFlourish":"minimal|moderate|ornate","register":"short phrase e.g. noir minimalism","distinctiveTechniques":["2-5 specific craft moves"]}
+        2) then 5–12 beat lines in order:
+        {"type":"beat","index":0,"function":"setup|arrival|escalation|reveal|conflict|reaction|resolution|exit","modality":"action|dialogue|interiority|description|summary|mixed","summary":"one sentence using role tokens {PROTAGONIST}/{ANTAGONIST}/{ALLY_1}, never literal names","targetWords":80}
+        3) one meta line:
+        {"type":"meta","characters":["names"],"settings":["place/time/object markers"]}
+
+        Rules: one JSON object per line; use only the enum values shown; targetWords is a real 50–150 estimate, never 0; summary uses role tokens, never literal names.
+
+        Begin now (JSON only):
         """
     }
 
