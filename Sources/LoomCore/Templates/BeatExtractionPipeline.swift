@@ -62,7 +62,12 @@ public final class BeatExtractionPipeline {
         // lifetime-test finding.
         extractor.extractSkeleton(from: template.body) { result in
             switch result {
-            case .success(let skeleton):
+            case .success(let rawSkeleton):
+                // Normalize before persisting: sort beats chronologically,
+                // merge near-duplicate adjacent beats, re-index. Curbs the
+                // monologue-exemplar over-segmentation that drives Pass-B
+                // repetition (2026-05-22 test5 run).
+                let skeleton = BeatExtraction.normalizeSkeleton(rawSkeleton)
                 do {
                     try TemplateSceneStorage.saveSkeleton(
                         skeleton, for: template.id, in: self.projectURL

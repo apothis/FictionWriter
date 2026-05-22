@@ -1034,7 +1034,9 @@ func extractViaGoetiaGBNF(sceneBody: String, maxContext: Int) -> ExtractedSceneS
     case .success(let raw):
         let (skel, err) = goetiaParse(raw, with: .nested)
         if let err = err { log("[goetia-gen] Pass-A parse fail: \(err)") }
-        return skel
+        // Normalize like production (BeatExtractionPipeline does this
+        // before persisting): sort + merge near-dup beats + re-index.
+        return skel.map { BeatExtraction.normalizeSkeleton($0) }
     case .failure(let e):
         log("[goetia-gen] Pass-A transport fail: \(e.localizedDescription)")
         return nil

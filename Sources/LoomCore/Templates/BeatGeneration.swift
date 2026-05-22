@@ -94,6 +94,16 @@ public enum BeatGeneration {
             ? "End the scene at a natural sentence boundary. This is the final beat."
             : "End at a natural sentence boundary that leads into the next beat."
 
+        // Anti-repetition (only meaningful once there is prior prose).
+        // On monologue-heavy exemplars Pass-B re-rendered overlapping
+        // beat summaries and sometimes copied prior-beat prose verbatim
+        // (2026-05-22 test5 run); an explicit advance-only directive at
+        // recency curbs it. The opening beat has nothing to repeat, so
+        // the clause is omitted there.
+        let antiRepetitionClause = priorBeatsProse.isEmpty
+            ? ""
+            : " Do not repeat, restate, or paraphrase anything from the beats already written above — advance the scene with new material only."
+
         let priorBeatsSection: String
         if priorBeatsProse.isEmpty {
             priorBeatsSection = "[BEATS BEFORE THIS — no prior beats yet; this is the opening]"
@@ -236,7 +246,7 @@ public enum BeatGeneration {
             \(voiceTargetBlock)\(styleExemplarsBlock)\(extraInstructionBlock)
 
             [INSTRUCTION]
-            Write beat \(currentBeatIndex). Modality: \(beat.modality.rawValue). Function: \(beat.function.rawValue). Target length: \(beat.targetWords) words. \(endingInstruction)
+            Write beat \(currentBeatIndex). Modality: \(beat.modality.rawValue). Function: \(beat.function.rawValue). Target length: about \(beat.targetWords) words — stay close to this; do not run long.\(antiRepetitionClause) \(endingInstruction)
 
             Beat \(currentBeatIndex) prose:
             """

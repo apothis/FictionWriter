@@ -222,5 +222,49 @@ func phase7BeatGenerationTests() -> TestSuite {
         try expectEqual(withDefault, explicit)
     }
 
+    s.test("buildBeatPrompt adds an anti-repetition instruction when prior beats exist") {
+        let skeleton = makeSkeleton()
+        let prompt = BeatGeneration.buildBeatPrompt(
+            templateBody: "T",
+            skeleton: skeleton,
+            castMapping: "C",
+            currentBeatIndex: 1,
+            priorBeatsProse: "Mara walked into the server room. The lights were off.",
+            groundTruthPacing: samplePacing()
+        )
+        // The verbatim-repetition failure (beat re-rendering prior-beat
+        // prose) is curbed by an explicit advance-only instruction.
+        try expectTrue(prompt.lowercased().contains("do not repeat, restate, or paraphrase"))
+    }
+
+    s.test("buildBeatPrompt omits the anti-repetition instruction for the opening beat") {
+        let skeleton = makeSkeleton()
+        let prompt = BeatGeneration.buildBeatPrompt(
+            templateBody: "T",
+            skeleton: skeleton,
+            castMapping: "C",
+            currentBeatIndex: 0,
+            priorBeatsProse: "",
+            groundTruthPacing: samplePacing()
+        )
+        // Nothing to repeat at the opening — no anti-repetition clause.
+        try expectFalse(prompt.lowercased().contains("do not repeat, restate, or paraphrase"))
+    }
+
+    s.test("buildBeatPrompt length instruction discourages running long") {
+        let skeleton = makeSkeleton()
+        let prompt = BeatGeneration.buildBeatPrompt(
+            templateBody: "T",
+            skeleton: skeleton,
+            castMapping: "C",
+            currentBeatIndex: 0,
+            priorBeatsProse: "",
+            groundTruthPacing: samplePacing()
+        )
+        try expectTrue(prompt.lowercased().contains("do not run long"))
+        // Target word count still present (existing contract).
+        try expectTrue(prompt.contains("80"))
+    }
+
     return s
 }

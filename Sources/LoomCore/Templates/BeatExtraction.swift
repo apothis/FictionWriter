@@ -406,6 +406,78 @@ public enum BeatExtraction {
         )
     }
 
+    // MARK: - Skeleton normalization
+
+    /// Adjacent-summary Jaccard threshold above which two beats are
+    /// treated as the same beat and merged. 0.8 = "near-identical"
+    /// (a one-word difference in a five-word summary). Tuned to catch
+    /// the extractor re-emitting essentially the same beat twice
+    /// without collapsing genuinely distinct-but-related beats.
+    private static let beatMergeThreshold = 0.8
+
+    /// Post-process a freshly-extracted skeleton to curb two
+    /// skeleton-quality problems seen on monologue-heavy exemplars
+    /// (2026-05-22 test5 run): out-of-order beat `index` values and
+    /// near-duplicate adjacent beats that Pass-B then re-renders.
+    ///
+    /// Steps: (1) sort beats by their reported `index` (chronological
+    /// safety net); (2) merge adjacent beats whose summaries are
+    /// near-identical (`beatMergeThreshold`), summing their target
+    /// word budgets and extending the word range; (3) re-index the
+    /// survivors 0..n-1. Voice descriptor + character/setting markers
+    /// pass through untouched.
+    public static func normalizeSkeleton(_ skeleton: ExtractedSceneSkeleton) -> ExtractedSceneSkeleton {
+        let sorted = skeleton.beats.sorted { $0.index < $1.index }
+
+        var merged: [SceneBeat] = []
+        for beat in sorted {
+            if let last = merged.last,
+               summarySimilarity(last.summary, beat.summary) >= beatMergeThreshold {
+                merged[merged.count - 1] = SceneBeat(
+                    index: last.index, summary: last.summary,
+                    modality: last.modality, function: last.function,
+                    targetWords: last.targetWords + beat.targetWords,
+                    wordRangeStart: last.wordRangeStart,
+                    wordRangeEnd: max(last.wordRangeEnd, beat.wordRangeEnd),
+                    beatTensionChange: last.beatTensionChange
+                )
+            } else {
+                merged.append(beat)
+            }
+        }
+
+        let reindexed = merged.enumerated().map { (i, b) in
+            SceneBeat(
+                index: i, summary: b.summary, modality: b.modality,
+                function: b.function, targetWords: b.targetWords,
+                wordRangeStart: b.wordRangeStart, wordRangeEnd: b.wordRangeEnd,
+                beatTensionChange: b.beatTensionChange
+            )
+        }
+
+        return ExtractedSceneSkeleton(
+            beats: reindexed,
+            sourceCharacters: skeleton.sourceCharacters,
+            sourceSettingMarkers: skeleton.sourceSettingMarkers,
+            voiceDescriptor: skeleton.voiceDescriptor
+        )
+    }
+
+    /// Word-set Jaccard similarity of two beat summaries, case- and
+    /// punctuation-insensitive. 0 when both are empty of word tokens.
+    private static func summarySimilarity(_ a: String, _ b: String) -> Double {
+        func tokens(_ s: String) -> Set<String> {
+            Set(s.lowercased()
+                .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+                .map(String.init))
+        }
+        let ta = tokens(a)
+        let tb = tokens(b)
+        let union = ta.union(tb)
+        guard !union.isEmpty else { return 0 }
+        return Double(ta.intersection(tb).count) / Double(union.count)
+    }
+
     private static func intValue(_ v: Any?) -> Int? {
         if let n = v as? NSNumber { return n.intValue }
         if let i = v as? Int { return i }
