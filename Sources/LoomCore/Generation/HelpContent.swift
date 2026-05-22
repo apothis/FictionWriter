@@ -153,6 +153,13 @@ public enum HelpContent {
             group: "Reference"
         ),
         HelpSection(
+            id: "continuity-audit",
+            title: "Continuity audit",
+            book: .userHelp,
+            order: 175,
+            group: "Reference"
+        ),
+        HelpSection(
             id: "project-structure",
             title: "Project structure — Parts, Chapters, Scenes, Corkboard",
             book: .userHelp,
