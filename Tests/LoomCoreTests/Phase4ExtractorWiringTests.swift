@@ -107,6 +107,33 @@ func phase4ExtractorWiringTests() -> TestSuite {
         try expectEqual(updated.capabilities?.trueMaxContext, 16384)
     }
 
+    s.test("refreshWriterCapabilitiesFromProbe persists the probed model onto the default profile, idempotently") {
+        let appState = freshAppState()
+        var settings = appState.settings
+        settings.addServer(ServerProfile(name: "W", baseURL: URL(string: "http://192.168.1.201:5001")!, kind: .kobold))
+        try appState.updateSettings(settings)
+        // First probe result populates capabilities.
+        let changed = appState.refreshWriterCapabilitiesFromProbe(modelName: "gemma-4-31B-it", trueMaxContext: 16384)
+        try expectTrue(changed)
+        let stored = try expectNotNil(appState.settings.writerServer())
+        try expectEqual(stored.capabilities?.modelName, "gemma-4-31B-it")
+        try expectEqual(stored.capabilities?.trueMaxContext, 16384)
+        // Same values on the next tick → no-op (no settings churn).
+        try expectFalse(appState.refreshWriterCapabilitiesFromProbe(modelName: "gemma-4-31B-it", trueMaxContext: 16384))
+        // A model swap on the backend → persisted.
+        try expectTrue(appState.refreshWriterCapabilitiesFromProbe(modelName: "Goetia-24B", trueMaxContext: 32768))
+        try expectEqual(appState.settings.writerServer()?.capabilities?.modelName, "Goetia-24B")
+    }
+
+    s.test("refreshWriterCapabilitiesFromProbe is a no-op with a nil model name (failed/old probe)") {
+        let appState = freshAppState()
+        var settings = appState.settings
+        settings.addServer(ServerProfile(name: "W", baseURL: URL(string: "http://w")!, kind: .kobold))
+        try appState.updateSettings(settings)
+        try expectFalse(appState.refreshWriterCapabilitiesFromProbe(modelName: nil, trueMaxContext: nil))
+        try expectNil(appState.settings.writerServer()?.capabilities?.modelName)
+    }
+
     s.test("setExtractor(id:) persists extractorServerId through AppState.updateSettings") {
         let appState = freshAppState()
         let vc = SettingsViewController(appState: appState)

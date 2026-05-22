@@ -93,6 +93,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
                 case .success(let caps):
                     AppState.shared.lastProbedModelName = caps.modelName
                     AppState.shared.lastProbedMaxContext = caps.trueMaxContext
+                    // Persist the loaded model onto the writer profile so
+                    // instruct-template detection (and the Settings model
+                    // field) default to it — no manual entry needed.
+                    // Change-guarded, so this is a no-op on most ticks.
+                    AppState.shared.refreshWriterCapabilitiesFromProbe(
+                        modelName: caps.modelName, trueMaxContext: caps.trueMaxContext
+                    )
                     status = .reachable(model: caps.modelName, maxContext: caps.trueMaxContext)
                 case .failure(let error):
                     AppState.shared.lastProbedModelName = nil

@@ -816,6 +816,41 @@ public final class AppState {
         registry.updateProfiles(newSettings.servers, defaultServerId: newSettings.defaultServerId)
     }
 
+    /// Persist a health-probe result onto the **default (writer)**
+    /// profile's `capabilities`, so the loaded model self-populates
+    /// instead of the user having to type it. Called from the periodic
+    /// health probe (`AppDelegate.probeAndPublishServerStatus`).
+    ///
+    /// Change-guarded — returns false (and writes nothing) when the
+    /// model + context already match, so the 30s tick doesn't churn
+    /// settings.json. A nil `modelName` (failed / old-KoboldCpp probe)
+    /// is a no-op: never wipe a previously-known model on a bad tick.
+    @discardableResult
+    public func refreshWriterCapabilitiesFromProbe(
+        modelName: String?,
+        trueMaxContext: Int?
+    ) -> Bool {
+        guard let modelName = modelName, !modelName.isEmpty else { return false }
+        guard let id = settings.defaultServerId,
+              let idx = settings.servers.firstIndex(where: { $0.id == id }) else { return false }
+        let existing = settings.servers[idx].capabilities
+        if existing?.modelName == modelName && existing?.trueMaxContext == trueMaxContext {
+            return false
+        }
+        var updated = settings.servers[idx]
+        updated.capabilities = ServerCapabilities(
+            modelName: modelName,
+            trueMaxContext: trueMaxContext,
+            version: existing?.version
+        )
+        updated.lastProbed = Date()
+        var s = settings
+        guard s.updateServer(updated) else { return false }
+        try? updateSettings(s)
+        DebugLog.shared.write("[servers] writer capabilities refreshed from probe: model=\(modelName) maxCtx=\(trueMaxContext.map(String.init) ?? "?")")
+        return true
+    }
+
     // MARK: - Project lifecycle (1.j.A)
 
     /// Create a fresh `.loom` directory at `url`, switch the current
@@ -1076,7 +1111,11 @@ public final class AppState {
         // unrecognised/absent name falls back to `.auto` (raw) — the
         // GBNF still constrains output, so this can't regress to garbage.
         let client = registry.clientForDefault()
-        let writerModelName = writer.model ?? writer.capabilities?.modelName
+        // Resolve the writer's model name, freshest signal first:
+        // an explicit profile override, then the live health-probe
+        // result, then the cached capabilities. The live probe means
+        // template detection works without the user typing a model.
+        let writerModelName = writer.model ?? lastProbedModelName ?? writer.capabilities?.modelName
         let template = writerModelName.flatMap(InstructTemplates.detect) ?? .auto
         let maxContext = writer.capabilities?.trueMaxContext ?? 8192
         DebugLog.shared.write("[template] extract via writer model=\(writerModelName ?? "unknown") template=\(template.rawValue) id=\(id)")
