@@ -251,7 +251,11 @@ func runPassB(
         let elapsed = Date().timeIntervalSince(start)
         switch result {
         case .success(let raw):
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Strip per-beat meta-commentary ([Length:...]/[Pacing
+            // check]/etc.) exactly as production does
+            // (TemplateGenerationCoordinator → BeatOutputSanitizer.strip),
+            // so the spike's assembled scene matches the app's output.
+            let trimmed = BeatOutputSanitizer.strip(raw.trimmingCharacters(in: .whitespacesAndNewlines))
             let words = trimmed.split(whereSeparator: { $0.isWhitespace }).count
             log("  → \(words)w (target \(beat.targetWords)) in \(String(format: "%.1fs", elapsed))")
             outputs.append(BeatGenerationOutput(
@@ -292,7 +296,7 @@ func renderGenerationReport(_ run: GenerationRun) -> String {
     out += "# Pass-B generation report — \(fixtureID)\n\n"
     out += "**Title:** \(title)\n\n"
     out += "**Cast mapping:**\n\n```\n\(run.castMapping)\n```\n\n"
-    out += "**Writer:** Kobold at `\(koboldURLString)` (gemma-4-31B uncensored)\n\n"
+    out += "**Writer:** Kobold at `\(koboldURLString)`\n\n"
     out += "**Total elapsed:** \(String(format: "%.1fs", run.totalElapsedSeconds))\n\n"
 
     out += "## Per-beat outputs\n\n"
@@ -1064,6 +1068,50 @@ func runGoetiaGenerate(fixtureFilename: String) {
     writeGenerationReport(run)
 }
 
+// New-scene cast mapping for the test5 exemplar. Deliberately distant
+// from the source's concrete content (different protagonist, venue,
+// objects) so plot leakage is easy to spot, while preserving the
+// register + multi-partner escalation structure the exemplar's voice
+// and skeleton embody. The exemplar is the user's own adult-fiction
+// scene — this transposes its STRUCTURE + VOICE onto a new cast.
+let goetiaTest5Mapping = """
+    New cast and setting:
+    - PROTAGONIST: Mara, 27, a touring cellist. First-person narrator, the same confessional voice as the exemplar.
+    - The other characters: three musicians from her chamber ensemble she has toured with for months — map them onto the source's partners as they arrive one at a time.
+    - Setting: the green room of a concert hall, an hour after a sold-out late performance. The building is otherwise empty; the crew has gone home.
+    - The protagonist has wanted this with the ensemble for the whole tour and tonight decides to act on it — map this onto the source's "deciding to make a private fantasy real."
+    - Replace every concrete object/place from the source (party, balcony, bedroom, etc.) with green-room / backstage equivalents.
+    - Keep the first-person, colloquial-confessional register and the escalating multi-partner arc; change the cast and place, not the shape.
+    """
+
+/// Generate a brand-new scene from the test5 exemplar: Pass-A (Goetia +
+/// GBNF) extracts the exemplar's skeleton + voice, then Pass-B writes a
+/// new scene under `goetiaTest5Mapping`. Validates the template pipeline
+/// on the user's real exemplar rather than a spike fixture.
+func runGoetiaTest5Generate() {
+    guard let probe = probeGoetia() else { log("ABORT: bad kobold URL \(koboldURLString)"); exit(1) }
+    log("[goetia-test5] writer model: \(probe.modelName), maxContext: \(probe.maxContext)")
+    guard goetiaModelIsLoaded(probe.modelName) else {
+        log("ABORT: Kobold model \"\(probe.modelName)\" is not Goetia / Mistral-Small."); exit(1)
+    }
+    var fixture: Fixture?
+    for p in goetiaScenePaths where FileManager.default.fileExists(atPath: p) {
+        fixture = try? loadFixture(path: URL(fileURLWithPath: p))
+        if fixture != nil { break }
+    }
+    guard let fixture = fixture, !fixture.body.isEmpty else {
+        log("ABORT: no test5 exemplar found at \(goetiaScenePaths.joined(separator: " | "))"); exit(1)
+    }
+    log("[goetia-test5] exemplar: \(fixture.path.path) (\(fixture.body.split(whereSeparator: { $0.isWhitespace }).count)w)")
+    log("[goetia-test5] Pass-A via Goetia+GBNF...")
+    guard let skeleton = extractViaGoetiaGBNF(sceneBody: fixture.body, maxContext: probe.maxContext) else {
+        log("[goetia-test5] Pass-A produced no skeleton; aborting."); exit(1)
+    }
+    log("[goetia-test5] Pass-A → \(skeleton.beats.count) beats; running Pass-B with new cast mapping...")
+    let run = runPassB(fixture: fixture, extracted: skeleton, castMapping: goetiaTest5Mapping)
+    writeGenerationReport(run)
+}
+
 func runGoetiaCompare() {
     // Confirm Goetia is live + read the context budget.
     guard let probe = probeGoetia() else {
@@ -1196,6 +1244,8 @@ case "--goetia-generate":
         exit(1)
     }
     runGoetiaGenerate(fixtureFilename: args[2])
+case "--goetia-generate-test5":
+    runGoetiaTest5Generate()
 default:
     log("Unknown command: \(cmd)")
     exit(1)
